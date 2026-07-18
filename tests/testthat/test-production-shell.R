@@ -67,6 +67,11 @@ test_that("production artifacts pin the runtime and 3dena.com proxy", {
   nginx <- .read_project_file("deploy", "nginx", "3dena.com.conf.example")
   expect_match(dockerfile, "USER ena3d:ena3d", fixed = TRUE)
   expect_match(dockerfile, "R_LIBS_USER=/opt/renv/library", fixed = TRUE)
+  expect_match(
+    dockerfile,
+    "packagemanager.posit.co/cran/__linux__/noble/latest",
+    fixed = TRUE
+  )
   expect_match(dockerfile, 'normalizePath("/opt/renv/library") %in% .libPaths()',
                fixed = TRUE)
   expect_match(dockerfile, "/ena3d-health/healthz.json", fixed = TRUE)
@@ -119,7 +124,12 @@ test_that("project activation controls a clean R process library", {
 
 test_that("bootstrap preserves configured binary repositories", {
   bootstrap <- .read_project_file("renv", "bootstrap.R")
-  expect_match(bootstrap, 'repos <- getOption("repos")', fixed = TRUE)
+  expect_match(
+    bootstrap,
+    'Sys.getenv("RENV_CONFIG_REPOS_OVERRIDE"',
+    fixed = TRUE
+  )
+  expect_match(bootstrap, 'getOption("repos")', fixed = TRUE)
   expect_match(bootstrap, 'repos != "@CRAN@"', fixed = TRUE)
   expect_match(bootstrap, 'https://cloud.r-project.org', fixed = TRUE)
 })

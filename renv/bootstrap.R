@@ -25,7 +25,12 @@ restore_project_activation <- function() {
 dir.create(library, recursive = TRUE, showWarnings = FALSE)
 .libPaths(c(library, .libPaths()))
 
-repos <- getOption("repos")
+repos_override <- Sys.getenv("RENV_CONFIG_REPOS_OVERRIDE", unset = "")
+repos <- if (nzchar(repos_override)) {
+  c(CRAN = repos_override)
+} else {
+  getOption("repos")
+}
 usable_repos <- is.character(repos) && length(repos) &&
   any(!is.na(repos) & nzchar(repos) & repos != "@CRAN@")
 if (!usable_repos) {

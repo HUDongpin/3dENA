@@ -2,6 +2,7 @@ FROM rocker/r-ver:4.4.1
 
 ARG ENA3D_BUILD_ID=development
 ARG ENA3D_APP_VERSION=0.2.0-dev
+ARG RENV_REPOSITORY=https://packagemanager.posit.co/cran/__linux__/noble/latest
 ENV DEBIAN_FRONTEND=noninteractive \
     ENA3D_BUILD_ID=${ENA3D_BUILD_ID} \
     ENA3D_APP_VERSION=${ENA3D_APP_VERSION} \
@@ -10,7 +11,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     RENV_PATHS_CACHE=/opt/renv/cache \
     R_LIBS_USER=/opt/renv/library \
     RENV_CONFIG_AUTO_SNAPSHOT=FALSE \
-    RENV_CONFIG_SANDBOX_ENABLED=FALSE
+    RENV_CONFIG_SANDBOX_ENABLED=FALSE \
+    RENV_CONFIG_REPOS_OVERRIDE=${RENV_REPOSITORY}
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
