@@ -156,6 +156,8 @@ jobs:
             --publish 127.0.0.1:3838:3838 \
             ena3d:ci
           cleanup() {
+            docker inspect --format 'ena3d-ci state={{json .State}}' \
+              ena3d-ci 2>/dev/null || true
             docker logs ena3d-ci 2>/dev/null || true
             docker rm --force ena3d-ci >/dev/null 2>&1 || true
             rm -f /tmp/ena3d-health.json
@@ -170,6 +172,7 @@ jobs:
               break
             fi
             if ! docker inspect --format '{{.State.Running}}' ena3d-ci | grep -qx true; then
+              docker inspect --format 'ena3d-ci state={{json .State}}' ena3d-ci
               exit 1
             fi
             sleep 1
