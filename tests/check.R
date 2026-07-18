@@ -10,12 +10,17 @@ if (!file.exists(file.path(project_root, "R", "app.R"))) {
   stop("Could not locate the ENA 3D project root.", call. = FALSE)
 }
 
-r_files <- list.files(
-  project_root,
-  pattern = "\\.[Rr]$",
-  recursive = TRUE,
-  full.names = TRUE
-)
+source_roots <- file.path(project_root, c("R", "tests", "tools"))
+r_files <- unlist(lapply(source_roots, function(root) {
+  list.files(
+    root,
+    pattern = "\\.[Rr]$",
+    recursive = TRUE,
+    full.names = TRUE
+  )
+}), use.names = FALSE)
+renv_sources <- file.path(project_root, "renv", c("activate.R", "bootstrap.R"))
+r_files <- sort(unique(c(r_files, renv_sources[file.exists(renv_sources)])))
 parse_errors <- lapply(r_files, function(path) {
   tryCatch({
     parse(file = path)
