@@ -19,7 +19,6 @@ env:
   RENV_CONFIG_SANDBOX_ENABLED: "FALSE"
   RENV_PATHS_LIBRARY: "${{ github.workspace }}/renv/library"
   R_LIBS: "${{ github.workspace }}/renv/library"
-  R_PROFILE_USER: "/dev/null"
   R_KEEP_PKG_SOURCE: "yes"
 
 jobs:

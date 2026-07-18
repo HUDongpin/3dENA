@@ -7,6 +7,21 @@ library <- Sys.getenv(
   "RENV_PATHS_LIBRARY",
   unset = file.path(project, "renv", "library")
 )
+activation_paths <- c(
+  file.path(project, ".Rprofile"),
+  file.path(project, "renv", "activate.R")
+)
+if (!all(file.exists(activation_paths))) {
+  stop("Project activation files are missing.", call. = FALSE)
+}
+activation_contents <- lapply(activation_paths, function(path) {
+  readBin(path, what = "raw", n = file.info(path)$size)
+})
+restore_project_activation <- function() {
+  for (index in seq_along(activation_paths)) {
+    writeBin(activation_contents[[index]], activation_paths[[index]])
+  }
+}
 dir.create(library, recursive = TRUE, showWarnings = FALSE)
 .libPaths(c(library, .libPaths()))
 
@@ -22,11 +37,18 @@ if (!requireNamespace("renv", quietly = TRUE)) {
 }
 
 renv::consent(provided = TRUE)
-renv::restore(
-  project = project,
-  library = library,
-  lockfile = lockfile,
-  repos = repos,
-  clean = TRUE,
-  prompt = FALSE
-)
+restore_error <- tryCatch({
+  renv::restore(
+    project = project,
+    library = library,
+    lockfile = lockfile,
+    repos = repos,
+    clean = TRUE,
+    prompt = FALSE
+  )
+  NULL
+}, error = function(error) error)
+restore_project_activation()
+if (!is.null(restore_error)) {
+  stop(restore_error)
+}
