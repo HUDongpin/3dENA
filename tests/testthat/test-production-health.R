@@ -23,6 +23,7 @@ test_that("the versioned JSON health endpoint is reachable over HTTP", {
   process <- processx::process$new(
     file.path(R.home("bin"), "Rscript"),
     c("-e", expression),
+    wd = .health_test_root,
     env = c(
       ENA3D_BUILD_ID = "health-smoke",
       ENA3D_APP_VERSION = "0.2.0-test"
