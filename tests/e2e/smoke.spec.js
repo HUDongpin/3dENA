@@ -99,7 +99,7 @@ test("home foregrounds trajectory analysis in a compact responsive hero", async 
   await expect(visual).toContainText("TRAJECTORY ANALYSIS");
   await expect(visual).toContainText("Ordered nodes");
   await expect(visual).toContainText("Direction");
-  await expect(visual).toContainText("Uncertainty");
+  await expect(visual).toContainText("Group comparison");
   await expect(
     visual.getByRole("img", {
       name: /three-dimensional centroid trajectory/i,
