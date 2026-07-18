@@ -1,0 +1,48 @@
+services:
+  ena3d:
+    build:
+      context: .
+      args:
+        ENA3D_BUILD_ID: ${ENA3D_BUILD_ID:?set ENA3D_BUILD_ID to an immutable commit or release}
+        ENA3D_APP_VERSION: ${ENA3D_APP_VERSION:-0.2.0-dev}
+    image: ena3d:${ENA3D_BUILD_ID}
+    restart: unless-stopped
+    init: true
+    read_only: true
+    ports:
+      - "127.0.0.1:3838:3838"
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=256m,uid=10001,gid=10001
+      - /home/ena3d:rw,noexec,nosuid,nodev,size=64m,uid=10001,gid=10001
+    environment:
+      ENA3D_BUILD_ID: ${ENA3D_BUILD_ID}
+      ENA3D_APP_VERSION: ${ENA3D_APP_VERSION:-0.2.0-dev}
+      ENA3D_MAX_REQUEST_BYTES: "5242880"
+      ENA3D_MAX_EXCHANGE_FILE_BYTES: "2097152"
+      ENA3D_MAX_RAW_FILE_BYTES: "5242880"
+      ENA3D_MAX_RAW_ARCHIVE_BYTES: "104857600"
+      ENA3D_MAX_RAW_ROWS: "100000"
+      ENA3D_MAX_RAW_COLUMNS: "500"
+      ENA3D_MAX_RAW_CELLS: "10000000"
+      ENA3D_MAX_TRUSTED_FILE_BYTES: "26214400"
+      ENA3D_MAX_LOADED_BYTES: "536870912"
+      ENA3D_MAX_SAVED_OBJECTS: "20"
+      ENA3D_MAX_POINT_ROWS: "50000"
+      ENA3D_MAX_NODES: "50"
+      ENA3D_MAX_DIMENSIONS: "200"
+      ENA3D_MAX_METADATA_COLUMNS: "100"
+      ENA3D_MAX_TABLE_CELLS: "20000000"
+      ENA3D_MAX_GROUP_LEVELS: "50"
+      ENA3D_MAX_UNITS: "50000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 2g
+    cpus: 2.0
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "5"

@@ -1,0 +1,17 @@
+{
+  "name": "ena-3d-browser-smoke",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Browser smoke tests for the ENA 3D Shiny application.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test:e2e": "playwright test",
+    "test:e2e:desktop": "playwright test --project=desktop-chromium",
+    "test:e2e:mobile": "playwright test --project=mobile-390px-chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.1"
+  }
+}
