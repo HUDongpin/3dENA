@@ -2,7 +2,7 @@ FROM rocker/r-ver:4.4.1
 
 ARG ENA3D_BUILD_ID=development
 ARG ENA3D_APP_VERSION=0.2.0-dev
-ARG RENV_REPOSITORY=https://packagemanager.posit.co/cran/__linux__/noble/latest
+ARG RENV_REPOSITORY=https://packagemanager.posit.co/cran/__linux__/jammy/latest
 ENV DEBIAN_FRONTEND=noninteractive \
     ENA3D_BUILD_ID=${ENA3D_BUILD_ID} \
     ENA3D_APP_VERSION=${ENA3D_APP_VERSION} \

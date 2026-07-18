@@ -69,7 +69,7 @@ test_that("production artifacts pin the runtime and 3dena.com proxy", {
   expect_match(dockerfile, "R_LIBS_USER=/opt/renv/library", fixed = TRUE)
   expect_match(
     dockerfile,
-    "packagemanager.posit.co/cran/__linux__/noble/latest",
+    "packagemanager.posit.co/cran/__linux__/jammy/latest",
     fixed = TRUE
   )
   expect_match(dockerfile, 'normalizePath("/opt/renv/library") %in% .libPaths()',
