@@ -43,6 +43,7 @@ RUN Rscript renv/bootstrap.R
 RUN Rscript -e 'stopifnot(normalizePath("/opt/renv/library") %in% .libPaths()); stopifnot(requireNamespace("shiny", quietly=TRUE), requireNamespace("rENA", quietly=TRUE), requireNamespace("jsonlite", quietly=TRUE), requireNamespace("readxl", quietly=TRUE))'
 
 COPY R ./R
+COPY images ./images
 COPY sample_data ./sample_data
 COPY README.md TRAJECTORY_ANALYSIS.md LICENSE VERSION ./
 
@@ -50,7 +51,7 @@ RUN groupadd --system --gid 10001 ena3d \
     && useradd --system --uid 10001 --gid ena3d --home /home/ena3d ena3d \
     && mkdir -p /home/ena3d /tmp/ena3d \
     && chown -R ena3d:ena3d /home/ena3d /tmp/ena3d \
-    && chmod -R a-w /opt/ena3d/R /opt/ena3d/sample_data
+    && chmod -R a-w /opt/ena3d/R /opt/ena3d/images /opt/ena3d/sample_data
 
 USER ena3d:ena3d
 EXPOSE 3838

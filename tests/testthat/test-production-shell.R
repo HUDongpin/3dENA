@@ -74,6 +74,7 @@ test_that("production artifacts pin the runtime and 3dena.com proxy", {
   )
   expect_match(dockerfile, 'normalizePath("/opt/renv/library") %in% .libPaths()',
                fixed = TRUE)
+  expect_match(dockerfile, "COPY images ./images", fixed = TRUE)
   expect_match(dockerfile, "/ena3d-health/healthz.json", fixed = TRUE)
   expect_match(compose, "read_only: true", fixed = TRUE)
   expect_match(compose, '"127.0.0.1:3838:3838"', fixed = TRUE)
