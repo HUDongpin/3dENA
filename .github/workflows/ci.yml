@@ -2,6 +2,8 @@ name: ENA 3D CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
   workflow_dispatch:
 
@@ -15,6 +17,7 @@ concurrency:
 env:
   RENV_CONFIG_AUTO_SNAPSHOT: "FALSE"
   RENV_CONFIG_SANDBOX_ENABLED: "FALSE"
+  RENV_PATHS_LIBRARY: "${{ github.workspace }}/renv/library"
   R_KEEP_PKG_SOURCE: "yes"
 
 jobs:
