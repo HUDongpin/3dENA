@@ -1,0 +1,185 @@
+name: ENA 3D CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ena3d-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RENV_CONFIG_AUTO_SNAPSHOT: "FALSE"
+  RENV_CONFIG_SANDBOX_ENABLED: "FALSE"
+  R_KEEP_PKG_SOURCE: "yes"
+
+jobs:
+  app-tests:
+    name: R checks, health and browser smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install R system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            gfortran \
+            libcurl4-openssl-dev \
+            libfontconfig1-dev \
+            libfreetype6-dev \
+            libfribidi-dev \
+            libharfbuzz-dev \
+            libjpeg-dev \
+            libpng-dev \
+            libssl-dev \
+            libtiff-dev \
+            libxml2-dev
+
+      - name: Set up exact R version
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: "4.4.1"
+          use-public-rspm: true
+
+      - name: Restore the locked project library
+        run: Rscript renv/bootstrap.R
+
+      - name: Verify R version and run unit/integration checks
+        run: |
+          Rscript -e 'expected <- normalizePath("renv/library"); stopifnot(identical(as.character(getRversion()), "4.4.1"), identical(normalizePath(.libPaths()[[1L]]), expected)); required <- c("shiny", "plotly", "data.table", "R6", "rENA", "bslib", "scales", "digest", "jsonlite", "zip", "testthat"); stopifnot(all(vapply(required, requireNamespace, logical(1), quietly = TRUE)))'
+          Rscript tests/check.R
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install browser test dependencies
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Start Shiny and verify health endpoint
+        env:
+          E2E_PORT: "3838"
+          ENA3D_BUILD_ID: health-${{ github.sha }}
+        run: |
+          mkdir -p output/playwright
+          Rscript tests/e2e/start-app.R >output/playwright/shiny-health.log 2>&1 &
+          app_pid=$!
+          cleanup() {
+            kill "$app_pid" 2>/dev/null || true
+            wait "$app_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          health_ok=0
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --show-error --max-time 5 \
+              http://127.0.0.1:3838/ena3d-health/healthz.json >/dev/null; then
+              health_ok=1
+              break
+            fi
+            if ! kill -0 "$app_pid" 2>/dev/null; then
+              cat output/playwright/shiny-health.log
+              exit 1
+            fi
+            sleep 1
+          done
+          if [ "$health_ok" -ne 1 ]; then
+            cat output/playwright/shiny-health.log
+            exit 1
+          fi
+          curl --fail --silent --show-error --max-time 5 \
+            http://127.0.0.1:3838/ena3d-health/healthz.json | \
+            Rscript -e 'payload <- jsonlite::fromJSON(paste(readLines(file("stdin")), collapse = "")); stopifnot(identical(payload$status, "ok"))'
+
+      - name: Run desktop and 390px mobile browser smoke
+        env:
+          E2E_PORT: "3838"
+          ENA3D_BUILD_ID: e2e-${{ github.sha }}
+        run: npm run test:e2e
+
+  docker-build:
+    name: Validate production Docker build
+    needs: app-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build production image without publishing
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          build-args: |
+            ENA3D_BUILD_ID=${{ github.sha }}
+            ENA3D_APP_VERSION=ci
+          push: false
+          load: true
+          tags: ena3d:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run hardened image and verify container health metadata
+        env:
+          TEST_BUILD_ID: ${{ github.sha }}
+        run: |
+          docker run --detach \
+            --name ena3d-ci \
+            --read-only \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=256m,uid=10001,gid=10001 \
+            --tmpfs /home/ena3d:rw,noexec,nosuid,nodev,size=64m,uid=10001,gid=10001 \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --pids-limit 256 \
+            --memory 2g \
+            --cpus 2 \
+            --env ENA3D_BUILD_ID="$TEST_BUILD_ID" \
+            --env ENA3D_APP_VERSION=ci \
+            --publish 127.0.0.1:3838:3838 \
+            ena3d:ci
+          cleanup() {
+            docker logs ena3d-ci 2>/dev/null || true
+            docker rm --force ena3d-ci >/dev/null 2>&1 || true
+            rm -f /tmp/ena3d-health.json
+          }
+          trap cleanup EXIT
+          health_ok=0
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --show-error --max-time 5 \
+              http://127.0.0.1:3838/ena3d-health/healthz.json \
+              --output /tmp/ena3d-health.json; then
+              health_ok=1
+              break
+            fi
+            if ! docker inspect --format '{{.State.Running}}' ena3d-ci | grep -qx true; then
+              exit 1
+            fi
+            sleep 1
+          done
+          test "$health_ok" -eq 1
+          python3 - <<'PY'
+          import json
+          import os
+
+          with open("/tmp/ena3d-health.json", encoding="utf-8") as health_file:
+              health = json.load(health_file)
+
+          assert health["status"] == "ok", health
+          assert health["app"] == "ENA 3D", health
+          assert health["version"] == "ci", health
+          assert health["build"] == os.environ["TEST_BUILD_ID"], health
+          PY

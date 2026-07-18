@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://3dena.com/schemas/ena3d-exchange-v1.schema.json",
+  "title": "ENA 3D exchange format version 1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "version", "dimensions", "group_variables", "tables"],
+  "properties": {
+    "format": {"const": "ena3d-exchange"},
+    "version": {"const": 1},
+    "dimensions": {
+      "type": "array",
+      "minItems": 3,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/identifier"}
+    },
+    "group_variables": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/identifier"}
+    },
+    "tables": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["meta_data", "points", "line_weights", "nodes", "adjacency_key"],
+      "properties": {
+        "meta_data": {"$ref": "#/$defs/table"},
+        "points": {"$ref": "#/$defs/table"},
+        "line_weights": {"$ref": "#/$defs/table"},
+        "nodes": {"$ref": "#/$defs/table"},
+        "adjacency_key": {"$ref": "#/$defs/table"}
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+    },
+    "nullableBoolean": {"type": ["boolean", "null"]},
+    "nullableInteger": {
+      "type": ["integer", "null"],
+      "minimum": -2147483647,
+      "maximum": 2147483647
+    },
+    "nullableNumber": {"type": ["number", "null"]},
+    "nullableString": {"type": ["string", "null"]},
+    "baseColumn": {
+      "type": "object",
+      "required": ["name", "type", "values"],
+      "properties": {
+        "name": {"$ref": "#/$defs/identifier"},
+        "type": {"type": "string"},
+        "values": {"type": "array", "minItems": 1}
+      }
+    },
+    "column": {
+      "oneOf": [
+        {
+          "allOf": [
+            {"$ref": "#/$defs/baseColumn"},
+            {
+              "additionalProperties": false,
+              "properties": {
+                "name": {"$ref": "#/$defs/identifier"},
+                "type": {"const": "logical"},
+                "values": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/nullableBoolean"}}
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {"$ref": "#/$defs/baseColumn"},
+            {
+              "additionalProperties": false,
+              "properties": {
+                "name": {"$ref": "#/$defs/identifier"},
+                "type": {"const": "integer"},
+                "values": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/nullableInteger"}}
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {"$ref": "#/$defs/baseColumn"},
+            {
+              "additionalProperties": false,
+              "properties": {
+                "name": {"$ref": "#/$defs/identifier"},
+                "type": {"const": "double"},
+                "values": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/nullableNumber"}}
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {"$ref": "#/$defs/baseColumn"},
+            {
+              "additionalProperties": false,
+              "properties": {
+                "name": {"$ref": "#/$defs/identifier"},
+                "type": {"const": "character"},
+                "values": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/nullableString"}}
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {"$ref": "#/$defs/baseColumn"},
+            {
+              "additionalProperties": false,
+              "properties": {
+                "name": {"$ref": "#/$defs/identifier"},
+                "type": {"const": "date"},
+                "values": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {"type": ["string", "null"], "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"}
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "type", "timezone", "values"],
+          "properties": {
+            "name": {"$ref": "#/$defs/identifier"},
+            "type": {"const": "datetime"},
+            "timezone": {"type": "string", "minLength": 1, "maxLength": 128},
+            "values": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/nullableNumber"}}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "type", "units", "values"],
+          "properties": {
+            "name": {"$ref": "#/$defs/identifier"},
+            "type": {"const": "difftime"},
+            "units": {"enum": ["secs", "mins", "hours", "days", "weeks"]},
+            "values": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/nullableNumber"}}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "type", "levels", "values"],
+          "properties": {
+            "name": {"$ref": "#/$defs/identifier"},
+            "type": {"enum": ["factor", "ordered"]},
+            "levels": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string"}},
+            "values": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/nullableString"}}
+          }
+        }
+      ]
+    },
+    "table": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["columns"],
+      "properties": {
+        "columns": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/column"}
+        }
+      }
+    }
+  }
+}
