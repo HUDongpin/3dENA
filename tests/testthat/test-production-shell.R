@@ -63,6 +63,7 @@ test_that("production artifacts pin the runtime and 3dena.com proxy", {
   expect_identical(lock$Packages$readxl$Version, "1.4.3")
 
   dockerfile <- .read_project_file("Dockerfile")
+  dockerignore <- .read_project_file(".dockerignore")
   compose <- .read_project_file("compose.production.yaml")
   nginx <- .read_project_file("deploy", "nginx", "3dena.com.conf.example")
   expect_match(dockerfile, "USER ena3d:ena3d", fixed = TRUE)
@@ -75,6 +76,8 @@ test_that("production artifacts pin the runtime and 3dena.com proxy", {
   expect_match(dockerfile, 'normalizePath("/opt/renv/library") %in% .libPaths()',
                fixed = TRUE)
   expect_match(dockerfile, "COPY images ./images", fixed = TRUE)
+  expect_false(any(trimws(strsplit(dockerignore, "\n", fixed = TRUE)[[1L]]) ==
+                   "images"))
   expect_match(dockerfile, "/ena3d-health/healthz.json", fixed = TRUE)
   expect_match(compose, "read_only: true", fixed = TRUE)
   expect_match(compose, '"127.0.0.1:3838:3838"', fixed = TRUE)
