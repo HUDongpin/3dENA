@@ -8,6 +8,19 @@ const EXCHANGE_FIXTURE = path.join(
   "small-valid.ena3d.json"
 );
 
+test.beforeEach(async ({ page }) => {
+  // Vercel serves this platform route only on deployed environments. Fulfill it
+  // during localhost smoke tests so the expected development 404 is not
+  // mistaken for an application error.
+  await page.route("**/_vercel/insights/script.js", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/javascript",
+      body: "// Vercel Web Analytics test stub.\n",
+    })
+  );
+});
+
 function captureBrowserErrors(page) {
   const messages = [];
 
