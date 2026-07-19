@@ -91,6 +91,11 @@ test("home foregrounds trajectory analysis in a compact responsive hero", async 
   });
   const visual = page.locator(".ena3d-hero-visual");
 
+  await expect(
+    page.locator('script[src="/_vercel/insights/script.js"]')
+  ).toHaveCount(1);
+  expect(await page.evaluate(() => typeof window.va)).toBe("function");
+
   await expect(home).toBeVisible();
   await expect(heading).toBeVisible();
   await expect(

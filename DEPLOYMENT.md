@@ -77,6 +77,20 @@ root filesystem, bounded temporary storage, a process limit, and container CPU
 and memory limits. Its port binds only to loopback and must be reached through
 the TLS reverse proxy.
 
+## Vercel Web Analytics
+
+The Shiny HTML shell uses Vercel's framework-independent Web Analytics
+bootstrap and loads `/_vercel/insights/script.js`. The Next.js-only
+`@vercel/analytics/next` component is not used because this application is an R
+Shiny container, not a Next.js application.
+
+Web Analytics must also be enabled for the `3dena` project in the Vercel
+dashboard. After deployment, confirm that the script returns JavaScript and
+that a browser visit sends a request to the Vercel insights view endpoint.
+Analytics must remain limited to traffic metadata and page views; do not add
+research data, uploaded content, participant identifiers, or ENA results as
+custom event properties.
+
 ## TLS and reverse proxy
 
 `deploy/nginx/3dena.com.conf.example` is a reviewed starting point. Before use:
