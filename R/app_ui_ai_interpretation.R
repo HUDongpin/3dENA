@@ -71,7 +71,7 @@ ai_interpretation_ui <- function(
     shiny::actionButton(
       ns("interpret"),
       "Interpret ENA results",
-      icon = shiny::icon("comments"),
+      icon = shiny::tags$i("💬", `aria-hidden` = "true"),
       class = "ena-ai-interpret-button"
     ),
     disabled = "disabled",
@@ -407,7 +407,7 @@ ai_interpretation_ui <- function(
       shiny::actionButton(
         ns("toggle"),
         "AI interpretation",
-        icon = shiny::icon("lightbulb"),
+        icon = shiny::tags$i("💡", `aria-hidden` = "true"),
         class = "ena-ai-toggle"
       ),
       `data-ena-ai-toggle` = "true",

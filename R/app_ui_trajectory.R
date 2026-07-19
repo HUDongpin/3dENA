@@ -82,7 +82,7 @@ trajectory_controls_ui <- function(id) {
       shiny::actionButton(
         ns("generate_order"),
         "Generate default order",
-        icon = shiny::icon("arrow-down-short-wide")
+        icon = shiny::tags$i("⇅", `aria-hidden` = "true")
       ),
       shiny::helpText(
         "Review the generated order, especially for labeled character values. ",
@@ -264,7 +264,7 @@ trajectory_controls_ui <- function(id) {
       shiny::actionButton(
         ns("run_trajectory"),
         "Run / recompute trajectory",
-        icon = shiny::icon("play"),
+        icon = shiny::tags$i("▶", `aria-hidden` = "true"),
         class = "btn-primary"
       ),
       shiny::uiOutput(ns("downloads"))

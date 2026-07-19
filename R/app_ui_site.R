@@ -146,6 +146,209 @@ ena3d_home_ui <- function() {
   )
 }
 
+ena3d_paper_citation_ui <- function(
+    number,
+    type,
+    title,
+    citation_id,
+    citation_text,
+    citation_html,
+    doi,
+    featured = FALSE) {
+  tags$article(
+    class = paste(
+      "ena3d-paper-card",
+      if (isTRUE(featured)) "ena3d-paper-card-featured" else NULL
+    ),
+    tags$header(
+      class = "ena3d-paper-card-header",
+      tags$span(class = "ena3d-paper-number", sprintf("%02d", number)),
+      tags$span(class = "ena3d-paper-type", type)
+    ),
+    tags$h3(title),
+    tags$div(
+      class = "ena3d-citation-block",
+      tags$p(
+        id = citation_id,
+        class = "ena3d-citation",
+        tabindex = "-1",
+        `data-citation-text` = citation_text,
+        citation_html
+      )
+    ),
+    tags$div(
+      class = "ena3d-paper-actions",
+      tags$button(
+        type = "button",
+        class = "ena3d-copy-citation",
+        `data-citation-target` = citation_id,
+        `data-default-label` = "Copy APA",
+        `aria-label` = paste("Copy APA citation for", title),
+        "Copy APA"
+      ),
+      tags$a(
+        class = "ena3d-doi-link",
+        href = doi,
+        target = "_blank",
+        rel = "noopener noreferrer",
+        "View publication",
+        tags$span(`aria-hidden` = "true", "\u2197")
+      )
+    )
+  )
+}
+
+ena3d_papers_ui <- function() {
+  method_citation <- paste0(
+    "Yu, J., Hu, D., & Wang, C.-H. (2024). Development of ENA 3D: A tool for ",
+    "epistemic network analysis in three-dimensional space. In Y. J. Kim & Z. ",
+    "Swiecki (Eds.), Advances in quantitative ethnography (pp. 152\u2013165). ",
+    "Springer. https://doi.org/10.1007/978-3-031-76335-9_11"
+  )
+  political_citation <- paste0(
+    "Yu, J., Hamilton, E., Wang, C.-H., & Hu, D. (2024). The application of ENA ",
+    "to political discourse in Taiwan: A case study. In Y. J. Kim & Z. Swiecki ",
+    "(Eds.), Advances in quantitative ethnography (pp. 273\u2013287). Springer. ",
+    "https://doi.org/10.1007/978-3-031-76332-8_22"
+  )
+  learning_citation <- paste0(
+    "Tu, Y.-F., Hwang, G.-J., & Hu, D. (2025). Effects on the learning ",
+    "achievement, approaches to learning, and multi-stage reflection quality of ",
+    "students with different levels of digital self-efficacy in a data literacy ",
+    "course: An ARCS-based self-reflective online learning model. Computers & ",
+    "Education, 238, 105397. https://doi.org/10.1016/j.compedu.2025.105397"
+  )
+
+  tags$main(
+    class = "site-page ena3d-papers-page",
+    tags$section(
+      class = "ena3d-papers-hero",
+      tags$div(
+        class = "ena3d-papers-hero-copy",
+        tags$p(class = "ena3d-kicker", "PAPERS & CITATION"),
+        tags$h1("Cite the work behind 3D ENA."),
+        tags$p(
+          class = "ena3d-papers-lede",
+          "If 3D ENA supports your analysis, cite the foundational method paper. ",
+          "The application studies below show how the approach has been used in ",
+          "educational research and political research."
+        )
+      ),
+      tags$aside(
+        class = "ena3d-citation-guidance",
+        tags$p(class = "ena3d-card-label", "CITATION GUIDANCE"),
+        tags$h2("Start with the method paper."),
+        tags$p(
+          "Citing the original development paper recognizes the researchers and ",
+          "developers who created and advanced 3D ENA. Add an application paper ",
+          "when it directly informs your study."
+        )
+      )
+    ),
+    tags$section(
+      class = "ena3d-papers-library",
+      tags$div(
+        class = "ena3d-papers-heading",
+        tags$div(
+          tags$h2("Three verified references")
+        ),
+        tags$p(
+          "Bibliographic details were checked against publisher and DOI records. ",
+          tags$a(
+            href = "https://www.ena3d.org/papers.html",
+            target = "_blank",
+            rel = "noopener noreferrer",
+            "View the source collection",
+            tags$span(`aria-hidden` = "true", "\u2197")
+          )
+        )
+      ),
+      tags$div(
+        class = "ena3d-paper-list",
+        ena3d_paper_citation_ui(
+          number = 1,
+          type = "FOUNDATIONAL METHOD",
+          title = paste(
+            "Development of ENA 3D: A Tool for Epistemic Network Analysis",
+            "in Three-Dimensional Space"
+          ),
+          citation_id = "ena3d-citation-method",
+          citation_text = method_citation,
+          citation_html = tagList(
+            "Yu, J., Hu, D., & Wang, C.-H. (2024). Development of ENA 3D: A tool ",
+            "for epistemic network analysis in three-dimensional space. In Y. J. ",
+            "Kim & Z. Swiecki (Eds.), ",
+            tags$em("Advances in quantitative ethnography"),
+            " (pp. 152\u2013165). Springer. ",
+            tags$a(
+              href = "https://doi.org/10.1007/978-3-031-76335-9_11",
+              target = "_blank",
+              rel = "noopener noreferrer",
+              "https://doi.org/10.1007/978-3-031-76335-9_11"
+            )
+          ),
+          doi = "https://doi.org/10.1007/978-3-031-76335-9_11",
+          featured = TRUE
+        ),
+        ena3d_paper_citation_ui(
+          number = 2,
+          type = "APPLICATION · POLITICAL DISCOURSE",
+          title = paste(
+            "The Application of ENA to Political Discourse in Taiwan:",
+            "A Case Study"
+          ),
+          citation_id = "ena3d-citation-political",
+          citation_text = political_citation,
+          citation_html = tagList(
+            "Yu, J., Hamilton, E., Wang, C.-H., & Hu, D. (2024). The application ",
+            "of ENA to political discourse in Taiwan: A case study. In Y. J. Kim ",
+            "& Z. Swiecki (Eds.), ",
+            tags$em("Advances in quantitative ethnography"),
+            " (pp. 273\u2013287). Springer. ",
+            tags$a(
+              href = "https://doi.org/10.1007/978-3-031-76332-8_22",
+              target = "_blank",
+              rel = "noopener noreferrer",
+              "https://doi.org/10.1007/978-3-031-76332-8_22"
+            )
+          ),
+          doi = "https://doi.org/10.1007/978-3-031-76332-8_22"
+        ),
+        ena3d_paper_citation_ui(
+          number = 3,
+          type = "APPLICATION · LEARNING RESEARCH",
+          title = paste(
+            "Effects on the Learning Achievement, Approaches to Learning, and",
+            "Multi-Stage Reflection Quality of Students with Different Levels",
+            "of Digital Self-Efficacy in a Data Literacy Course: An ARCS-Based",
+            "Self-Reflective Online Learning Model"
+          ),
+          citation_id = "ena3d-citation-learning",
+          citation_text = learning_citation,
+          citation_html = tagList(
+            "Tu, Y.-F., Hwang, G.-J., & Hu, D. (2025). Effects on the learning ",
+            "achievement, approaches to learning, and multi-stage reflection ",
+            "quality of students with different levels of digital self-efficacy ",
+            "in a data literacy course: An ARCS-based self-reflective online ",
+            "learning model. ",
+            tags$em("Computers & Education"),
+            ", ",
+            tags$em("238"),
+            ", 105397. ",
+            tags$a(
+              href = "https://doi.org/10.1016/j.compedu.2025.105397",
+              target = "_blank",
+              rel = "noopener noreferrer",
+              "https://doi.org/10.1016/j.compedu.2025.105397"
+            )
+          ),
+          doi = "https://doi.org/10.1016/j.compedu.2025.105397"
+        )
+      )
+    )
+  )
+}
+
 ena3d_about_ui <- function() {
   tags$main(
     class = "site-page ena3d-about-page",

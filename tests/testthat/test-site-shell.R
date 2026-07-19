@@ -144,6 +144,46 @@ test_that("About presents the verified public developer profile", {
 })
 
 
+test_that("Papers provides three verified, copy-ready APA references", {
+  papers <- htmltools::renderTags(.site_shell_env$ena3d_papers_ui())$html
+
+  expect_match(papers, "Cite the work behind 3D ENA.", fixed = TRUE)
+  expect_match(papers, "Start with the method paper.", fixed = TRUE)
+  expect_match(
+    papers,
+    "educational research and political research.",
+    fixed = TRUE
+  )
+  expect_false(grepl("political discourse and learning research.", papers, fixed = TRUE))
+  expect_false(grepl("APA 7TH EDITION", papers, fixed = TRUE))
+  expect_match(papers, "Three verified references", fixed = TRUE)
+  expect_match(
+    papers,
+    "Development of ENA 3D: A Tool for Epistemic Network Analysis in Three-Dimensional Space",
+    fixed = TRUE
+  )
+  expect_match(
+    papers,
+    "The Application of ENA to Political Discourse in Taiwan: A Case Study",
+    fixed = TRUE
+  )
+  expect_match(
+    papers,
+    "Effects on the Learning Achievement, Approaches to Learning, and Multi-Stage Reflection Quality",
+    fixed = TRUE
+  )
+  expect_match(papers, "10.1007/978-3-031-76335-9_11", fixed = TRUE)
+  expect_match(papers, "10.1007/978-3-031-76332-8_22", fixed = TRUE)
+  expect_match(papers, "10.1016/j.compedu.2025.105397", fixed = TRUE)
+  expect_equal(
+    lengths(regmatches(papers, gregexpr("ena3d-copy-citation", papers, fixed = TRUE))),
+    3L
+  )
+  expect_match(papers, "data-citation-text=", fixed = TRUE)
+  expect_match(papers, "https://www.ena3d.org/papers.html", fixed = TRUE)
+})
+
+
 test_that("The application shell declares exactly the requested site tabs", {
   app_source <- paste(
     readLines(file.path(.site_shell_root, "R", "app.R"), warn = FALSE),
@@ -152,10 +192,17 @@ test_that("The application shell declares exactly the requested site tabs", {
 
   expect_match(app_source, 'title = "Home"', fixed = TRUE)
   expect_match(app_source, 'title = "3D ENA"', fixed = TRUE)
+  expect_match(app_source, 'title = "PAPERS"', fixed = TRUE)
   expect_match(app_source, 'title = "ABOUT"', fixed = TRUE)
   expect_match(app_source, 'value = "home"', fixed = TRUE)
   expect_match(app_source, 'value = "tool"', fixed = TRUE)
+  expect_match(app_source, 'value = "papers"', fixed = TRUE)
   expect_match(app_source, 'value = "about"', fixed = TRUE)
+  expect_match(
+    app_source,
+    '(?s)title = "PAPERS".*title = "ABOUT"',
+    perl = TRUE
+  )
   expect_match(app_source, 'id = "workspace_sections"', fixed = TRUE)
   expect_match(app_source, "input$home_brand", fixed = TRUE)
   expect_match(app_source, 'open_site_page("home")', fixed = TRUE)

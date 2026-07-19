@@ -35,6 +35,7 @@ library(data.table)
 library(shiny)
 library(R6)
 library(rENA)
+.ena3d_source('inline_ui.R')
 .ena3d_source('security_utils.R')
 .ena3d_source('qwen_client.R')
 .ena3d_source('ai_evidence.R')
@@ -573,6 +574,11 @@ app_ui <- function(){
         )
       ),
       tabPanel(
+        title = "PAPERS",
+        value = "papers",
+        ena3d_papers_ui()
+      ),
+      tabPanel(
         title = "ABOUT",
         value = "about",
         ena3d_about_ui()
@@ -690,6 +696,58 @@ app_ui <- function(){
             window.dispatchEvent(new Event('resize'));
           }, 50);
         });
+
+        const writeCitationToClipboard = function (text) {
+          const writeWithSelection = function () {
+            return new Promise(function (resolve, reject) {
+              const textarea = document.createElement('textarea');
+              textarea.value = text;
+              textarea.setAttribute('readonly', '');
+              textarea.style.position = 'fixed';
+              textarea.style.opacity = '0';
+              document.body.appendChild(textarea);
+              textarea.select();
+              const copied = document.execCommand('copy');
+              textarea.remove();
+              if (copied) resolve();
+              else reject(new Error('Clipboard copy was not available.'));
+            });
+          };
+          if (navigator.clipboard && window.isSecureContext) {
+            return navigator.clipboard.writeText(text).catch(writeWithSelection);
+          }
+          return writeWithSelection();
+        };
+
+        document.addEventListener('click', function (event) {
+          const button = event.target.closest('.ena3d-copy-citation');
+          if (!button) return;
+          const citation = document.getElementById(
+            button.getAttribute('data-citation-target')
+          );
+          if (!citation) return;
+          const citationText = citation.getAttribute('data-citation-text') ||
+            citation.textContent.trim();
+          const defaultAriaLabel = button.getAttribute('aria-label');
+          writeCitationToClipboard(citationText).then(function () {
+            window.clearTimeout(button.ena3dCopyResetTimer);
+            button.textContent = 'Copied';
+            button.setAttribute('aria-label', 'APA citation copied');
+            button.classList.add('is-copied');
+            button.ena3dCopyResetTimer = window.setTimeout(function () {
+              button.textContent = button.getAttribute('data-default-label') || 'Copy APA';
+              button.setAttribute('aria-label', defaultAriaLabel);
+              button.classList.remove('is-copied');
+            }, 2200);
+          }).catch(function () {
+            button.textContent = 'Select citation to copy';
+            button.setAttribute(
+              'aria-label',
+              'Clipboard copy unavailable; select the citation to copy'
+            );
+            citation.focus();
+          });
+        });
       })();")
     )
     
@@ -762,4 +820,44 @@ options(
     maximum = 25 * 1024^2
   )
 )
-shinyApp(app_ui, app_server)
+
+inline_assets <- tolower(Sys.getenv("ENA3D_INLINE_ASSETS", unset = "false")) %in%
+  c("1", "true", "yes", "on")
+
+if (inline_assets) {
+  ena3d_register_plotly_resources()
+  prebuilt_ui_path <- Sys.getenv("ENA3D_PREBUILT_UI_PATH", unset = "")
+  if (nzchar(prebuilt_ui_path) && file.exists(prebuilt_ui_path)) {
+    app_ui_html <- readChar(
+      prebuilt_ui_path,
+      nchars = file.info(prebuilt_ui_path)$size,
+      useBytes = TRUE
+    )
+    app_ui_html <- gsub(
+      "__ENA3D_BUILD_ID__",
+      config$build_id,
+      app_ui_html,
+      fixed = TRUE
+    )
+  } else {
+    app_ui_html <- ena3d_render_inline_ui(
+      app_ui(),
+      file.path(.ena3d_app_dir, "www")
+    )
+  }
+
+  app_ui_handler <- local({
+    content <- app_ui_html
+    function(request) {
+      shiny:::httpResponse(
+        status = 200L,
+        content = content,
+        headers = list("Cache-Control" = "no-store")
+      )
+    }
+  })
+  attr(app_ui_handler, "http_methods_supported") <- "GET"
+  shinyApp(app_ui_handler, app_server)
+} else {
+  shinyApp(app_ui(), app_server)
+}

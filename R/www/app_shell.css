@@ -583,6 +583,237 @@ body.bslib-page-navbar > nav.navbar + div.container-fluid
   background: transparent;
 }
 
+.ena3d-papers-page {
+  min-height: calc(100vh - 78px);
+  background:
+    radial-gradient(circle at 86% 7%, rgba(211, 111, 82, 0.11), transparent 28rem),
+    var(--ena-paper-light);
+}
+
+.ena3d-papers-hero {
+  display: grid;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: clamp(4.5rem, 8vw, 8rem) clamp(1.5rem, 7vw, 7rem);
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+  align-items: end;
+  gap: clamp(3rem, 9vw, 9rem);
+}
+
+.ena3d-papers-hero h1 {
+  max-width: 12ch;
+  margin: 0;
+  color: var(--ena-ink-deep);
+  font-family: var(--ena-serif);
+  font-size: clamp(3.3rem, 6.4vw, 6.6rem);
+  font-weight: 400;
+  line-height: 0.96;
+  letter-spacing: -0.055em;
+  text-wrap: balance;
+}
+
+.ena3d-papers-lede {
+  max-width: 48rem;
+  margin: 2rem 0 0;
+  color: var(--ena-muted);
+  font-size: clamp(var(--ena-type-lede), 1.55vw, 1.4rem);
+  line-height: 1.7;
+}
+
+.ena3d-citation-guidance {
+  padding: clamp(1.75rem, 3vw, 2.6rem);
+  border-top: 4px solid var(--ena-coral);
+  color: #fff;
+  background: var(--ena-ink);
+}
+
+.ena3d-citation-guidance .ena3d-card-label {
+  color: var(--ena-cyan);
+}
+
+.ena3d-citation-guidance h2 {
+  margin: 0;
+  color: #fff;
+  font-family: var(--ena-serif);
+  font-size: clamp(1.8rem, 2.6vw, 2.5rem);
+  font-weight: 400;
+  line-height: 1.15;
+}
+
+.ena3d-citation-guidance > p:last-child {
+  margin: 1.4rem 0 0;
+  color: rgba(255, 255, 255, 0.72);
+  line-height: 1.75;
+}
+
+.ena3d-papers-library {
+  padding: clamp(4rem, 7vw, 7rem) clamp(1.5rem, 7vw, 7rem);
+  border-top: 1px solid var(--ena-line);
+  background: var(--ena-paper);
+}
+
+.ena3d-papers-heading {
+  display: flex;
+  max-width: 1280px;
+  margin: 0 auto clamp(2.5rem, 5vw, 4.5rem);
+  align-items: end;
+  justify-content: space-between;
+  gap: 3rem;
+}
+
+.ena3d-papers-heading h2 {
+  margin: 0;
+  color: var(--ena-ink-deep);
+  font-family: var(--ena-serif);
+  font-size: clamp(2.4rem, 4.4vw, 4.3rem);
+  font-weight: 400;
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+}
+
+.ena3d-papers-heading > p {
+  max-width: 30rem;
+  margin: 0;
+  color: var(--ena-muted);
+  line-height: 1.7;
+}
+
+.ena3d-papers-heading a {
+  color: var(--ena-cyan-dark);
+  font-weight: 750;
+}
+
+.ena3d-paper-list {
+  max-width: 1280px;
+  margin: 0 auto;
+  border-top: 1px solid var(--ena-line);
+}
+
+.ena3d-paper-card {
+  display: grid;
+  padding: clamp(2rem, 4.5vw, 4.5rem) 0;
+  grid-template-columns: minmax(170px, 0.55fr) minmax(260px, 1.05fr) minmax(320px, 1.4fr);
+  grid-template-areas:
+    "meta title citation"
+    "meta actions citation";
+  gap: 1.5rem clamp(2rem, 5vw, 5rem);
+  border-bottom: 1px solid var(--ena-line);
+}
+
+.ena3d-paper-card-header {
+  display: flex;
+  grid-area: meta;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 1.4rem;
+}
+
+.ena3d-paper-number {
+  color: var(--ena-coral);
+  font-family: var(--ena-serif);
+  font-size: clamp(2.2rem, 4vw, 4.3rem);
+  line-height: 0.9;
+}
+
+.ena3d-paper-type {
+  color: var(--ena-cyan-dark);
+  font-size: var(--ena-type-meta);
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  line-height: 1.5;
+}
+
+.ena3d-paper-card h3 {
+  grid-area: title;
+  margin: 0;
+  color: var(--ena-ink-deep);
+  font-family: var(--ena-serif);
+  font-size: clamp(1.55rem, 2.25vw, 2.25rem);
+  font-weight: 400;
+  line-height: 1.23;
+  letter-spacing: -0.025em;
+}
+
+.ena3d-citation-block {
+  grid-area: citation;
+  min-width: 0;
+  padding-left: clamp(1.5rem, 3vw, 3rem);
+  border-left: 1px solid var(--ena-line);
+}
+
+.ena3d-citation {
+  margin: 0;
+  padding-left: 2rem;
+  color: var(--ena-ink);
+  font-family: var(--ena-serif);
+  font-size: clamp(1.05rem, 1.35vw, 1.2rem);
+  line-height: 1.85;
+  text-indent: -2rem;
+  overflow-wrap: anywhere;
+}
+
+.ena3d-citation a {
+  color: var(--ena-cyan-dark);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+}
+
+.ena3d-paper-actions {
+  display: flex;
+  grid-area: actions;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.9rem 1.4rem;
+}
+
+.ena3d-copy-citation {
+  min-height: 2.85rem;
+  padding: 0.7rem 1rem;
+  border: 1px solid var(--ena-ink);
+  border-radius: 0;
+  color: #fff;
+  background: var(--ena-ink);
+  font-size: var(--ena-type-small);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transition: color 160ms ease, background-color 160ms ease, transform 160ms ease;
+}
+
+.ena3d-copy-citation:hover,
+.ena3d-copy-citation:focus-visible,
+.ena3d-copy-citation.is-copied {
+  color: #fff;
+  background: var(--ena-cyan-dark);
+  transform: translateY(-1px);
+}
+
+.ena3d-copy-citation:focus-visible,
+.ena3d-doi-link:focus-visible {
+  outline: 2px solid var(--ena-coral);
+  outline-offset: 3px;
+}
+
+.ena3d-doi-link {
+  display: inline-flex;
+  padding-bottom: 0.25rem;
+  align-items: center;
+  gap: 0.7rem;
+  border-bottom: 1px solid var(--ena-ink);
+  color: var(--ena-ink);
+  font-size: var(--ena-type-small);
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.ena3d-doi-link:hover,
+.ena3d-doi-link:focus-visible {
+  color: var(--ena-cyan-dark);
+  text-decoration: none;
+}
+
 .ena3d-about-page {
   min-height: calc(100vh - 78px);
   padding: 0 clamp(1.5rem, 7vw, 7rem) 2rem;
@@ -917,8 +1148,31 @@ body > .selectize-dropdown {
   }
 
   .ena3d-method-section,
+  .ena3d-papers-hero,
   .ena3d-about-hero {
     grid-template-columns: 1fr;
+  }
+
+  .ena3d-papers-hero {
+    align-items: start;
+  }
+
+  .ena3d-citation-guidance {
+    max-width: 42rem;
+  }
+
+  .ena3d-paper-card {
+    grid-template-columns: minmax(140px, 0.45fr) minmax(0, 1.55fr);
+    grid-template-areas:
+      "meta title"
+      "meta citation"
+      "meta actions";
+  }
+
+  .ena3d-citation-block {
+    padding: 1.5rem 0 0;
+    border-top: 1px solid var(--ena-line);
+    border-left: 0;
   }
 
   .ena3d-about-portrait {
@@ -1083,9 +1337,52 @@ body > .selectize-dropdown {
   }
 
   .ena3d-method-section,
+  .ena3d-papers-hero,
+  .ena3d-papers-library,
   .ena3d-about-page {
     padding-right: 1.3rem;
     padding-left: 1.3rem;
+  }
+
+  .ena3d-papers-hero {
+    padding-top: 4rem;
+    padding-bottom: 4rem;
+    gap: 2.5rem;
+  }
+
+  .ena3d-papers-hero h1 {
+    font-size: clamp(2.8rem, 14vw, 4.1rem);
+  }
+
+  .ena3d-papers-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .ena3d-paper-card {
+    padding: 2.5rem 0;
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "meta"
+      "title"
+      "citation"
+      "actions";
+    gap: 1.5rem;
+  }
+
+  .ena3d-paper-card-header {
+    align-items: center;
+    flex-direction: row;
+  }
+
+  .ena3d-paper-number {
+    font-size: 2.4rem;
+  }
+
+  .ena3d-citation {
+    padding-left: 1.5rem;
+    text-indent: -1.5rem;
   }
 
   .ena3d-method-grid li {
