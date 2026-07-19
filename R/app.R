@@ -35,6 +35,7 @@ library(data.table)
 library(shiny)
 library(R6)
 library(rENA)
+.ena3d_source('inline_ui.R')
 .ena3d_source('security_utils.R')
 .ena3d_source('qwen_client.R')
 .ena3d_source('ai_evidence.R')
@@ -763,11 +764,36 @@ options(
   )
 )
 
-# Build and pre-render the document before the HTTP server accepts traffic.
-# Container platforms can route dependency requests to a newly started
-# instance before that instance has served its first page request. Shiny
-# registers generated htmlDependency resource paths while rendering, so the
-# eager render ensures every instance can serve those requests immediately.
-app_ui_document <- app_ui()
-invisible(shiny:::renderPage(app_ui_document))
-shinyApp(app_ui_document, app_server)
+inline_assets <- tolower(Sys.getenv("ENA3D_INLINE_ASSETS", unset = "false")) %in%
+  c("1", "true", "yes", "on")
+
+if (inline_assets) {
+  prebuilt_ui_path <- Sys.getenv("ENA3D_PREBUILT_UI_PATH", unset = "")
+  if (nzchar(prebuilt_ui_path) && file.exists(prebuilt_ui_path)) {
+    app_ui_html <- readChar(
+      prebuilt_ui_path,
+      nchars = file.info(prebuilt_ui_path)$size,
+      useBytes = TRUE
+    )
+  } else {
+    app_ui_html <- ena3d_render_inline_ui(
+      app_ui(),
+      file.path(.ena3d_app_dir, "www")
+    )
+  }
+
+  app_ui_handler <- local({
+    content <- app_ui_html
+    function(request) {
+      shiny:::httpResponse(
+        status = 200L,
+        content = content,
+        headers = list("Cache-Control" = "no-store")
+      )
+    }
+  })
+  attr(app_ui_handler, "http_methods_supported") <- "GET"
+  shinyApp(app_ui_handler, app_server)
+} else {
+  shinyApp(app_ui(), app_server)
+}

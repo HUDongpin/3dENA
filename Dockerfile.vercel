@@ -9,6 +9,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     ENA3D_APP_VERSION=${ENA3D_APP_VERSION} \
     ENA3D_PROJECT_ROOT=/opt/ena3d \
     ENA3D_AI_ENABLED=false \
+    ENA3D_INLINE_ASSETS=true \
+    ENA3D_PREBUILT_UI_PATH=/opt/ena3d/inline-ui.html \
     ENA3D_MAX_REQUEST_BYTES=5242880 \
     ENA3D_MAX_EXCHANGE_FILE_BYTES=2097152 \
     ENA3D_MAX_RAW_FILE_BYTES=5242880 \
@@ -65,6 +67,8 @@ COPY R ./R
 COPY images ./images
 COPY sample_data ./sample_data
 COPY README.md TRAJECTORY_ANALYSIS.md LICENSE VERSION ./
+
+RUN ENA3D_PREBUILT_UI_PATH= Rscript -e 'source("/opt/ena3d/R/app.R"); bytes <- nchar(app_ui_html, type="bytes"); stopifnot(bytes < 4 * 1024^2); writeChar(app_ui_html, "/opt/ena3d/inline-ui.html", eos=NULL, useBytes=TRUE); message("Prebuilt inline UI: ", bytes, " bytes")'
 
 RUN groupadd --system --gid 10001 ena3d \
     && useradd --system --uid 10001 --gid ena3d --home /home/ena3d ena3d \
