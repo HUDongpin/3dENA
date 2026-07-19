@@ -164,6 +164,45 @@ test("home foregrounds trajectory analysis in a compact responsive hero", async 
   );
 });
 
+test("papers page exposes three verified copy-ready APA citations", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await waitForShinyIdle(page);
+
+  const papersTab = page.locator('#site_nav a[data-value="papers"]');
+  if (!(await papersTab.isVisible())) {
+    await page.getByRole("button", { name: "Toggle navigation" }).click();
+  }
+  await papersTab.click();
+  await expect(papersTab).toHaveAttribute("aria-selected", "true");
+  await expect(
+    page.getByRole("heading", { name: "Cite the work behind 3D ENA." })
+  ).toBeVisible();
+
+  const paperCards = page.locator(".ena3d-paper-card");
+  await expect(paperCards).toHaveCount(3);
+  await expect(page.locator(".ena3d-paper-card-featured")).toContainText(
+    "FOUNDATIONAL METHOD"
+  );
+  await expect(page.locator(".ena3d-copy-citation")).toHaveCount(3);
+
+  const methodCopy = page.locator(".ena3d-copy-citation").first();
+  await methodCopy.click();
+  await expect(methodCopy).toHaveText("Copied");
+  const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
+  expect(clipboardText).toContain("Yu, J., Hu, D., & Wang, C.-H. (2024).");
+  expect(clipboardText).toContain("10.1007/978-3-031-76335-9_11");
+
+  const dimensions = await page.evaluate(() => ({
+    viewportWidth: window.innerWidth,
+    documentWidth: document.documentElement.scrollWidth,
+  }));
+  expect(dimensions.documentWidth).toBeLessThanOrEqual(dimensions.viewportWidth);
+});
+
 test("trusted sample traverses every model view and trajectory controls", async ({
   page,
   request,

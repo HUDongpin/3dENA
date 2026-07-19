@@ -574,6 +574,11 @@ app_ui <- function(){
         )
       ),
       tabPanel(
+        title = "PAPERS",
+        value = "papers",
+        ena3d_papers_ui()
+      ),
+      tabPanel(
         title = "ABOUT",
         value = "about",
         ena3d_about_ui()
@@ -690,6 +695,58 @@ app_ui <- function(){
           window.setTimeout(function () {
             window.dispatchEvent(new Event('resize'));
           }, 50);
+        });
+
+        const writeCitationToClipboard = function (text) {
+          const writeWithSelection = function () {
+            return new Promise(function (resolve, reject) {
+              const textarea = document.createElement('textarea');
+              textarea.value = text;
+              textarea.setAttribute('readonly', '');
+              textarea.style.position = 'fixed';
+              textarea.style.opacity = '0';
+              document.body.appendChild(textarea);
+              textarea.select();
+              const copied = document.execCommand('copy');
+              textarea.remove();
+              if (copied) resolve();
+              else reject(new Error('Clipboard copy was not available.'));
+            });
+          };
+          if (navigator.clipboard && window.isSecureContext) {
+            return navigator.clipboard.writeText(text).catch(writeWithSelection);
+          }
+          return writeWithSelection();
+        };
+
+        document.addEventListener('click', function (event) {
+          const button = event.target.closest('.ena3d-copy-citation');
+          if (!button) return;
+          const citation = document.getElementById(
+            button.getAttribute('data-citation-target')
+          );
+          if (!citation) return;
+          const citationText = citation.getAttribute('data-citation-text') ||
+            citation.textContent.trim();
+          const defaultAriaLabel = button.getAttribute('aria-label');
+          writeCitationToClipboard(citationText).then(function () {
+            window.clearTimeout(button.ena3dCopyResetTimer);
+            button.textContent = 'Copied';
+            button.setAttribute('aria-label', 'APA citation copied');
+            button.classList.add('is-copied');
+            button.ena3dCopyResetTimer = window.setTimeout(function () {
+              button.textContent = button.getAttribute('data-default-label') || 'Copy APA';
+              button.setAttribute('aria-label', defaultAriaLabel);
+              button.classList.remove('is-copied');
+            }, 2200);
+          }).catch(function () {
+            button.textContent = 'Select citation to copy';
+            button.setAttribute(
+              'aria-label',
+              'Clipboard copy unavailable; select the citation to copy'
+            );
+            citation.focus();
+          });
         });
       })();")
     )
