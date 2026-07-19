@@ -1,4 +1,4 @@
-# ENA 3D exchange format v1.
+# 3D ENA exchange format v1.
 #
 # This module intentionally accepts only JSON scalar data. It never evaluates
 # expressions or deserializes native R objects. Class markers needed by rENA

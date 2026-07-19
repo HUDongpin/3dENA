@@ -241,6 +241,55 @@ ena3d_paired_wilcox <- function(points, group_var, group1, group2, id_var,
 }
 
 stats_module <- function(input, output, session, rv_data, config, state) {
+  ai_result <- reactiveVal(NULL)
+
+  aggregate_result <- function(result, adjusted_p, summary = NULL,
+                               paired = FALSE) {
+    if (inherits(result, "error") || !is.list(result)) return(result)
+    if (is.null(summary)) summary <- result$summary
+    pairs <- if (isTRUE(paired)) result$pairs else NULL
+    list(
+      statistic = result$statistic,
+      p_value = result$p_value,
+      p_adjusted = adjusted_p,
+      effect_size = result$effect_size,
+      conf = result$conf,
+      conf_level = result$conf_level,
+      test_type = if (!is.null(result$test_type)) {
+        result$test_type
+      } else {
+        result$method
+      },
+      alternative = result$alternative,
+      status = result$status,
+      n_group1 = if (is.list(pairs)) pairs$n_group1 else NULL,
+      n_group2 = if (is.list(pairs)) pairs$n_group2 else NULL,
+      n_pairs = if (is.list(pairs)) pairs$n_pairs else NULL,
+      summary = summary
+    )
+  }
+
+  build_paired_summary <- function(result) {
+    pairs <- result$pairs
+    data.frame(
+      Statistic = c(
+        "Median", "Matched N", "Non-zero pairs", "Unmatched finite IDs",
+        "Dropped invalid values", "Dropped missing/blank IDs"
+      ),
+      Group1 = c(
+        stats::median(pairs$data$group1_value), pairs$n_pairs,
+        result$nonzero_pairs, pairs$unmatched_group1,
+        pairs$dropped_value_group1, pairs$dropped_id_group1
+      ),
+      Group2 = c(
+        stats::median(pairs$data$group2_value), pairs$n_pairs,
+        result$nonzero_pairs, pairs$unmatched_group2,
+        pairs$dropped_value_group2, pairs$dropped_id_group2
+      ),
+      check.names = FALSE
+    )
+  }
+
   format_number <- function(value) {
     if (is.null(value) || length(value) != 1L || !is.finite(value)) {
       return("Not estimable")
@@ -348,9 +397,11 @@ stats_module <- function(input, output, session, rv_data, config, state) {
     list(
       input$x, input$y, input$z, input$stats_group1, input$stats_group2,
       input$stats_pair_id, input$stats_paired_alternative,
-      input$stats_design, input$stats_p_adjust_method, rv_data$initialized
+      input$stats_design, input$stats_p_adjust_method,
+      input$stats_test_family, rv_data$initialized
     )
   }, {
+    ai_result(NULL)
     req(rv_data$initialized, state$ena_obj, input$x, input$y, input$z,
         input$stats_group1, input$stats_group2)
     points <- as.data.frame(state$ena_obj$points)
@@ -365,6 +416,15 @@ stats_module <- function(input, output, session, rv_data, config, state) {
     ]
     axes <- c(input$x, input$y, input$z)
     design <- if (is.null(input$stats_design)) "" else input$stats_design
+    test_family <- input$stats_test_family
+    if (is.null(test_family) || length(test_family) != 1L ||
+        is.na(test_family) || !nzchar(test_family)) {
+      test_family <- if (identical(design, "within")) {
+        "signed_rank"
+      } else {
+        "welch"
+      }
+    }
     adjustment_method <- if (is.null(input$stats_p_adjust_method) ||
                              !nzchar(input$stats_p_adjust_method)) {
       "holm"
@@ -465,6 +525,31 @@ stats_module <- function(input, output, session, rv_data, config, state) {
       output$stats_pair_status <- renderText(
         "Pairing is not used for an independent-groups design."
       )
+      selected_results <- switch(
+        test_family,
+        rank_sum = wilcox_results,
+        welch = t_results,
+        NULL
+      )
+      selected_adjusted <- switch(
+        test_family,
+        rank_sum = wilcox_adjusted,
+        welch = t_adjusted,
+        NULL
+      )
+      if (!is.null(selected_results)) {
+        aggregate <- lapply(seq_along(axes), function(index) {
+          aggregate_result(
+            selected_results[[index]], selected_adjusted[[index]]
+          )
+        })
+        names(aggregate) <- axes
+        ai_result(list(
+          design = "unpaired",
+          test_family = test_family,
+          results = aggregate
+        ))
+      }
       return(invisible(NULL))
     }
 
@@ -501,29 +586,13 @@ stats_module <- function(input, output, session, rv_data, config, state) {
         )
       } else {
         pairs <- paired$pairs
-        paired_summary <- data.frame(
-          Statistic = c(
-            "Median", "Matched N", "Non-zero pairs", "Unmatched finite IDs",
-            "Dropped invalid values", "Dropped missing/blank IDs"
-          ),
-          Group1 = c(
-            stats::median(pairs$data$group1_value), pairs$n_pairs,
-            paired$nonzero_pairs, pairs$unmatched_group1,
-            pairs$dropped_value_group1, pairs$dropped_id_group1
-          ),
-          Group2 = c(
-            stats::median(pairs$data$group2_value), pairs$n_pairs,
-            paired$nonzero_pairs, pairs$unmatched_group2,
-            pairs$dropped_value_group2, pairs$dropped_id_group2
-          ),
-          check.names = FALSE
-        )
+        paired_summary_frame <- build_paired_summary(paired)
         paired$conf <- NULL
         paired$conf_level <- NULL
         paired$test_type <- sprintf("Paired Wilcoxon V (%s)", paired$alternative)
         render_result_or_error(
           axes[[i]], all_box_ids("paired")[[i]], paired, adjusted[[i]],
-          adjustment_method, statistic_dataframe = paired_summary,
+          adjustment_method, statistic_dataframe = paired_summary_frame,
           status = paired$status
         )
       }
@@ -551,5 +620,24 @@ stats_module <- function(input, output, session, rv_data, config, state) {
         )
       }
     })
+    if (identical(test_family, "signed_rank")) {
+      aggregate <- lapply(seq_along(axes), function(index) {
+        result <- paired_results[[index]]
+        summary <- if (inherits(result, "error")) NULL else {
+          build_paired_summary(result)
+        }
+        aggregate_result(
+          result, adjusted[[index]], summary = summary, paired = TRUE
+        )
+      })
+      names(aggregate) <- axes
+      ai_result(list(
+        design = "paired",
+        test_family = "signed_rank",
+        results = aggregate
+      ))
+    }
   }, ignoreInit = TRUE)
+
+  reactive(ai_result())
 }

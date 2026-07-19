@@ -8,6 +8,7 @@ required_packages <- c(
   "scales",
   "digest",
   "jsonlite",
+  "curl",
   "readxl",
   "zip",
   "callr",
@@ -22,7 +23,7 @@ missing_packages <- required_packages[
 if (length(missing_packages) > 0L) {
   stop(
     sprintf(
-      "Missing required packages: %s. Install them before starting ENA 3D; the app no longer modifies the R library at startup.",
+      "Missing required packages: %s. Install them before starting 3D ENA; the app no longer modifies the R library at startup.",
       paste(missing_packages, collapse = ", ")
     ),
     call. = FALSE

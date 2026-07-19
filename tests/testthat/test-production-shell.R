@@ -46,8 +46,10 @@ test_that("app.R uses one rooted source path and no duplicate server modules", {
 test_that("production artifacts pin the runtime and 3dena.com proxy", {
   required <- c(
     "VERSION", "renv.lock", "Dockerfile", "compose.production.yaml",
-    "DEPLOYMENT.md", ".gitignore", ".dockerignore", ".Rprofile",
+    "compose.qwen.yaml", "DEPLOYMENT.md", ".env.example", ".gitignore",
+    ".dockerignore", ".Rprofile",
     file.path("renv", "activate.R"),
+    file.path("docs", "AI_INTERPRETATION.md"),
     file.path("docs", "ENA3D_EXCHANGE_V1.md"),
     file.path("docs", "ena3d-exchange-v1.schema.json"),
     file.path("tools", "convert_trusted_rdata_to_ena3d_json.R"),
@@ -61,10 +63,13 @@ test_that("production artifacts pin the runtime and 3dena.com proxy", {
   expect_identical(lock$Packages$shiny$Version, "1.9.1")
   expect_identical(lock$Packages$zip$Version, "2.3.1")
   expect_identical(lock$Packages$readxl$Version, "1.4.3")
+  expect_identical(lock$Packages$curl$Version, "6.0.0")
 
   dockerfile <- .read_project_file("Dockerfile")
   dockerignore <- .read_project_file(".dockerignore")
   compose <- .read_project_file("compose.production.yaml")
+  qwen_compose <- .read_project_file("compose.qwen.yaml")
+  env_example <- .read_project_file(".env.example")
   nginx <- .read_project_file("deploy", "nginx", "3dena.com.conf.example")
   expect_match(dockerfile, "USER ena3d:ena3d", fixed = TRUE)
   expect_match(dockerfile, "R_LIBS_USER=/opt/renv/library", fixed = TRUE)
@@ -79,12 +84,42 @@ test_that("production artifacts pin the runtime and 3dena.com proxy", {
   expect_false(any(trimws(strsplit(dockerignore, "\n", fixed = TRUE)[[1L]]) ==
                    "images"))
   expect_match(dockerfile, "/ena3d-health/healthz.json", fixed = TRUE)
+  expect_match(dockerfile, 'requireNamespace("curl", quietly=TRUE)',
+               fixed = TRUE)
   expect_match(compose, "read_only: true", fixed = TRUE)
   expect_match(compose, '"127.0.0.1:3838:3838"', fixed = TRUE)
   expect_match(compose, 'ENA3D_MAX_EXCHANGE_FILE_BYTES: "2097152"',
                fixed = TRUE)
   expect_match(compose, 'ENA3D_MAX_RAW_FILE_BYTES: "5242880"',
                fixed = TRUE)
+  expect_match(compose, 'ENA3D_AI_ENABLED: "false"', fixed = TRUE)
+  expect_false(grepl("DASHSCOPE_API_KEY", compose, fixed = TRUE))
+  expect_match(qwen_compose, 'ENA3D_AI_ENABLED: "true"', fixed = TRUE)
+  expect_match(
+    qwen_compose,
+    'ENA3D_QWEN_MODEL: ${ENA3D_QWEN_MODEL:-qwen3.7-max-2026-06-08}',
+    fixed = TRUE
+  )
+  expect_match(qwen_compose, "ENA3D_QWEN_MAX_COMPLETION_TOKENS", fixed = TRUE)
+  expect_match(qwen_compose, "ENA3D_QWEN_THINKING_BUDGET", fixed = TRUE)
+  expect_false(grepl("ENA3D_QWEN_MAX_TOKENS", qwen_compose, fixed = TRUE))
+  expect_match(
+    qwen_compose,
+    "DASHSCOPE_API_KEY_FILE: /run/secrets/dashscope_api_key",
+    fixed = TRUE
+  )
+  expect_match(qwen_compose, "ENA3D_DASHSCOPE_SECRET_FILE", fixed = TRUE)
+  expect_false(grepl("DASHSCOPE_API_KEY:", qwen_compose, fixed = TRUE))
+  expect_match(env_example, "ENA3D_AI_ENABLED=false", fixed = TRUE)
+  expect_match(
+    env_example, "ENA3D_QWEN_MODEL=qwen3.7-max-2026-06-08", fixed = TRUE
+  )
+  expect_match(
+    env_example, "ENA3D_QWEN_MAX_COMPLETION_TOKENS=4096", fixed = TRUE
+  )
+  expect_match(env_example, "ENA3D_QWEN_THINKING_BUDGET=1536", fixed = TRUE)
+  expect_false(grepl("ENA3D_QWEN_MAX_TOKENS", env_example, fixed = TRUE))
+  expect_false(grepl("DASHSCOPE_API_KEY=", env_example, fixed = TRUE))
   expect_match(nginx, "server_name 3dena.com;", fixed = TRUE)
   expect_match(nginx, "server_name 3dena.com www.3dena.com;", fixed = TRUE)
   expect_match(nginx, "server_name www.3dena.com;", fixed = TRUE)

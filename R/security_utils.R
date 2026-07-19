@@ -1,4 +1,4 @@
-# Security and production-boundary helpers for ENA 3D.
+# Security and production-boundary helpers for 3D ENA.
 #
 # Native R serialization is an executable object format.  These helpers do not
 # attempt to make arbitrary .RData files safe; they make the trust boundary

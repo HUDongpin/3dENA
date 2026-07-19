@@ -7,7 +7,7 @@ if (is.na(script_file)) {
 }
 
 if (!file.exists(file.path(project_root, "R", "app.R"))) {
-  stop("Could not locate the ENA 3D project root.", call. = FALSE)
+  stop("Could not locate the 3D ENA project root.", call. = FALSE)
 }
 
 source_roots <- file.path(project_root, c("R", "tests", "tools"))

@@ -2,7 +2,7 @@
   "name": "ena-3d-browser-smoke",
   "version": "0.1.0",
   "private": true,
-  "description": "Browser smoke tests for the ENA 3D Shiny application.",
+  "description": "Browser smoke tests for the 3D ENA Shiny application.",
   "engines": {
     "node": ">=20"
   },

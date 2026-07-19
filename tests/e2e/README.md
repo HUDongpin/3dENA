@@ -1,4 +1,4 @@
-# ENA 3D browser smoke tests
+# 3D ENA browser smoke tests
 
 These tests start the local Shiny app and exercise the reviewed, bundled
 `newfrat_enaset.Rdata` sample in Chromium at desktop width, a 768-pixel tablet

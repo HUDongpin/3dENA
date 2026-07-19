@@ -1,0 +1,622 @@
+/* AI interpretation is intentionally scoped to the 3D ENA tool page. */
+.ena3d-tool-page .ena-ai-root,
+.ena3d-tool-page .ena-ai-root * {
+  box-sizing: border-box;
+}
+
+.ena3d-tool-page .ena-ai-root {
+  width: 100%;
+  font-family: var(--ena-sans, Inter, ui-sans-serif, sans-serif);
+}
+
+.ena3d-tool-page .ena-ai-toggle {
+  width: 100%;
+  min-height: 2.55rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--ena-cyan-dark, #087f85);
+  border-radius: 0;
+  color: #fff;
+  background: var(--ena-cyan-dark, #087f85);
+  font-size: var(--ena-type-ui, 0.9375rem);
+  font-weight: 800;
+  letter-spacing: 0.035em;
+  white-space: normal;
+}
+
+.ena3d-tool-page .ena-ai-toggle:hover,
+.ena3d-tool-page .ena-ai-toggle:focus-visible {
+  border-color: var(--ena-ink-deep, #071d2f);
+  color: #fff;
+  background: var(--ena-ink, #102a43);
+}
+
+.ena3d-tool-page .ena-ai-toggle:focus-visible,
+.ena3d-tool-page .ena-ai-drawer button:focus-visible,
+.ena3d-tool-page .ena-ai-drawer input:focus-visible,
+.ena3d-tool-page .ena-ai-drawer textarea:focus-visible,
+.ena3d-tool-page .ena-ai-request-preview:focus-visible,
+.ena3d-tool-page .ena-ai-title:focus-visible {
+  outline: 3px solid var(--ena-gold, #d89a2b);
+  outline-offset: 3px;
+}
+
+.ena3d-tool-page .ena-ai-backdrop {
+  position: fixed;
+  z-index: 1054;
+  inset: 0;
+  visibility: hidden;
+  opacity: 0;
+  background: rgba(7, 29, 47, 0.54);
+  pointer-events: none;
+  transition: opacity 180ms ease, visibility 180ms ease;
+}
+
+.ena3d-tool-page .ena-ai-backdrop.is-open {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.ena3d-tool-page .ena-ai-drawer {
+  position: fixed;
+  z-index: 1055;
+  top: 0;
+  right: 0;
+  display: grid;
+  visibility: hidden;
+  width: min(42rem, 46vw);
+  height: 100vh;
+  height: 100dvh;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  color: var(--ena-ink, #102a43);
+  background: var(--ena-paper-light, #fbfaf6);
+  border-left: 1px solid var(--ena-line, rgba(16, 42, 67, 0.17));
+  box-shadow: -18px 0 48px rgba(7, 29, 47, 0.2);
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  transform: translateX(102%);
+  transition: transform 220ms ease, opacity 180ms ease, visibility 220ms ease;
+}
+
+.ena3d-tool-page .ena-ai-drawer.is-open {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
+}
+
+body.ena-ai-drawer-open {
+  overflow: hidden;
+}
+
+.ena3d-tool-page .ena-ai-header {
+  display: flex;
+  min-width: 0;
+  padding: 1.1rem 1.2rem;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--ena-line, rgba(16, 42, 67, 0.17));
+  background: rgba(251, 250, 246, 0.98);
+}
+
+.ena3d-tool-page .ena-ai-header-copy {
+  min-width: 0;
+}
+
+.ena3d-tool-page .ena-ai-kicker {
+  margin: 0 0 0.3rem;
+  color: var(--ena-cyan-dark, #087f85);
+  font-size: var(--ena-type-meta, 0.8125rem);
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.ena3d-tool-page .ena-ai-title {
+  margin: 0;
+  color: var(--ena-ink-deep, #071d2f);
+  font-family: var(--ena-serif, Georgia, serif);
+  font-size: clamp(1.55rem, 3vw, 2rem);
+  font-weight: 400;
+  line-height: 1.1;
+}
+
+.ena3d-tool-page .ena-ai-close {
+  display: grid;
+  width: 2.6rem;
+  height: 2.6rem;
+  padding: 0;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--ena-line, rgba(16, 42, 67, 0.17));
+  border-radius: 50%;
+  color: var(--ena-ink, #102a43);
+  background: transparent;
+  font-size: 1.75rem;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.ena3d-tool-page .ena-ai-close:hover {
+  border-color: var(--ena-ink, #102a43);
+  color: #fff;
+  background: var(--ena-ink, #102a43);
+}
+
+.ena3d-tool-page .ena-ai-scope-row {
+  display: flex;
+  min-width: 0;
+  margin-top: 0.65rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: var(--ena-type-small, 0.875rem);
+}
+
+.ena3d-tool-page .ena-ai-scope-label {
+  color: var(--ena-muted, #526777);
+  font-weight: 700;
+}
+
+.ena3d-tool-page .ena-ai-scope,
+.ena3d-tool-page .ena-ai-status-summary {
+  min-width: 0;
+  padding: 0.16rem 0.48rem;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--ena-line, rgba(16, 42, 67, 0.17));
+  background: rgba(43, 187, 192, 0.1);
+  font-weight: 700;
+}
+
+.ena3d-tool-page .ena-ai-status-summary:empty,
+.ena3d-tool-page .ena-ai-scope:empty {
+  display: none;
+}
+
+.ena3d-tool-page .ena-ai-scroll-region {
+  min-height: 0;
+  padding: 1.2rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.ena3d-tool-page .ena-ai-stale-notice {
+  display: none;
+  margin-bottom: 1rem;
+  padding: 0.8rem 0.9rem;
+  border-left: 4px solid var(--ena-gold, #d89a2b);
+  color: var(--ena-ink, #102a43);
+  background: rgba(216, 154, 43, 0.13);
+  font-size: var(--ena-type-small, 0.875rem);
+}
+
+.ena3d-tool-page .ena-ai-root[data-stale="true"] .ena-ai-stale-notice {
+  display: block;
+}
+
+.ena3d-tool-page .ena-ai-stale-text {
+  margin-top: 0.2rem;
+}
+
+.ena3d-tool-page .ena-ai-controls {
+  padding-bottom: 1.1rem;
+  border-bottom: 1px solid var(--ena-line, rgba(16, 42, 67, 0.17));
+}
+
+.ena3d-tool-page .ena-ai-section-title,
+.ena3d-tool-page .ena-ai-state h3,
+.ena3d-tool-page .ena-ai-result-section h4 {
+  color: var(--ena-ink-deep, #071d2f);
+  font-weight: 750;
+}
+
+.ena3d-tool-page .ena-ai-section-title {
+  margin: 0 0 1rem;
+  font-family: var(--ena-serif, Georgia, serif);
+  font-size: 1.2rem;
+  font-weight: 400;
+}
+
+.ena3d-tool-page .ena-ai-controls .form-group {
+  margin-bottom: 1rem;
+}
+
+.ena3d-tool-page .ena-ai-controls .control-label,
+.ena3d-tool-page .ena-ai-controls > label {
+  margin-bottom: 0.45rem;
+  color: var(--ena-ink, #102a43);
+  font-size: var(--ena-type-ui, 0.9375rem);
+  font-weight: 750;
+}
+
+.ena3d-tool-page .ena-ai-mode .shiny-options-group,
+.ena3d-tool-page .ena-ai-language .shiny-options-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.ena3d-tool-page .ena-ai-mode .radio-inline,
+.ena3d-tool-page .ena-ai-language .radio-inline,
+.ena3d-tool-page .ena-ai-mode .form-check-inline,
+.ena3d-tool-page .ena-ai-language .form-check-inline {
+  margin: 0;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--ena-line, rgba(16, 42, 67, 0.17));
+  background: #fff;
+}
+
+.ena3d-tool-page .ena-ai-mode-help {
+  display: grid;
+  margin: -0.4rem 0 1rem;
+  gap: 0.25rem;
+  color: var(--ena-muted, #526777);
+  font-size: var(--ena-type-meta, 0.8125rem);
+  line-height: 1.45;
+}
+
+.ena3d-tool-page .ena-ai-controls textarea {
+  width: 100%;
+  min-height: 7rem;
+  border: 1px solid var(--ena-line, rgba(16, 42, 67, 0.25));
+  border-radius: 0;
+  color: var(--ena-ink-deep, #071d2f);
+  background: #fff;
+  box-shadow: none;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.ena3d-tool-page .ena-ai-field-help {
+  margin: 0;
+  color: var(--ena-muted, #526777);
+  font-size: var(--ena-type-meta, 0.8125rem);
+  line-height: 1.45;
+}
+
+.ena3d-tool-page .ena-ai-controls [id$="-research_context_help"] {
+  display: flex;
+  margin: -0.55rem 0 1rem;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.ena3d-tool-page .ena-ai-context-count {
+  flex: 0 0 auto;
+  color: var(--ena-ink, #102a43);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.ena3d-tool-page .ena-ai-preview-toggle {
+  width: 100%;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--ena-ink, #102a43);
+  border-radius: 0;
+  color: var(--ena-ink, #102a43);
+  background: transparent;
+  font-size: var(--ena-type-ui, 0.9375rem);
+  font-weight: 750;
+}
+
+.ena3d-tool-page .ena-ai-preview-toggle:hover {
+  color: #fff;
+  background: var(--ena-ink, #102a43);
+}
+
+.ena3d-tool-page .ena-ai-preview-panel {
+  margin-top: 0.75rem;
+  padding: 0.85rem;
+  border: 1px solid var(--ena-line, rgba(16, 42, 67, 0.17));
+  background: #fff;
+}
+
+.ena3d-tool-page .ena-ai-preview-panel[hidden] {
+  display: none !important;
+}
+
+.ena3d-tool-page .ena-ai-preview-panel h4 {
+  margin: 0 0 0.2rem;
+  font-size: var(--ena-type-ui, 0.9375rem);
+  font-weight: 800;
+}
+
+.ena3d-tool-page .ena-ai-request-preview {
+  max-height: 17rem;
+  margin: 0.65rem 0 0;
+  padding: 0.8rem;
+  overflow: auto;
+  border: 1px solid var(--ena-line, rgba(16, 42, 67, 0.17));
+  border-radius: 0;
+  color: #eef7f7;
+  background: var(--ena-ink-deep, #071d2f);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ena3d-tool-page .ena-ai-consent-card {
+  margin-top: 0.9rem;
+  padding: 0.85rem;
+  border: 1px solid rgba(8, 127, 133, 0.35);
+  background: rgba(43, 187, 192, 0.09);
+}
+
+.ena3d-tool-page .ena-ai-privacy-notice {
+  margin: 0 0 0.7rem;
+  color: var(--ena-muted, #526777);
+  font-size: var(--ena-type-small, 0.875rem);
+  line-height: 1.5;
+}
+
+.ena3d-tool-page .ena-ai-consent-card .form-group,
+.ena3d-tool-page .ena-ai-consent-card .checkbox,
+.ena3d-tool-page .ena-ai-consent-card .form-check {
+  margin: 0;
+}
+
+.ena3d-tool-page .ena-ai-consent-card label {
+  color: var(--ena-ink-deep, #071d2f);
+  font-size: var(--ena-type-small, 0.875rem);
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.ena3d-tool-page .ena-ai-state-region {
+  padding-top: 1.1rem;
+}
+
+.ena3d-tool-page .ena-ai-state {
+  display: none;
+}
+
+.ena3d-tool-page .ena-ai-root[data-state="idle"] .ena-ai-empty-state,
+.ena3d-tool-page .ena-ai-root[data-state="loading"] .ena-ai-loading-state,
+.ena3d-tool-page .ena-ai-root[data-state="ready"] .ena-ai-result,
+.ena3d-tool-page .ena-ai-root[data-state="error"] .ena-ai-error-state,
+.ena3d-tool-page .ena-ai-root[data-state="disabled"] .ena-ai-disabled-state {
+  display: block;
+}
+
+.ena3d-tool-page .ena-ai-empty-state,
+.ena3d-tool-page .ena-ai-disabled-state,
+.ena3d-tool-page .ena-ai-loading-state,
+.ena3d-tool-page .ena-ai-error-state {
+  padding: 1rem;
+  border: 1px solid var(--ena-line, rgba(16, 42, 67, 0.17));
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.ena3d-tool-page .ena-ai-state h3 {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+}
+
+.ena3d-tool-page .ena-ai-state p,
+.ena3d-tool-page .ena-ai-state .ena-ai-output-text {
+  margin: 0;
+  color: var(--ena-muted, #526777);
+  line-height: 1.55;
+}
+
+.ena3d-tool-page .ena-ai-loading-state {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.ena3d-tool-page .ena-ai-root[data-state="loading"] .ena-ai-loading-state {
+  display: grid;
+}
+
+.ena3d-tool-page .ena-ai-spinner {
+  width: 1.8rem;
+  height: 1.8rem;
+  border: 3px solid rgba(8, 127, 133, 0.22);
+  border-top-color: var(--ena-cyan-dark, #087f85);
+  border-radius: 50%;
+  animation: ena-ai-spin 0.75s linear infinite;
+}
+
+@keyframes ena-ai-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.ena3d-tool-page .ena-ai-error-state {
+  border-left: 4px solid var(--ena-coral, #d36f52);
+  background: rgba(211, 111, 82, 0.1);
+}
+
+.ena3d-tool-page .ena-ai-result-header {
+  margin-bottom: 0.9rem;
+}
+
+.ena3d-tool-page .ena-ai-result-header h3 {
+  margin: 0;
+  font-family: var(--ena-serif, Georgia, serif);
+  font-size: 1.4rem;
+  font-weight: 400;
+}
+
+.ena3d-tool-page .ena-ai-result-meta {
+  margin-top: 0.3rem;
+  color: var(--ena-muted, #526777);
+  font-size: var(--ena-type-meta, 0.8125rem);
+}
+
+.ena3d-tool-page .ena-ai-result-section {
+  padding: 0.85rem 0;
+  border-top: 1px solid var(--ena-line, rgba(16, 42, 67, 0.17));
+}
+
+.ena3d-tool-page .ena-ai-result-section h4 {
+  margin: 0 0 0.35rem;
+  font-size: var(--ena-type-meta, 0.8125rem);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ena3d-tool-page .ena-ai-result-headline .ena-ai-output-text {
+  color: var(--ena-ink-deep, #071d2f);
+  font-family: var(--ena-serif, Georgia, serif);
+  font-size: 1.12rem;
+  line-height: 1.5;
+}
+
+.ena3d-tool-page .ena-ai-output-text {
+  min-width: 0;
+  color: var(--ena-ink, #102a43);
+  font-size: var(--ena-type-ui, 0.9375rem);
+  line-height: 1.6;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.ena3d-tool-page .ena-ai-disclaimer {
+  margin: 1rem 0 0;
+  padding: 0.75rem;
+  border-left: 3px solid var(--ena-gold, #d89a2b);
+  color: var(--ena-muted, #526777);
+  background: rgba(216, 154, 43, 0.09);
+  font-size: var(--ena-type-meta, 0.8125rem);
+  line-height: 1.5;
+}
+
+.ena3d-tool-page .ena-ai-footer {
+  display: flex;
+  padding: 0.9rem 1.2rem;
+  align-items: center;
+  gap: 0.65rem;
+  border-top: 1px solid var(--ena-line, rgba(16, 42, 67, 0.17));
+  background: rgba(251, 250, 246, 0.98);
+}
+
+.ena3d-tool-page .ena-ai-interpret-button,
+.ena3d-tool-page .ena-ai-cancel-button {
+  min-height: 2.75rem;
+  padding: 0.7rem 1rem;
+  border-radius: 0;
+  font-size: var(--ena-type-ui, 0.9375rem);
+  font-weight: 800;
+}
+
+.ena3d-tool-page .ena-ai-interpret-button {
+  flex: 1 1 auto;
+  border: 1px solid var(--ena-ink, #102a43);
+  color: #fff;
+  background: var(--ena-ink, #102a43);
+}
+
+.ena3d-tool-page .ena-ai-interpret-button:hover:not(:disabled) {
+  border-color: var(--ena-cyan-dark, #087f85);
+  color: #fff;
+  background: var(--ena-cyan-dark, #087f85);
+}
+
+.ena3d-tool-page .ena-ai-interpret-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.ena3d-tool-page .ena-ai-cancel-button {
+  display: none;
+  flex: 1 1 auto;
+  border: 1px solid var(--ena-coral, #d36f52);
+  color: var(--ena-ink-deep, #071d2f);
+  background: transparent;
+}
+
+.ena3d-tool-page .ena-ai-root[data-state="loading"] .ena-ai-interpret-button {
+  display: none;
+}
+
+.ena3d-tool-page .ena-ai-root[data-state="loading"] .ena-ai-cancel-button {
+  display: block;
+}
+
+.ena3d-tool-page .ena-ai-sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+@media (max-width: 991.98px) {
+  .ena3d-tool-page .ena-ai-drawer {
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    max-height: min(88vh, 52rem);
+    max-height: min(88dvh, 52rem);
+    border-top: 1px solid var(--ena-line, rgba(16, 42, 67, 0.17));
+    border-left: 0;
+    box-shadow: 0 -18px 48px rgba(7, 29, 47, 0.2);
+    transform: translateY(102%);
+  }
+
+  .ena3d-tool-page .ena-ai-drawer.is-open {
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 575.98px) {
+  .ena3d-tool-page .ena-ai-drawer {
+    max-height: 92vh;
+    max-height: 92dvh;
+  }
+
+  .ena3d-tool-page .ena-ai-header,
+  .ena3d-tool-page .ena-ai-scroll-region,
+  .ena3d-tool-page .ena-ai-footer {
+    padding-right: 0.85rem;
+    padding-left: 0.85rem;
+  }
+
+  .ena3d-tool-page .ena-ai-mode .shiny-options-group,
+  .ena3d-tool-page .ena-ai-language .shiny-options-group {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .ena3d-tool-page .ena-ai-language .shiny-options-group {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ena3d-tool-page .ena-ai-mode .radio-inline,
+  .ena3d-tool-page .ena-ai-language .radio-inline,
+  .ena3d-tool-page .ena-ai-mode .form-check-inline,
+  .ena3d-tool-page .ena-ai-language .form-check-inline {
+    min-width: 0;
+    text-align: center;
+  }
+
+  .ena3d-tool-page .ena-ai-controls [id$="-research_context_help"] {
+    display: grid;
+    gap: 0.25rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ena3d-tool-page .ena-ai-backdrop,
+  .ena3d-tool-page .ena-ai-drawer {
+    transition: none;
+  }
+
+  .ena3d-tool-page .ena-ai-spinner {
+    animation-duration: 1.5s;
+  }
+}

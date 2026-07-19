@@ -1,7 +1,7 @@
-# ENA 3D exchange format, version 1
+# 3D ENA exchange format, version 1
 
 `*.ena3d.json` is the only user-supplied dataset format accepted by the public
-ENA 3D application. It is a plain-data interchange format, not a native R
+3D ENA application. It is a plain-data interchange format, not a native R
 serialization format. The web worker reads it with `jsonlite`, applies the
 schema and resource checks below, constructs a new list-based `ena.set`, and
 then runs the application's normal `ena3d_validate_ena_object()` validator.

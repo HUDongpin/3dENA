@@ -4,7 +4,7 @@ library(testthat)
 .ui_regression_root <- .ui_regression_roots[file.exists(
   file.path(.ui_regression_roots, "R", "app_module_overall_model.R")
 )][1L]
-if (is.na(.ui_regression_root)) stop("Could not locate the ENA 3D project root.")
+if (is.na(.ui_regression_root)) stop("Could not locate the 3D ENA project root.")
 .ui_regression_root <- normalizePath(.ui_regression_root)
 
 .ui_regression_old_wd <- getwd()

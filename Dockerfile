@@ -40,7 +40,7 @@ COPY .Rprofile ./.Rprofile
 COPY renv/bootstrap.R ./renv/bootstrap.R
 COPY renv/activate.R ./renv/activate.R
 RUN Rscript renv/bootstrap.R
-RUN Rscript -e 'stopifnot(normalizePath("/opt/renv/library") %in% .libPaths()); stopifnot(requireNamespace("shiny", quietly=TRUE), requireNamespace("rENA", quietly=TRUE), requireNamespace("jsonlite", quietly=TRUE), requireNamespace("readxl", quietly=TRUE))'
+RUN Rscript -e 'stopifnot(normalizePath("/opt/renv/library") %in% .libPaths()); stopifnot(requireNamespace("shiny", quietly=TRUE), requireNamespace("rENA", quietly=TRUE), requireNamespace("jsonlite", quietly=TRUE), requireNamespace("readxl", quietly=TRUE), requireNamespace("curl", quietly=TRUE), requireNamespace("callr", quietly=TRUE), requireNamespace("later", quietly=TRUE), requireNamespace("promises", quietly=TRUE))'
 
 COPY R ./R
 COPY images ./images
