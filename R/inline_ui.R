@@ -18,6 +18,23 @@ ena3d_asset_mime_type <- function(path) {
   )
 }
 
+ena3d_vercel_analytics_tags <- function() {
+  htmltools::tagList(
+    shiny::tags$script(htmltools::HTML(
+      paste0(
+        "window.va = window.va || function () { ",
+        "(window.vaq = window.vaq || []).push(arguments); ",
+        "};"
+      )
+    )),
+    shiny::tags$script(
+      defer = NA,
+      src = "/_vercel/insights/script.js",
+      `data-analytics-provider` = "vercel"
+    )
+  )
+}
+
 ena3d_asset_data_uri <- function(path) {
   paste0(
     "data:",

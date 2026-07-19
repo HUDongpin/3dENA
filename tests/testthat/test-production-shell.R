@@ -29,6 +29,21 @@ test_that("application shell exposes build provenance and accessible controls", 
 })
 
 
+test_that("application shell includes Vercel Web Analytics", {
+  app_source <- .read_project_file("R", "app.R")
+  inline_source <- .read_project_file("R", "inline_ui.R")
+
+  expect_match(app_source, "ena3d_vercel_analytics_tags()", fixed = TRUE)
+  expect_match(inline_source, "window.va = window.va || function", fixed = TRUE)
+  expect_match(
+    inline_source,
+    "/_vercel/insights/script.js",
+    fixed = TRUE
+  )
+  expect_match(inline_source, "data-analytics-provider", fixed = TRUE)
+})
+
+
 test_that("app.R uses one rooted source path and no duplicate server modules", {
   source <- .read_project_file("R", "app.R")
 

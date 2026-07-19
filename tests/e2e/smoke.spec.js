@@ -8,6 +8,19 @@ const EXCHANGE_FIXTURE = path.join(
   "small-valid.ena3d.json"
 );
 
+test.beforeEach(async ({ page }) => {
+  // Vercel serves this platform route only on deployed environments. Fulfill it
+  // during localhost smoke tests so the expected development 404 is not
+  // mistaken for an application error.
+  await page.route("**/_vercel/insights/script.js", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/javascript",
+      body: "// Vercel Web Analytics test stub.\n",
+    })
+  );
+});
+
 function captureBrowserErrors(page) {
   const messages = [];
 
@@ -90,6 +103,11 @@ test("home foregrounds trajectory analysis in a compact responsive hero", async 
     name: "Make epistemic connections visible in three dimensions.",
   });
   const visual = page.locator(".ena3d-hero-visual");
+
+  await expect(
+    page.locator('script[src="/_vercel/insights/script.js"]')
+  ).toHaveCount(1);
+  expect(await page.evaluate(() => typeof window.va)).toBe("function");
 
   await expect(home).toBeVisible();
   await expect(heading).toBeVisible();

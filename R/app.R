@@ -201,6 +201,7 @@ app_ui <- function(){
       tags$meta(property = "og:url", content = "https://3dena.com/"),
       tags$meta(property = "og:image", content = "https://3dena.com/og.png"),
       tags$meta(name = "twitter:card", content = "summary_large_image"),
+      ena3d_vercel_analytics_tags(),
       tags$link(
         rel = "icon",
         type = "image/svg+xml",
