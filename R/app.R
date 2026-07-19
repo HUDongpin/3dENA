@@ -768,12 +768,19 @@ inline_assets <- tolower(Sys.getenv("ENA3D_INLINE_ASSETS", unset = "false")) %in
   c("1", "true", "yes", "on")
 
 if (inline_assets) {
+  ena3d_register_plotly_resources()
   prebuilt_ui_path <- Sys.getenv("ENA3D_PREBUILT_UI_PATH", unset = "")
   if (nzchar(prebuilt_ui_path) && file.exists(prebuilt_ui_path)) {
     app_ui_html <- readChar(
       prebuilt_ui_path,
       nchars = file.info(prebuilt_ui_path)$size,
       useBytes = TRUE
+    )
+    app_ui_html <- gsub(
+      "__ENA3D_BUILD_ID__",
+      config$build_id,
+      app_ui_html,
+      fixed = TRUE
     )
   } else {
     app_ui_html <- ena3d_render_inline_ui(

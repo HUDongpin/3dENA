@@ -68,7 +68,7 @@ COPY images ./images
 COPY sample_data ./sample_data
 COPY README.md TRAJECTORY_ANALYSIS.md LICENSE VERSION ./
 
-RUN ENA3D_PREBUILT_UI_PATH= Rscript -e 'source("/opt/ena3d/R/app.R"); bytes <- nchar(app_ui_html, type="bytes"); stopifnot(bytes < 4 * 1024^2); writeChar(app_ui_html, "/opt/ena3d/inline-ui.html", eos=NULL, useBytes=TRUE); message("Prebuilt inline UI: ", bytes, " bytes")'
+RUN ENA3D_BUILD_ID=__ENA3D_BUILD_ID__ ENA3D_PREBUILT_UI_PATH= Rscript -e 'source("/opt/ena3d/R/app.R"); bytes <- nchar(app_ui_html, type="bytes"); stopifnot(bytes < 4 * 1024^2); writeChar(app_ui_html, "/opt/ena3d/inline-ui.html", eos=NULL, useBytes=TRUE); message("Prebuilt inline UI: ", bytes, " bytes")'
 
 RUN groupadd --system --gid 10001 ena3d \
     && useradd --system --uid 10001 --gid ena3d --home /home/ena3d ena3d \

@@ -179,3 +179,17 @@ ena3d_render_inline_ui <- function(ui, www_dir) {
   html <- shiny:::renderPage(ui)
   ena3d_inline_ui_assets(html, www_dir)
 }
+
+ena3d_register_plotly_resources <- function() {
+  dependencies <- plotly::plot_ly(x = 0, y = 0)$dependencies
+  dependency <- dependencies[[which(vapply(
+    dependencies,
+    function(candidate) identical(candidate$name, "plotly-main"),
+    logical(1)
+  ))[[1L]]]]
+  dependency$src$file <- system.file(
+    dependency$src$file,
+    package = dependency$package
+  )
+  invisible(shiny:::createWebDependency(dependency))
+}
