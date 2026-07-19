@@ -763,9 +763,11 @@ options(
   )
 )
 
-# Build the document before the HTTP server accepts traffic. Container
-# platforms can route dependency requests to a newly started instance before
-# that instance has served its first page request. Eager construction ensures
-# every htmlDependency resource path is registered during process startup.
+# Build and pre-render the document before the HTTP server accepts traffic.
+# Container platforms can route dependency requests to a newly started
+# instance before that instance has served its first page request. Shiny
+# registers generated htmlDependency resource paths while rendering, so the
+# eager render ensures every instance can serve those requests immediately.
 app_ui_document <- app_ui()
+invisible(shiny:::renderPage(app_ui_document))
 shinyApp(app_ui_document, app_server)
