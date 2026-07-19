@@ -62,8 +62,30 @@ test_that("the versioned JSON health endpoint is reachable over HTTP", {
 
   health <- jsonlite::fromJSON(rawToChar(response$content))
   expect_identical(health$status, "ok")
-  expect_identical(health$app, "ENA 3D")
+  expect_identical(health$app, "3D ENA")
   expect_identical(health$version, "0.2.0-test")
   expect_identical(health$build, "health-smoke")
   expect_gte(health$trusted_samples, 1L)
+})
+
+
+test_that("invalid optional AI budgets fail closed without stopping ENA", {
+  skip_if_not_installed("processx")
+
+  result <- processx::run(
+    file.path(R.home("bin"), "Rscript"),
+    c("-e", "source('R/app.R'); stopifnot(!isTRUE(config$ai$available))"),
+    wd = .health_test_root,
+    env = c(
+      ENA3D_BUILD_ID = "health-ai-fail-closed",
+      ENA3D_APP_VERSION = "0.2.0-test",
+      ENA3D_AI_ENABLED = "false",
+      ENA3D_AI_MIN_CELL_N = "not-a-number"
+    ),
+    error_on_status = FALSE,
+    echo = FALSE,
+    timeout = 30
+  )
+
+  expect_identical(result$status, 0L, info = result$stderr)
 })

@@ -52,20 +52,24 @@ stats_ui <- function(id) {
     )),
     div(class = "stats-status", role = "status", textOutput(ns("stats_pair_status"))),
     tabsetPanel(
+      id = ns("stats_test_family"),
       tabPanel(
         "Welch t (independent)",
+        value = "welch",
         stats_box(ns("stats_box_x_axis"), "X-axis"), hr(),
         stats_box(ns("stats_box_y_axis"), "Y-axis"), hr(),
         stats_box(ns("stats_box_z_axis"), "Z-axis")
       ),
       tabPanel(
         "Rank-sum (independent)",
+        value = "rank_sum",
         stats_box(ns("stats_box_x_axis_wilcox_unpaired"), "X-axis"), hr(),
         stats_box(ns("stats_box_y_axis_wilcox_unpaired"), "Y-axis"), hr(),
         stats_box(ns("stats_box_z_axis_wilcox_unpaired"), "Z-axis")
       ),
       tabPanel(
         "Signed-rank (paired)",
+        value = "signed_rank",
         stats_box(ns("stats_box_x_axis_wilcox_paired"), "X-axis"), hr(),
         stats_box(ns("stats_box_y_axis_wilcox_paired"), "Y-axis"), hr(),
         stats_box(ns("stats_box_z_axis_wilcox_paired"), "Z-axis")

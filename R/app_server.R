@@ -18,8 +18,9 @@ source('app_module_network.R')
 source('trajectory_analysis.R')
 source('trajectory_plot.R')
 source('app_module_trajectory.R')
+source('app_module_ai_interpretation.R')
 
-ena_app_server <- function(id,state,config) {
+ena_app_server <- function(id, state, config, page_active, workspace_section) {
   # Calling the moduleServer function
   moduleServer(
     # Setting the id
@@ -219,7 +220,94 @@ ena_app_server <- function(id,state,config) {
       
       upload_data(input,output,session,rv,state,config)
       sample_data_load_and_select(input,output,session,rv,config,state)
-      stats_module(input,output,session,rv,config,state)
+      stats_results <- stats_module(input,output,session,rv,config,state)
+
+      ai_settings <- reactive({
+        current_workspace <- if (is.function(workspace_section)) {
+          workspace_section()
+        } else {
+          workspace_section
+        }
+        axes <- c(input$x, input$y, input$z)
+        group_var <- if (length(rv$ena_groupVar)) {
+          rv$ena_groupVar[[1L]]
+        } else {
+          NULL
+        }
+        view <- .ena3d_ai_current_view(current_workspace, state$active_tab())
+        if (is.null(view)) return(list(axes = axes))
+
+        switch(
+          view,
+          overall = list(
+            group_var = group_var,
+            selected_groups = if (!is.null(input$select_group)) {
+              input$select_group
+            } else {
+              rv$ena_groups
+            },
+            axes = axes
+          ),
+          network = {
+            target <- ena3d_network_selector_decode(input$network_selector)
+            list(
+              group_var = group_var,
+              selected_groups = if (!is.null(target) &&
+                                    identical(target$type, "group")) {
+                target$value
+              } else {
+                character()
+              },
+              selection_type = if (is.null(target)) "none" else target$type,
+              axes = axes
+            )
+          },
+          comparison = list(
+            group_var = group_var,
+            comparison_groups = c(
+              input$compare_group_1, input$compare_group_2
+            ),
+            axes = axes
+          ),
+          change = list(
+            change_var = input$group_change_var,
+            change_values = input$unit_change,
+            axes = axes
+          ),
+          stats = list(
+            group_var = group_var,
+            comparison_groups = c(input$stats_group1, input$stats_group2),
+            stats_design = if (identical(input$stats_design, "within")) {
+              "paired"
+            } else {
+              "unpaired"
+            },
+            p_adjust_method = input$stats_p_adjust_method,
+            alternative = input$stats_paired_alternative,
+            test_family = input$stats_test_family,
+            axes = axes
+          ),
+          trajectory = list(axes = axes),
+          list(axes = axes)
+        )
+      })
+
+      ai_interpretation_server(
+        "ai_interpretation",
+        enabled = reactive(isTRUE(config$ai$available)),
+        page_active = page_active,
+        workspace_section = workspace_section,
+        model_tab = state$active_tab,
+        ena_obj = reactive({
+          rv$dataset_id
+          if (isTRUE(rv$initialized)) state$ena_obj else NULL
+        }),
+        settings = ai_settings,
+        data_version = reactive(rv$dataset_id),
+        stats_result = stats_results,
+        trajectory_result = trajectory_results$result,
+        config = config$ai
+      )
       # execute_at_next_input <- function(expr, session = getDefaultReactiveDomain()) {
       #   observeEvent(once = TRUE, reactiveValuesToList(session$input), {
       #     print(reactiveValuesToList(session$input))

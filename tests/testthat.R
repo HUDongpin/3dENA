@@ -12,7 +12,7 @@ ena3d_find_project_root <- function(starts = getwd()) {
       candidate <- parent
     }
   }
-  stop("Could not locate the ENA 3D project root.", call. = FALSE)
+  stop("Could not locate the 3D ENA project root.", call. = FALSE)
 }
 
 file_args <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE))
@@ -50,7 +50,7 @@ failed <- sum(result_summary$failed, na.rm = TRUE)
 errored <- sum(result_summary$error, na.rm = TRUE)
 if (failed > 0L || errored > 0L) {
   stop(
-    sprintf("ENA 3D tests failed: %d failed expectations and %d errors.",
+    sprintf("3D ENA tests failed: %d failed expectations and %d errors.",
             failed, errored),
     call. = FALSE
   )

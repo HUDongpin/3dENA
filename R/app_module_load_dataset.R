@@ -59,7 +59,7 @@ ena3d_reset_data_state <- function(rv_data, state) {
 ena3d_validate_ena_object <- function(ena_obj, object_name = "ENA object",
                                       limits = ena3d_data_limits()) {
   fail <- function(message) {
-    stop(sprintf("%s is not compatible with ENA 3D: %s", object_name, message),
+    stop(sprintf("%s is not compatible with 3D ENA: %s", object_name, message),
          call. = FALSE)
   }
 

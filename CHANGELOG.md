@@ -1,6 +1,6 @@
 # Changelog
 
-All notable ENA 3D changes are recorded here. The application also displays
+All notable 3D ENA changes are recorded here. The application also displays
 `VERSION` and the immutable deployment build ID supplied by `ENA3D_BUILD_ID`.
 
 ## 0.2.0-dev — unreleased

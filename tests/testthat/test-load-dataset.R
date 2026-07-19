@@ -141,7 +141,7 @@ test_that("loader rejects malformed ENA schemas with actionable messages", {
 })
 
 
-test_that("all bundled samples satisfy the ENA 3D schema", {
+test_that("all bundled samples satisfy the 3D ENA schema", {
   fixtures <- list.files(
     file.path(.loader_test_root, "sample_data"),
     pattern = "\\.[Rr][Dd]ata$",

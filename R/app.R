@@ -18,7 +18,7 @@
   logical(1)
 )][1L]
 if (is.na(.ena3d_app_dir)) {
-  stop("Could not locate the ENA 3D application directory.", call. = FALSE)
+  stop("Could not locate the 3D ENA application directory.", call. = FALSE)
 }
 .ena3d_app_dir <- normalizePath(.ena3d_app_dir, mustWork = TRUE)
 .ena3d_project_root <- normalizePath(
@@ -36,6 +36,8 @@ library(shiny)
 library(R6)
 library(rENA)
 .ena3d_source('security_utils.R')
+.ena3d_source('qwen_client.R')
+.ena3d_source('ai_evidence.R')
 .ena3d_source('color_list.R')
 .ena3d_source('app_ui_plot_settings.R')
 .ena3d_source('app_ui_trajectory.R')
@@ -44,6 +46,7 @@ library(rENA)
 .ena3d_source('app_ui_data_upload_tab.R')
 .ena3d_source('app_ui_camera_position_panel.R')
 .ena3d_source('app_ui_stats.R')
+.ena3d_source('app_ui_ai_interpretation.R')
 .ena3d_source('app_ui_site.R')
 .ena3d_source('app_server.R')
 
@@ -65,6 +68,60 @@ config$app_version = Sys.getenv(
 )
 config$sample_files = ena3d_list_trusted_samples(config$sample_data_path)
 config$sample_count = length(config$sample_files)
+.ena3d_ai_disabled_config <- function() {
+  list(
+    enabled = FALSE,
+    secret_configured = FALSE,
+    available = FALSE,
+    qwen_client_file = normalizePath(
+      file.path(.ena3d_app_dir, "qwen_client.R"), mustWork = TRUE
+    ),
+    min_cell_n = 5L,
+    top_n = 10L,
+    context_max_chars = 1500L,
+    timeout_seconds = 60,
+    max_processes = 4L,
+    max_requests_per_hour = 10L,
+    max_evidence_bytes = 65536L
+  )
+}
+
+# AI is an optional boundary. Validate its provider and local resource settings
+# as one unit so a typo can only disable AI, never take down the ENA app.
+config$ai = tryCatch({
+  ai_config <- ena3d_qwen_config_from_env(load_secret = FALSE)
+  ai_config$qwen_client_file <- normalizePath(
+    file.path(.ena3d_app_dir, "qwen_client.R"), mustWork = TRUE
+  )
+  ai_config$min_cell_n <- as.integer(ena3d_env_number(
+    "ENA3D_AI_MIN_CELL_N", 5, minimum = 2, maximum = 100
+  ))
+  ai_config$top_n <- as.integer(ena3d_env_number(
+    "ENA3D_AI_TOP_N", 10, minimum = 1, maximum = 25
+  ))
+  ai_config$context_max_chars <- as.integer(ena3d_env_number(
+    "ENA3D_AI_CONTEXT_MAX_CHARS", 1500, minimum = 100, maximum = 5000
+  ))
+  ai_config$max_processes <- as.integer(ena3d_env_number(
+    "ENA3D_AI_MAX_CONCURRENT_JOBS", 4, minimum = 1, maximum = 16
+  ))
+  ai_config$max_requests_per_hour <- as.integer(ena3d_env_number(
+    "ENA3D_AI_MAX_REQUESTS_PER_HOUR", 10, minimum = 1, maximum = 100
+  ))
+  ai_config$max_evidence_bytes <- as.integer(ena3d_env_number(
+    "ENA3D_AI_MAX_EVIDENCE_BYTES", 65536, minimum = 4096, maximum = 262144
+  ))
+  ai_config$available <- isTRUE(ai_config$enabled) &&
+    isTRUE(ai_config$secret_configured)
+  ai_config
+}, error = function(error) {
+  ena3d_security_log(
+    "ai_configuration_invalid",
+    level = "WARN",
+    fields = list(error_class = class(error)[[1L]])
+  )
+  .ena3d_ai_disabled_config()
+})
 
 config$health_path = file.path(
   tempdir(), paste0("ena3d-health-", Sys.getpid())
@@ -73,10 +130,11 @@ dir.create(config$health_path, recursive = TRUE, showWarnings = FALSE)
 jsonlite::write_json(
   list(
     status = "ok",
-    app = "ENA 3D",
+    app = "3D ENA",
     version = config$app_version,
-    build = config$build_id,
-    trusted_samples = config$sample_count
+      build = config$build_id,
+      trusted_samples = config$sample_count,
+      ai_enabled = isTRUE(config$ai$available)
   ),
   path = file.path(config$health_path, "healthz.json"),
   auto_unbox = TRUE,
@@ -94,6 +152,7 @@ ena3d_security_log(
   fields = list(
     app_version = config$app_version,
     sample_count = config$sample_count,
+    ai_enabled = isTRUE(config$ai$available),
     r_version = paste(R.version$major, R.version$minor, sep = ".")
   )
 )
@@ -427,7 +486,7 @@ app_ui <- function(){
       
       column(5,
         fluidRow(
-          h2('ENA 3D',id='ena_3d_h2'),
+          h2('3D ENA',id='ena_3d_h2'),
           tags$small(
             class = "text-muted ena3d-build-id",
             paste0(
@@ -474,7 +533,7 @@ app_ui <- function(){
       column(7,
         
         fluidRow(
-          column(10,camera_position_panel_ui(id = "main_app"))%>% 
+          column(8,camera_position_panel_ui(id = "main_app"))%>%
             tagAppendAttributes(class= 'camera-position-panel'),
           column(
             2,
@@ -489,6 +548,16 @@ app_ui <- function(){
               class = 'fullscreen-status text-muted',
               role = 'status',
               `aria-live` = 'polite'
+            )
+          ),
+          column(
+            2,
+            ai_interpretation_ui(
+              NS("main_app", "ai_interpretation"),
+              context_max_chars = config$ai$context_max_chars,
+              stylesheet_version = paste(
+                config$app_version, config$build_id, sep = "-"
+              )
             )
           )
           
@@ -556,7 +625,7 @@ app_ui <- function(){
             toggleButton.setAttribute(
               'aria-label', collapsed ? 'Show ENA controls' : 'Hide ENA controls'
             );
-            if (heading) heading.textContent = collapsed ? 'ENA' : 'ENA 3D';
+            if (heading) heading.textContent = collapsed ? 'ENA' : '3D ENA';
             positionToggle();
             window.dispatchEvent(new Event('resize'));
           });
@@ -677,7 +746,13 @@ app_server <- function(input, output, session) {
   })
   observeEvent(input$meet_developer, open_site_page("about"))
   
-  ena_app_server(id = "main_app",state=ena_server_state,config)
+  ena_app_server(
+    id = "main_app",
+    state = ena_server_state,
+    config = config,
+    page_active = reactive(identical(input$site_nav, "tool")),
+    workspace_section = reactive(input$workspace_sections)
+  )
   # ena_comparison_plot_server( "main_app")
 }
 options(

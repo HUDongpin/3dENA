@@ -250,7 +250,7 @@ ena3d_about_ui <- function() {
     tags$p(
       class = "ena3d-profile-source",
       paste(
-        "The 3D ENA Version 0.2.0 project is inspired by the previous ENA 3D",
+        "The 3D ENA Version 0.2.0 project is inspired by the previous 3D ENA",
         "Version 0.1.0. Dr. Peter Hu is charge of revolutionizing the 3D ENA",
         "tool since 2026 July 17. Welcome research collaboration worldwide."
       )

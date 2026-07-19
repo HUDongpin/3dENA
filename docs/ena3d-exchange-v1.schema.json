@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://3dena.com/schemas/ena3d-exchange-v1.schema.json",
-  "title": "ENA 3D exchange format version 1",
+  "title": "3D ENA exchange format version 1",
   "type": "object",
   "additionalProperties": false,
   "required": ["format", "version", "dimensions", "group_variables", "tables"],

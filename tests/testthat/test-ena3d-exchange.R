@@ -5,7 +5,7 @@ library(shiny)
 .exchange_root <- .exchange_roots[file.exists(
   file.path(.exchange_roots, "R", "ena3d_exchange.R")
 )][1L]
-if (is.na(.exchange_root)) stop("Could not locate the ENA 3D project root.")
+if (is.na(.exchange_root)) stop("Could not locate the 3D ENA project root.")
 .exchange_root <- normalizePath(.exchange_root, mustWork = TRUE)
 
 source(file.path(.exchange_root, "R", "security_utils.R"), local = FALSE)

@@ -1,4 +1,4 @@
-name: ENA 3D CI
+name: 3D ENA CI
 
 on:
   push:
@@ -186,7 +186,7 @@ jobs:
               health = json.load(health_file)
 
           assert health["status"] == "ok", health
-          assert health["app"] == "ENA 3D", health
+          assert health["app"] == "3D ENA", health
           assert health["version"] == "ci", health
           assert health["build"] == os.environ["TEST_BUILD_ID"], health
           PY

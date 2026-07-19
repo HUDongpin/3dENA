@@ -1,11 +1,11 @@
-# ENA 3D
+# 3dENA
 
-ENA 3D is an R/Shiny application for exploring Epistemic Network Analysis
+3D ENA is an R/Shiny application for exploring Epistemic Network Analysis
 (ENA) sets in a shared three-dimensional rotation. It displays ENA points,
 code nodes, group and unit networks, group comparisons, change snapshots, and
 ordered centroid trajectories.
 
-![ENA 3D network preview](images/network_preview.jpg)
+![3D ENA centroid trajectory preview](images/trajectory-home-preview-3d.png)
 
 ## Main features
 
@@ -19,6 +19,8 @@ ordered centroid trajectories.
 - Add participant-clustered bootstrap intervals.
 - Compare two condition paths after exact entity-and-time matching.
 - Overlay the mean ENA network for a selected time.
+- Optionally request evidence-linked Qwen interpretation of aggregate results
+  on the 3D ENA page, with a fresh bound preview and consent before transfer.
 - Export path, uncertainty, comparison, and metadata CSV files, with
   diagnostics included in the metadata export.
 
@@ -44,6 +46,11 @@ install.packages(c(
   "scales",
   "digest",
   "jsonlite",
+  "curl",
+  "readxl",
+  "callr",
+  "later",
+  "promises",
   "zip"
 ))
 ```
@@ -167,6 +174,21 @@ bootstrap intervals plus multiplicity-adjusted permutation inference.
 - **Stats** provides axis-wise tests; paired tests require an explicit pairing
   ID and report unmatched observations.
 
+## AI-assisted interpretation
+
+An operator may enable Qwen interpretation for aggregate Overall, Networks,
+Comparison, Change, Stats, and Trajectory results on the 3D ENA page. It is off
+by default. The server creates a bounded evidence ledger that excludes raw
+rows, participant identifiers, unit networks, and participant-level
+trajectories. Every request requires a fresh preview of the exact provider data
+envelope and consent bound to that envelope. Model output is evidence-linked
+guidance; unsupported numeric and causal claims are rejected, and accepted
+claims still must be verified rather than treated as statistical results.
+
+See [Qwen-assisted ENA interpretation](docs/AI_INTERPRETATION.md) for the data
+boundary, supported Alibaba regions, server-side secret setup, limits, failure
+behavior, and staging checklist.
+
 ## Tests
 
 This Shiny application is not an R package, so it does not use `R CMD check`.
@@ -194,7 +216,9 @@ standard suite; they are skipped safely when `shinytest2` is not installed.
 The future production target is **https://3dena.com**, not `www.ena3d.org`.
 See [DEPLOYMENT.md](DEPLOYMENT.md) for the locked container build, non-root and
 read-only runtime, health check, resource limits, logging/privacy policy and
-the nginx WebSocket/TLS configuration template.
+the nginx WebSocket/TLS configuration template. Production remains AI-off
+unless the optional `compose.qwen.yaml` overlay and a mounted Qwen secret are
+provided.
 
 ## Contributing
 

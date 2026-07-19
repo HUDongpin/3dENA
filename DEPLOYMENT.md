@@ -1,4 +1,4 @@
-# ENA 3D production deployment
+# 3D ENA production deployment
 
 The production target is **https://3dena.com**. The project is not deployed to
 `www.ena3d.org`; that address appears only in historical audit material.
@@ -22,6 +22,14 @@ reads bounded UTF-8 bytes with `jsonlite`, accepts only JSON scalars under a
 strict columnar schema, assigns a small fixed set of rENA compatibility classes
 server-side, and runs the normal ENA validator before a transactional state
 change. It does not call native deserializers or evaluate file content.
+
+Qwen-assisted interpretation is a separate, optional outbound boundary for the
+3D ENA page. It is off in `compose.production.yaml`. When explicitly enabled,
+the server can send only a freshly previewed, bounded aggregate evidence ledger
+and optional user-entered research context after consent bound to that exact
+envelope. Raw rows, ENA unit and participant identifiers, unit-level networks,
+participant trajectories, and local dataset/request fingerprints are excluded.
+See `docs/AI_INTERPRETATION.md` before enabling the feature.
 
 Re-enabling the old `.RData` file input is not an acceptable shortcut. The
 trusted converter in `tools/` is an offline operator tool, not a web endpoint.
@@ -48,6 +56,21 @@ docker compose -f compose.production.yaml build --pull
 docker compose -f compose.production.yaml up -d
 curl --fail http://127.0.0.1:3838/ena3d-health/healthz.json
 ```
+
+That command keeps AI disabled and requires no provider credential. To enable
+Qwen after the data-governance review, use the optional overlay and a secret
+file outside the repository:
+
+```sh
+export ENA3D_DASHSCOPE_SECRET_FILE=/etc/ena3d/secrets/dashscope_api_key
+docker compose -f compose.production.yaml -f compose.qwen.yaml config --quiet
+docker compose -f compose.production.yaml -f compose.qwen.yaml up -d
+```
+
+Do not place the key in Compose YAML or `.env`. The overlay mounts it read-only
+and exposes only `/run/secrets/dashscope_api_key` to the application. Region,
+endpoint, model, permissions, limits, and verification steps are documented in
+`docs/AI_INTERPRETATION.md`.
 
 The application runs as UID/GID 10001, with no Linux capabilities, a read-only
 root filesystem, bounded temporary storage, a process limit, and container CPU
@@ -90,6 +113,14 @@ also checked in R before an object becomes active:
 - total cells across core ENA tables;
 - grouping levels and unique ENA units.
 
+The optional Qwen overlay adds separate provider-request, response, context,
+evidence, concurrency, per-session request, completion-token, thinking-token,
+and timeout limits. Those limits bound exposure and workload; they do not
+replace provider quota, billing alerts, institutional approval, or review of
+Alibaba region/data residency. Invalid AI configuration—including invalid
+optional AI resource settings—fails closed while the ENA application continues
+without AI.
+
 Increasing a limit is an operational change requiring a load test and a review
 of worker memory, Plotly trace count and response time. The request-size limit
 does not make native R serialization safe.
@@ -111,6 +142,11 @@ At minimum alert on:
 - nginx 4xx/5xx and rate-limit rejections;
 - TLS renewal failures.
 
+When Qwen is enabled, also alert on sustained `ai_interpretation_failed`
+events, request timeouts, provider authentication/quota errors, and unexpected
+token or cost growth. AI logs must remain metadata-only: never add the API key,
+evidence JSON, research context, or generated narrative to logs.
+
 The public UI states that native R uploads are disabled; raw spreadsheets are
 parsed as plain tables; the versioned JSON exchange is accepted; identifiable
 research data must not be sent to the site; and operational logs follow the
@@ -123,6 +159,9 @@ and concrete log retention period before launch.
 2. Build with the full commit SHA in `ENA3D_BUILD_ID`.
 3. Record the image digest and scan the image/SBOM for vulnerabilities.
 4. Deploy to staging and complete the proxy/browser smoke tests.
+   If Qwen is enabled, complete the aggregate-preview, consent, staleness,
+   unit-selection refusal, failure-injection, log-redaction and billing checks
+   in `docs/AI_INTERPRETATION.md`.
 5. Deploy the exact tested digest to production.
 6. Keep the preceding digest available and document the rollback command.
 7. Confirm the visible build ID and startup log match the deployed digest.

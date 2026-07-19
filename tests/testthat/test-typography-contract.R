@@ -4,7 +4,7 @@ library(testthat)
 .typography_root <- .typography_roots[file.exists(
   file.path(.typography_roots, "R", "www", "app_shell.css")
 )][1L]
-if (is.na(.typography_root)) stop("Could not locate the ENA 3D project root.")
+if (is.na(.typography_root)) stop("Could not locate the 3D ENA project root.")
 .typography_root <- normalizePath(.typography_root, mustWork = TRUE)
 
 .read_typography_file <- function(...) {

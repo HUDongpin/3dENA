@@ -5,7 +5,7 @@ library(shiny)
 .raw_root <- .raw_roots[file.exists(
   file.path(.raw_roots, "R", "raw_data_import.R")
 )][1L]
-if (is.na(.raw_root)) stop("Could not locate the ENA 3D project root.")
+if (is.na(.raw_root)) stop("Could not locate the 3D ENA project root.")
 .raw_root <- normalizePath(.raw_root, mustWork = TRUE)
 
 source(file.path(.raw_root, "R", "security_utils.R"), local = FALSE)

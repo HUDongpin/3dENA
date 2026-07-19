@@ -6,7 +6,7 @@ library(shiny)
   file.path(.network_selector_roots, "R", "app_module_load_dataset.R")
 )][1L]
 if (is.na(.network_selector_root)) {
-  stop("Could not locate the ENA 3D project root.")
+  stop("Could not locate the 3D ENA project root.")
 }
 .network_selector_root <- normalizePath(.network_selector_root)
 

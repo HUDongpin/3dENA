@@ -4,7 +4,7 @@ library(testthat)
 .site_shell_root <- .site_shell_roots[file.exists(
   file.path(.site_shell_roots, "R", "app_ui_site.R")
 )][1L]
-if (is.na(.site_shell_root)) stop("Could not locate the ENA 3D project root.")
+if (is.na(.site_shell_root)) stop("Could not locate the 3D ENA project root.")
 .site_shell_root <- normalizePath(.site_shell_root)
 
 if (!requireNamespace("shiny", quietly = TRUE) ||
@@ -131,7 +131,7 @@ test_that("About presents the verified public developer profile", {
   expect_match(about, "rel=\"noopener noreferrer\"", fixed = TRUE)
   expect_match(
     about,
-    "The 3D ENA Version 0.2.0 project is inspired by the previous ENA 3D Version 0.1.0.",
+    "The 3D ENA Version 0.2.0 project is inspired by the previous 3D ENA Version 0.1.0.",
     fixed = TRUE
   )
   expect_match(
