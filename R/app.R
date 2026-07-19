@@ -762,4 +762,10 @@ options(
     maximum = 25 * 1024^2
   )
 )
-shinyApp(app_ui, app_server)
+
+# Build the document before the HTTP server accepts traffic. Container
+# platforms can route dependency requests to a newly started instance before
+# that instance has served its first page request. Eager construction ensures
+# every htmlDependency resource path is registered during process startup.
+app_ui_document <- app_ui()
+shinyApp(app_ui_document, app_server)
