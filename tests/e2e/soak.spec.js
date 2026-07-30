@@ -1,6 +1,7 @@
 const { test, expect } = require("@playwright/test");
 
 const SAMPLE_NAMES = [
+  "class1_timepoints_enaset.RData",
   "newfrat_enaset.Rdata",
   "sample_enaset.Rdata",
   "student_enaset.RData",

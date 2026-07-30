@@ -100,6 +100,13 @@ used in that paired slice. The application reports raw-ID overlap and exact
 ID-time overlap, and requires an explicit confirmation that an equal raw ID in
 A and B denotes the same physical entity before running the comparison.
 
+**Displayed trajectory levels** is a separate rendering filter. It can show a
+subset of already-computed group paths and raw points without changing the
+analytical result, uncertainty, comparisons, or exported rows. In the bundled
+Class 1 example, the reviewed defaults are `Period` (time), `Speaker` (entity),
+and `Group` (trajectory group); selecting only `G1` reproduces the Group 1 view
+while retaining the common five-group SVD analysis.
+
 ### ENA dimensions
 
 The selected dimensions are the X, Y, and Z axes active when **Run / recompute
@@ -510,26 +517,32 @@ direction arrows and node outlines. A scrollable node key lists
 `Order · time value` beside the plot on desktop and moves below it on narrow
 screens; unordered manual rows use a neutral gray key rather than a
 misleading ordered color.
-Direction is shown by a conventional two-wing arrowhead for every finite,
-non-zero adjacent centroid segment. The arrow reaches the destination centroid,
-then the pixel-sized centroid marker is redrawn above it; this masks the
-interior and makes the visible two-wing head meet the node's circular outer
-edge instead of occupying the middle of the connecting line or covering the
-node. In 3D, the two-wing plane follows the active camera to remain visible.
-Arrowheads share the trajectory color, do not create additional legend entries
-or hover targets, and are omitted at missing-value breaks, zero-length steps,
-and unordered or non-increasing time positions. The **Show direction arrows on
-path segments** control is enabled by default in both 3D and 2D views. Arrow
-geometry is a display-only overlay: it is not added to the analytical path
-table, does not change centroid coordinates or distances, and is not included
-in exports.
+In 3D, direction is shown by a Plotly cone placed inside every finite, non-zero
+adjacent centroid segment and aligned with its unit direction vector. The cone
+uses the trajectory color and does not cover the destination centroid. The 2D
+projection retains a conventional two-wing arrowhead at the segment endpoint,
+with the centroid marker redrawn above it. Direction markers do not create
+additional legend entries or hover targets and are omitted at missing-value
+breaks, zero-length steps, and unordered or non-increasing time positions. The
+**Show direction arrows on path segments** control is enabled by default in
+both views. Arrow geometry is a display-only overlay: it is not added to the
+analytical path table, does not change centroid coordinates or distances, and
+is not included in exports.
+
+The 3D scene also draws three positive origin arrows for its active axes: red
+for SVD1, blue for SVD2, and green for SVD3 when those dimensions are selected.
+Their shafts, cones, labels, scale, and camera are orientation aids only. Raw
+participant-period points and the fixed code-node coordinates are displayed in
+the same ENA rotation as the centroid paths; none of these display layers
+refits or transforms the analytical coordinates.
 Hover text reports time/order, centroid coordinates and intervals, sample size,
 movement and elapsed-time metrics, missing/excluded counts, distance space, and
 row-level warnings. Distance space is also retained in trace data and export
 metadata.
-Bootstrap coordinate intervals appear as axis-aligned error bars, with the
-finite count shown as `boot_n / n_boot`. A bound is drawn only when both limits
-are finite, ordered, and bracket the finite point estimate.
+Bootstrap coordinate intervals appear as dashed axis-aligned boxes in 3D and
+axis-aligned error bars in 2D, with the finite count shown as
+`boot_n / n_boot`. A bound is drawn only when both limits are finite, ordered,
+and bracket the finite point estimate.
 
 The 2D view is a projection of the same path table used by the 3D view. Changing
 view mode or projection axes rerenders the plot without rerunning the analysis.

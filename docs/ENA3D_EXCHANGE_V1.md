@@ -118,7 +118,7 @@ levels/units, and objects that fail the regular ENA validator. The configured
 exchange limit has a hard operational ceiling of 10 MiB, but increasing it
 requires coordinated application, proxy and load-testing changes.
 
-The canonical compact conversion of the three bundled fixtures is below 2 MiB
+The canonical compact conversion of the four bundled fixtures is below 2 MiB
 (the largest, `newfrat_enaset.Rdata`, is currently about 0.90 MB), so files
 produced by the supported converter can be uploaded with the default limit.
 

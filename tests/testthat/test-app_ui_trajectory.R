@@ -30,7 +30,10 @@ test_that("trajectory UI exposes resource, selector, overlay, and Plot Tools gui
   expect_match(html, "Network scope", fixed = TRUE)
   expect_match(html, "Overall across all trajectory groups", fixed = TRUE)
   expect_match(html, "Plot Tools scope", fixed = TRUE)
-  expect_match(html, "legacy model views", fixed = TRUE)
+  expect_match(html, "Displayed trajectory levels", fixed = TRUE)
+  expect_match(html, "shared ENA rotation", fixed = TRUE)
+  expect_match(html, "positive-axis arrows from the origin", fixed = TRUE)
+  expect_match(html, "legacy axis-arrow controls", fixed = TRUE)
   expect_match(html, "trajectory-test-show_direction", fixed = TRUE)
   expect_match(html, "Show direction arrows on path segments", fixed = TRUE)
   expect_match(

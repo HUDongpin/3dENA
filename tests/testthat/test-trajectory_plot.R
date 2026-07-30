@@ -72,6 +72,17 @@ trajectory_node_marker_traces <- function(plot) {
   }, traces)
 }
 
+trajectory_role_traces <- function(plot, role) {
+  traces <- plotly::plotly_build(plot)$x$data
+  Filter(function(trace) {
+    is.list(trace$meta) && identical(trace$meta$trajectory_role, role)
+  }, traces)
+}
+
+trajectory_cone_color <- function(trace) {
+  as.character(trace$colorscale[[1L]][2L])
+}
+
 trajectory_trace_by_name <- function(traces, name) {
   traces[[which(vapply(traces, function(trace) identical(trace$name, name), logical(1)))[1L]]]
 }
@@ -290,7 +301,7 @@ testthat::test_that("missing coordinates do not compress the ordered color domai
   testthat::expect_identical(length(unique(missing_legend$node_color)), 3L)
 })
 
-testthat::test_that("3D plot has one ordered lines-and-markers trace per group", {
+testthat::test_that("3D plot uses confidence-box wireframes and square centroids", {
   testthat::skip_if_not_installed("plotly")
   path <- make_trajectory_plot_fixture()
   plot <- plot_centroid_trajectory_3d(
@@ -315,12 +326,34 @@ testthat::test_that("3D plot has one ordered lines-and-markers trace per group",
   testthat::expect_equal(as.numeric(group_b$y), c(100, 200, 300))
   testthat::expect_equal(as.numeric(group_b$z), c(1000, 2000, 3000))
 
-  # Coordinate uncertainty remains on the trajectory trace rather than adding
-  # extra traces that could be mistaken for another trajectory.
-  testthat::expect_equal(as.numeric(group_a$error_x$array), rep(0.1, 3), tolerance = 1e-12)
-  testthat::expect_equal(as.numeric(group_a$error_x$arrayminus), rep(0.1, 3), tolerance = 1e-12)
-  testthat::expect_equal(as.numeric(group_a$error_y$array), rep(0.2, 3), tolerance = 1e-12)
-  testthat::expect_equal(as.numeric(group_a$error_z$array), rep(0.3, 3), tolerance = 1e-12)
+  testthat::expect_identical(group_a$marker$symbol, "square")
+  testthat::expect_identical(group_b$marker$symbol, "square")
+  # Plotly may supply an empty default error-bar style, but analytical error
+  # arrays are not used for 3D intervals. The interval is drawn as a box.
+  testthat::expect_null(group_a$error_x$array)
+  testthat::expect_null(group_a$error_y$array)
+  testthat::expect_null(group_a$error_z$array)
+
+  boxes <- trajectory_role_traces(plot, "confidence_boxes")
+  testthat::expect_length(boxes, 2L)
+  testthat::expect_true(all(vapply(boxes, function(trace) {
+    identical(trace$type, "scatter3d") && identical(trace$mode, "lines") &&
+      identical(trace$showlegend, FALSE) &&
+      all(stats::na.omit(as.character(trace$hoverinfo)) == "skip") &&
+      identical(trace$line$dash, "dot") &&
+      identical(trace$meta$box_count, 3L) &&
+      identical(trace$meta$segment_count, 36L)
+  }, logical(1))))
+  testthat::expect_true(all(vapply(boxes, function(trace) {
+    # Plotly drops the final separator, leaving two finite endpoints per edge
+    # and one NA between every adjacent edge segment.
+    sum(is.finite(as.numeric(trace$x))) == 2L * trace$meta$segment_count &&
+      sum(is.na(as.numeric(trace$x))) == trace$meta$segment_count - 1L &&
+      sum(is.finite(as.numeric(trace$y))) == 2L * trace$meta$segment_count &&
+      sum(is.na(as.numeric(trace$y))) == trace$meta$segment_count - 1L &&
+      sum(is.finite(as.numeric(trace$z))) == 2L * trace$meta$segment_count &&
+      sum(is.na(as.numeric(trace$z))) == trace$meta$segment_count - 1L
+  }, logical(1))))
 })
 
 testthat::test_that("2D and 3D paths show directional arrowheads without extra legends", {
@@ -342,10 +375,14 @@ testthat::test_that("2D and 3D paths show directional arrowheads without extra l
   testthat::expect_length(nodes_3d, 2L)
   testthat::expect_length(nodes_2d, 2L)
   testthat::expect_true(all(vapply(arrows_3d, function(trace) {
-    identical(trace$type, "scatter3d") && identical(trace$mode, "lines") &&
+    identical(trace$type, "cone") &&
+      identical(trace$anchor, "center") &&
+      identical(trace$sizemode, "absolute") &&
+      isTRUE(all.equal(as.numeric(trace$sizeref), 0.13)) &&
       identical(trace$showlegend, FALSE) &&
       all(stats::na.omit(as.character(trace$hoverinfo)) == "skip") &&
-      identical(trace$meta$segment_count, 2L)
+      identical(trace$meta$segment_count, 2L) &&
+      isTRUE(all.equal(as.numeric(trace$meta$position), 0.62))
   }, logical(1))))
   testthat::expect_true(all(vapply(arrows_2d, function(trace) {
     identical(trace$type, "scatter") && identical(trace$mode, "lines") &&
@@ -359,10 +396,35 @@ testthat::test_that("2D and 3D paths show directional arrowheads without extra l
     vapply(trajectory_path_traces(plot_3d), function(trace) trace$meta$trajectory_key, character(1))
   )
   arrow_colors <- stats::setNames(
-    vapply(arrows_3d, function(trace) trace$line$color, character(1)),
+    vapply(arrows_3d, trajectory_cone_color, character(1)),
     vapply(arrows_3d, function(trace) trace$meta$trajectory_key, character(1))
   )
   testthat::expect_identical(arrow_colors[names(path_colors)], path_colors)
+  for (arrow in arrows_3d) {
+    path_trace <- Filter(function(trace) {
+      identical(trace$meta$trajectory_key, arrow$meta$trajectory_key)
+    }, trajectory_path_traces(plot_3d))[[1L]]
+    coordinates <- cbind(
+      as.numeric(path_trace$x),
+      as.numeric(path_trace$y),
+      as.numeric(path_trace$z)
+    )
+    vectors <- coordinates[-1L, , drop = FALSE] -
+      coordinates[-nrow(coordinates), , drop = FALSE]
+    expected_anchors <- coordinates[-nrow(coordinates), , drop = FALSE] +
+      0.62 * vectors
+    expected_directions <- vectors / sqrt(rowSums(vectors^2))
+    testthat::expect_equal(
+      cbind(as.numeric(arrow$x), as.numeric(arrow$y), as.numeric(arrow$z)),
+      expected_anchors,
+      tolerance = 1e-12
+    )
+    testthat::expect_equal(
+      cbind(as.numeric(arrow$u), as.numeric(arrow$v), as.numeric(arrow$w)),
+      expected_directions,
+      tolerance = 1e-12
+    )
+  }
   testthat::expect_setequal(
     vapply(arrows_3d, `[[`, character(1), "legendgroup"),
     names(path_colors)
@@ -371,11 +433,13 @@ testthat::test_that("2D and 3D paths show directional arrowheads without extra l
   testthat::expect_true(all(vapply(nodes_3d, function(trace) {
     identical(trace$type, "scatter3d") && identical(trace$mode, "markers") &&
       identical(trace$showlegend, FALSE) &&
+      identical(trace$marker$symbol, "square") &&
       identical(trace$hovertemplate[[1L]], "%{text}<extra></extra>")
   }, logical(1))))
   testthat::expect_true(all(vapply(nodes_2d, function(trace) {
     identical(trace$type, "scatter") && identical(trace$mode, "markers") &&
-      identical(trace$showlegend, FALSE)
+      identical(trace$showlegend, FALSE) &&
+      identical(trace$marker$symbol, "square")
   }, logical(1))))
 
   built_roles <- vapply(plotly::plotly_build(plot_3d)$x$data, function(trace) {
@@ -397,63 +461,176 @@ testthat::test_that("2D and 3D paths show directional arrowheads without extra l
   testthat::expect_identical(attr(hidden, "trajectory_show_direction"), FALSE)
 })
 
-testthat::test_that("direction geometry points forward and never bridges gaps", {
+testthat::test_that("3D origin SVD axes use RGB shafts, cone heads, and labels", {
+  testthat::skip_if_not_installed("plotly")
+  path <- make_trajectory_plot_fixture()
+  plot <- plot_centroid_trajectory_3d(
+    path,
+    dimensions = c("D1", "D2", "D3"),
+    group_cols = "condition",
+    axis_titles = c("SVD1", "SVD2", "SVD3")
+  )
+  shafts <- trajectory_role_traces(plot, "coordinate_axis_shaft")
+  heads <- trajectory_role_traces(plot, "coordinate_axis_arrowhead")
+  labels <- trajectory_role_traces(plot, "coordinate_axis_label")
+  expected_axes <- c("SVD1", "SVD2", "SVD3")
+  expected_colors <- c("#E00000", "#0000D0", "#008B00")
+
+  testthat::expect_length(shafts, 3L)
+  testthat::expect_length(heads, 3L)
+  testthat::expect_length(labels, 3L)
+  for (traces in list(shafts, heads, labels)) {
+    testthat::expect_identical(
+      vapply(traces, function(trace) trace$meta$axis, character(1)),
+      expected_axes
+    )
+    testthat::expect_identical(
+      vapply(traces, function(trace) trace$meta$color, character(1)),
+      expected_colors
+    )
+    testthat::expect_true(all(vapply(traces, function(trace) {
+      identical(trace$showlegend, FALSE) &&
+        all(stats::na.omit(as.character(trace$hoverinfo)) == "skip")
+    }, logical(1))))
+  }
+
+  for (index in seq_along(expected_axes)) {
+    shaft_coordinates <- cbind(
+      as.numeric(shafts[[index]]$x),
+      as.numeric(shafts[[index]]$y),
+      as.numeric(shafts[[index]]$z)
+    )
+    head_coordinate <- c(
+      as.numeric(heads[[index]]$x),
+      as.numeric(heads[[index]]$y),
+      as.numeric(heads[[index]]$z)
+    )
+    head_direction <- c(
+      as.numeric(heads[[index]]$u),
+      as.numeric(heads[[index]]$v),
+      as.numeric(heads[[index]]$w)
+    )
+
+    testthat::expect_equal(shaft_coordinates[1L, ], c(0, 0, 0))
+    testthat::expect_equal(shaft_coordinates[2L, ], head_coordinate)
+    testthat::expect_gt(head_coordinate[index], 0)
+    testthat::expect_equal(head_coordinate[-index], c(0, 0))
+    testthat::expect_equal(head_direction, diag(3L)[index, ])
+    testthat::expect_identical(shafts[[index]]$line$color, expected_colors[index])
+    testthat::expect_equal(as.numeric(shafts[[index]]$line$width), 4.4)
+    testthat::expect_identical(heads[[index]]$type, "cone")
+    testthat::expect_identical(heads[[index]]$anchor, "tip")
+    testthat::expect_identical(heads[[index]]$sizemode, "absolute")
+    testthat::expect_equal(as.numeric(heads[[index]]$sizeref), 0.21)
+    testthat::expect_identical(
+      trajectory_cone_color(heads[[index]]), expected_colors[index]
+    )
+    testthat::expect_identical(as.character(labels[[index]]$text), expected_axes[index])
+    testthat::expect_identical(labels[[index]]$textfont$color, expected_colors[index])
+    testthat::expect_match(labels[[index]]$textfont$family, "Times New Roman", fixed = TRUE)
+    testthat::expect_equal(as.numeric(labels[[index]]$textfont$size), 17)
+  }
+
+  testthat::expect_identical(attr(plot, "trajectory_show_origin_axes"), TRUE)
+  geometry <- attr(plot, "trajectory_axis_geometry")
+  testthat::expect_identical(geometry$labels, expected_axes)
+  testthat::expect_identical(geometry$colors, expected_colors)
+  testthat::expect_true(all(geometry$lengths > 0))
+  testthat::expect_true(all(vapply(geometry$ranges, function(range) {
+    range[1L] < 0 && range[2L] > 0
+  }, logical(1))))
+})
+
+testthat::test_that("origin axes can be hidden without changing trajectory coordinates", {
+  testthat::skip_if_not_installed("plotly")
+  path <- make_trajectory_plot_fixture()
+  shown <- plot_centroid_trajectory_3d(
+    path, dimensions = c("D1", "D2", "D3"), group_cols = "condition"
+  )
+  hidden <- plot_centroid_trajectory_3d(
+    path,
+    dimensions = c("D1", "D2", "D3"),
+    group_cols = "condition",
+    show_origin_axes = FALSE
+  )
+
+  for (role in c(
+    "coordinate_axis_shaft", "coordinate_axis_arrowhead",
+    "coordinate_axis_label"
+  )) {
+    testthat::expect_length(trajectory_role_traces(hidden, role), 0L)
+  }
+  testthat::expect_identical(attr(hidden, "trajectory_show_origin_axes"), FALSE)
+  testthat::expect_null(attr(hidden, "trajectory_axis_geometry"))
+  for (group in c("A", "B")) {
+    visible_path <- trajectory_trace_by_name(trajectory_path_traces(shown), group)
+    hidden_path <- trajectory_trace_by_name(trajectory_path_traces(hidden), group)
+    testthat::expect_equal(as.numeric(hidden_path$x), as.numeric(visible_path$x))
+    testthat::expect_equal(as.numeric(hidden_path$y), as.numeric(visible_path$y))
+    testthat::expect_equal(as.numeric(hidden_path$z), as.numeric(visible_path$z))
+  }
+})
+
+testthat::test_that("unit participant points use shared period colors and reference styling", {
+  testthat::skip_if_not_installed("plotly")
+  path <- make_trajectory_plot_fixture()
+  units <- data.frame(
+    ENA_UNIT = paste0("U", 1:5),
+    week = c("Week 1", "Week 2", "Week 3", "Unknown", "Week 1"),
+    D1 = c(0.7, 1.7, 2.7, 9, NA),
+    D2 = c(7, 17, 27, 9, 1),
+    D3 = c(70, 170, 270, 9, 1),
+    stringsAsFactors = FALSE
+  )
+  plot <- plot_centroid_trajectory_3d(
+    path,
+    dimensions = c("D1", "D2", "D3"),
+    group_cols = "condition",
+    unit_points = units
+  )
+  points <- trajectory_role_traces(plot, "unit_points")
+
+  testthat::expect_length(points, 1L)
+  trace <- points[[1L]]
+  legend <- attr(plot, "trajectory_node_legend")
+  expected_colors <- legend$node_color[match(
+    c("Week 1", "Week 2", "Week 3"), legend$time_value
+  )]
+  testthat::expect_identical(trace$type, "scatter3d")
+  testthat::expect_identical(trace$mode, "markers")
+  testthat::expect_identical(trace$showlegend, FALSE)
+  testthat::expect_identical(trace$meta$point_count, 3L)
+  testthat::expect_identical(trace$meta$time_var, "week")
+  testthat::expect_equal(as.numeric(trace$x), units$D1[1:3])
+  testthat::expect_equal(as.numeric(trace$y), units$D2[1:3])
+  testthat::expect_equal(as.numeric(trace$z), units$D3[1:3])
+  testthat::expect_identical(as.character(trace$marker$color), expected_colors)
+  testthat::expect_equal(as.numeric(trace$marker$size), 5.5)
+  testthat::expect_equal(as.numeric(trace$marker$opacity), 0.88)
+  testthat::expect_identical(trace$marker$line$color, "#FFFFFF")
+  testthat::expect_equal(as.numeric(trace$marker$line$width), 1)
+  testthat::expect_true(all(grepl("U[123]", trace$text)))
+})
+
+testthat::test_that("3D cone geometry is unit-forward at 62 percent and never bridges gaps", {
   straight <- data.frame(
-    x = c(0, 1), y = c(0, 0), z = c(0, 0), stringsAsFactors = FALSE
+    x = c(0, 1), y = c(0, 2), z = c(0, 2), time_order = 1:2,
+    stringsAsFactors = FALSE
   )
-  geometry <- .trajectory_direction_geometry(
-    straight, scale_data = straight, view = "3d"
-  )
+  geometry <- .trajectory_cone_geometry(straight)
   testthat::expect_identical(geometry$segment_count, 1L)
-  wing_starts <- seq.int(1L, length(geometry$x), by = 3L)
-  wing_tips <- wing_starts + 1L
-  testthat::expect_length(wing_starts, 2L)
-  testthat::expect_true(all(geometry$x[wing_tips] > geometry$x[wing_starts]))
-  testthat::expect_equal(geometry$x[wing_tips], rep(1, 2L), tolerance = 1e-12)
-  testthat::expect_equal(geometry$y[wing_tips], c(0, 0), tolerance = 1e-12)
-  testthat::expect_equal(geometry$z[wing_tips], c(0, 0), tolerance = 1e-12)
+  testthat::expect_equal(unname(c(geometry$x, geometry$y, geometry$z)),
+    c(0.62, 1.24, 1.24), tolerance = 1e-12)
+  expected_direction <- c(1, 2, 2) / 3
+  testthat::expect_equal(unname(c(geometry$u, geometry$v, geometry$w)),
+    expected_direction, tolerance = 1e-12)
   testthat::expect_equal(
-    geometry$x[wing_tips] - geometry$x[wing_starts],
-    rep(0.0224, 2L),
+    unname(sqrt(geometry$u^2 + geometry$v^2 + geometry$w^2)),
+    1,
     tolerance = 1e-12
   )
-  first_wing <- c(
-    geometry$x[wing_tips[1L]] - geometry$x[wing_starts[1L]],
-    geometry$y[wing_tips[1L]] - geometry$y[wing_starts[1L]],
-    geometry$z[wing_tips[1L]] - geometry$z[wing_starts[1L]]
-  )
-  testthat::expect_equal(
-    sqrt(sum(first_wing[-1L]^2)),
-    0.0224 * 0.45,
-    tolerance = 1e-12
-  )
-
-  short <- data.frame(
-    x = c(0, 0.05), y = c(0, 0), z = c(0, 0), stringsAsFactors = FALSE
-  )
-  short_geometry <- .trajectory_direction_geometry(
-    short, scale_data = straight, view = "3d"
-  )
-  short_starts <- seq.int(1L, length(short_geometry$x), by = 3L)
-  short_tips <- short_starts + 1L
-  testthat::expect_equal(
-    short_geometry$x[short_tips] - short_geometry$x[short_starts],
-    rep(0.05 * 0.224, 2L),
-    tolerance = 1e-12
-  )
-  testthat::expect_equal(formals(.trajectory_direction_geometry)$arrow_size, 0.0224)
-  testthat::expect_equal(formals(plot_centroid_trajectory)$arrow_size, 0.0224)
-
-  side_view <- .trajectory_direction_geometry(
-    straight,
-    scale_data = straight,
-    view = "3d",
-    camera = list(eye = list(x = 0, y = 0, z = 2.5))
-  )
-  side_starts <- seq.int(1L, length(side_view$x), by = 3L)
-  testthat::expect_length(side_starts, 2L)
-  testthat::expect_true(diff(side_view$y[side_starts]) != 0)
-  testthat::expect_equal(side_view$z[side_starts], c(0, 0), tolerance = 1e-12)
+  testthat::expect_equal(formals(.trajectory_cone_geometry)$position, 0.62)
+  testthat::expect_equal(formals(plot_centroid_trajectory)$cone_size, 0.13)
 
   broken <- data.frame(
     x = c(0, 0, NA, 1, 2),
@@ -461,9 +638,8 @@ testthat::test_that("direction geometry points forward and never bridges gaps", 
     z = c(0, 0, NA, 1, 1),
     stringsAsFactors = FALSE
   )
-  broken_geometry <- .trajectory_direction_geometry(
-    broken, scale_data = broken, view = "3d"
-  )
+  broken$time_order <- seq_len(nrow(broken))
+  broken_geometry <- .trajectory_cone_geometry(broken)
   # 1 -> 2 is zero length, 2 -> 3 and 3 -> 4 contain a missing value;
   # only the final observed 4 -> 5 segment receives an arrowhead.
   testthat::expect_identical(broken_geometry$segment_count, 1L)
@@ -475,18 +651,17 @@ testthat::test_that("direction geometry points forward and never bridges gaps", 
     time_order = c(1, 2, 2, NA, 1),
     stringsAsFactors = FALSE
   )
-  unsupported_geometry <- .trajectory_direction_geometry(
-    unsupported_order, scale_data = unsupported_order, view = "3d"
-  )
+  unsupported_geometry <- .trajectory_cone_geometry(unsupported_order)
   testthat::expect_identical(unsupported_geometry$segment_count, 1L)
 
   z_only <- data.frame(
     x = c(0, 0), y = c(0, 0), z = c(0, 1), time_order = 1:2
   )
   testthat::expect_identical(
-    .trajectory_direction_geometry(z_only, z_only, view = "3d")$segment_count,
+    .trajectory_cone_geometry(z_only)$segment_count,
     1L
   )
+  # The legacy wing geometry remains the 2D renderer and ignores z-only moves.
   testthat::expect_identical(
     .trajectory_direction_geometry(z_only, z_only, view = "2d")$segment_count,
     0L
@@ -515,7 +690,7 @@ testthat::test_that("long paths batch all arrowheads into one trace per group", 
   testthat::expect_identical(arrows[[1L]]$meta$segment_count, 100L)
 })
 
-testthat::test_that("direction controls reject invalid values", {
+testthat::test_that("direction, cone, origin-axis, and unit-point controls reject invalid values", {
   testthat::skip_if_not_installed("plotly")
   path <- make_trajectory_plot_fixture()
   testthat::expect_error(
@@ -530,6 +705,34 @@ testthat::test_that("direction controls reject invalid values", {
       path, dimensions = c("D1", "D2", "D3"), arrow_size = 0.25
     ),
     "arrow_size",
+    fixed = TRUE
+  )
+  testthat::expect_error(
+    plot_centroid_trajectory_3d(
+      path, dimensions = c("D1", "D2", "D3"), cone_size = 0
+    ),
+    "cone_size",
+    fixed = TRUE
+  )
+  testthat::expect_error(
+    plot_centroid_trajectory_3d(
+      path, dimensions = c("D1", "D2", "D3"), axis_cone_size = 1.1
+    ),
+    "axis_cone_size",
+    fixed = TRUE
+  )
+  testthat::expect_error(
+    plot_centroid_trajectory_3d(
+      path, dimensions = c("D1", "D2", "D3"), show_origin_axes = NA
+    ),
+    "show_origin_axes",
+    fixed = TRUE
+  )
+  testthat::expect_error(
+    plot_centroid_trajectory_3d(
+      path, dimensions = c("D1", "D2", "D3"), unit_points = "not a data frame"
+    ),
+    "unit_points",
     fixed = TRUE
   )
 })

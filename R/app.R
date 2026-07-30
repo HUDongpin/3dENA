@@ -725,6 +725,13 @@ app_ui <- function(){
               document.fullscreenElement ? 'Fullscreen active.' : 'Fullscreen closed.',
               false
             );
+            // Plotly widgets retain the width measured in the split workspace
+            // until their htmlwidget resize handler runs. Re-measure after the
+            // fullscreen element has acquired its viewport-sized box so the
+            // WebGL canvas fills the screen instead of leaving a black gutter.
+            window.setTimeout(function () {
+              window.dispatchEvent(new Event('resize'));
+            }, 50);
           });
         }
 

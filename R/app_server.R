@@ -146,6 +146,18 @@ ena_app_server <- function(id, state, config, page_active, workspace_section) {
         # list(eye=camera_eye(),up=list(x=0,y=1,z=0))
       })
 
+      trajectory_camera <- reactive({
+        position <- input$camera_position
+        if (is.null(position) || identical(position, "default")) {
+          return(list(
+            eye = list(x = 1.1744, y = 0.8935, z = 0.5960),
+            up = list(x = 0, y = 0, z = 1),
+            center = list(x = 0.1551, y = 0.0101, z = -0.0920)
+          ))
+        }
+        camera()
+      })
+
       trajectory_results <- trajectory_server(
         "trajectory",
         ena_obj = reactive({
@@ -157,7 +169,7 @@ ena_app_server <- function(id, state, config, page_active, workspace_section) {
           if (isTRUE(rv$initialized)) ena3d_dimension_names(state$ena_obj) else character()
         }),
         group_colors = reactive(rv$group_colors),
-        camera = camera
+        camera = trajectory_camera
       )
       
       # rv$reactiveFunctions['get_group_color']<-function(group_colors,group_col,group_name){

@@ -63,8 +63,8 @@ The pre-release soak is excluded from ordinary test projects. It defaults to
 ENA3D_AUDIT_SOAK_MINUTES=2 npm run test:e2e:soak
 ```
 
-The soak repeatedly switches bundled datasets and top-level views, completes
-real trajectories where repeated IDs exist, verifies the scientific
+The soak repeatedly switches all four bundled datasets and top-level views,
+completes real trajectories where repeated IDs exist, verifies the scientific
 cross-sectional guard otherwise, probes isolated-bootstrap cancellation,
 checks health, and fails on browser console or page errors.
 

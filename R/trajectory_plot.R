@@ -36,14 +36,21 @@
   )
 }
 
-.trajectory_plot_axis <- function(title) {
-  list(
+.trajectory_plot_axis <- function(title, range = NULL) {
+  axis <- list(
     title = list(
       text = as.character(title),
       font = .trajectory_plot_font(16L)
     ),
-    tickfont = .trajectory_plot_font(14L)
+    tickfont = .trajectory_plot_font(14L),
+    gridcolor = "#D7D7D7",
+    zerolinecolor = "#969696",
+    showbackground = TRUE,
+    backgroundcolor = "#FFFFFF",
+    showspikes = FALSE
   )
+  if (!is.null(range)) axis$range <- as.numeric(range)
+  axis
 }
 
 .trajectory_validate_path <- function(path) {
@@ -844,6 +851,88 @@ trajectory_trace_data <- function(path, dimensions = NULL, group_cols = NULL, co
   )
 }
 
+.trajectory_confidence_box_geometry <- function(data, dimensions) {
+  axes <- c("x", "y", "z")
+  output <- stats::setNames(
+    replicate(3L, numeric(), simplify = FALSE), axes
+  )
+  if (length(dimensions) != 3L || !nrow(data)) {
+    return(c(output, list(box_count = 0L, segment_count = 0L)))
+  }
+
+  lower_names <- paste0(dimensions, "_lower")
+  upper_names <- paste0(dimensions, "_upper")
+  if (!all(c(lower_names, upper_names) %in% names(data))) {
+    return(c(output, list(box_count = 0L, segment_count = 0L)))
+  }
+
+  edge_pairs <- rbind(
+    c(1L, 2L), c(1L, 3L), c(1L, 5L),
+    c(2L, 4L), c(2L, 6L), c(3L, 4L),
+    c(3L, 7L), c(4L, 8L), c(5L, 6L),
+    c(5L, 7L), c(6L, 8L), c(7L, 8L)
+  )
+  box_count <- 0L
+
+  for (row in seq_len(nrow(data))) {
+    lower <- vapply(lower_names, function(name) {
+      suppressWarnings(as.numeric(data[[name]][row]))
+    }, numeric(1L))
+    upper <- vapply(upper_names, function(name) {
+      suppressWarnings(as.numeric(data[[name]][row]))
+    }, numeric(1L))
+    if (any(!is.finite(c(lower, upper))) || any(lower > upper)) next
+
+    vertices <- as.matrix(expand.grid(
+      x = c(lower[1L], upper[1L]),
+      y = c(lower[2L], upper[2L]),
+      z = c(lower[3L], upper[3L])
+    ))
+    for (edge in seq_len(nrow(edge_pairs))) {
+      pair <- edge_pairs[edge, ]
+      for (axis in axes) {
+        output[[axis]] <- c(
+          output[[axis]], vertices[pair, axis], NA_real_
+        )
+      }
+    }
+    box_count <- box_count + 1L
+  }
+
+  c(output, list(box_count = box_count, segment_count = box_count * 12L))
+}
+
+.trajectory_add_confidence_boxes <- function(
+    plot, data, dimensions, key, color, display_scale) {
+  geometry <- .trajectory_confidence_box_geometry(data, dimensions)
+  if (geometry$box_count == 0L) return(plot)
+
+  plotly::add_trace(
+    plot,
+    type = "scatter3d",
+    mode = "lines",
+    x = geometry$x,
+    y = geometry$y,
+    z = geometry$z,
+    name = paste0(data$.trajectory_label[1L], " confidence boxes"),
+    legendgroup = key,
+    showlegend = FALSE,
+    hoverinfo = "skip",
+    connectgaps = FALSE,
+    line = list(
+      color = color,
+      width = max(2, 2.5 * display_scale),
+      dash = "dot"
+    ),
+    meta = list(
+      trajectory_role = "confidence_boxes",
+      trajectory_key = key,
+      box_count = geometry$box_count,
+      segment_count = geometry$segment_count
+    )
+  )
+}
+
 .trajectory_warning_messages <- function(path, trace_data) {
   diagnostics <- .trajectory_diagnostics(path)
   messages <- if (nrow(diagnostics) > 0L) as.character(diagnostics$message) else character()
@@ -1007,6 +1096,137 @@ trajectory_trace_data <- function(path, dimensions = NULL, group_cols = NULL, co
   edges
 }
 
+.trajectory_unit_point_colors <- function(points, path, time_var) {
+  legend <- trajectory_node_legend_data(path)
+  colors <- rep(NA_character_, nrow(points))
+  if (!nrow(legend) || !time_var %in% names(points)) return(colors)
+
+  for (index in seq_len(nrow(legend))) {
+    matches <- .trajectory_match_time_value(
+      points[[time_var]], legend$time_value[index]
+    )
+    colors[is.na(colors) & matches] <- legend$node_color[index]
+  }
+  colors
+}
+
+.trajectory_add_unit_points <- function(
+    plot, unit_points, path, dimensions, view, display_scale) {
+  if (is.null(unit_points)) return(plot)
+  if (!is.data.frame(unit_points)) {
+    stop("`unit_points` must be a data frame.", call. = FALSE)
+  }
+  if (!nrow(unit_points)) return(plot)
+
+  spec <- .trajectory_spec(path)
+  time_var <- as.character(spec$time_var)[1L]
+  if (is.na(time_var) || !nzchar(time_var) || !time_var %in% names(unit_points)) {
+    return(plot)
+  }
+
+  axes <- c("x", "y", "z")[seq_along(dimensions)]
+  coordinates <- Map(function(dimension, axis) {
+    .trajectory_overlay_coordinate(
+      unit_points, dimension, axis, endpoint = FALSE
+    )
+  }, dimensions, axes)
+  if (any(vapply(coordinates, is.null, logical(1)))) return(plot)
+
+  colors <- .trajectory_unit_point_colors(unit_points, path, time_var)
+  valid <- Reduce(`&`, lapply(coordinates, function(value) {
+    is.finite(suppressWarnings(as.numeric(value)))
+  })) & !is.na(colors)
+  if (!any(valid)) return(plot)
+
+  id_candidates <- unique(c(
+    as.character(spec$id_var), "ENA_UNIT", "unit", "id"
+  ))
+  id_column <- intersect(id_candidates, names(unit_points))[1L]
+  ids <- if (is.na(id_column)) {
+    rep("Unit network", nrow(unit_points))
+  } else {
+    as.character(unit_points[[id_column]])
+  }
+  hover <- paste0(
+    "<b>", .trajectory_html_escape(ids[valid]), "</b><br>",
+    .trajectory_html_escape(.trajectory_pretty_name(time_var)), ": ",
+    .trajectory_html_escape(as.character(unit_points[[time_var]][valid]))
+  )
+
+  arguments <- list(
+    p = plot,
+    type = if (identical(view, "3d")) "scatter3d" else "scatter",
+    mode = "markers",
+    x = coordinates[[1L]][valid],
+    y = coordinates[[2L]][valid],
+    text = hover,
+    hovertemplate = "%{text}<extra>Unit network</extra>",
+    hoverinfo = "text",
+    name = "Unit networks",
+    showlegend = FALSE,
+    marker = list(
+      size = 5.5 * display_scale,
+      color = colors[valid],
+      opacity = 0.88,
+      line = list(color = "#FFFFFF", width = max(0.8, display_scale))
+    ),
+    meta = list(
+      trajectory_role = "unit_points",
+      point_count = sum(valid),
+      time_var = time_var
+    )
+  )
+  if (identical(view, "3d")) arguments$z <- coordinates[[3L]][valid]
+  do.call(plotly::add_trace, arguments)
+}
+
+.trajectory_scene_extents <- function(
+    trace_data, dimensions, unit_points = NULL, code_nodes = NULL,
+    network_edges = NULL) {
+  axes <- c("x", "y", "z")[seq_along(dimensions)]
+  values <- stats::setNames(vector("list", length(axes)), axes)
+
+  append_values <- function(axis, value) {
+    if (is.null(value)) return(invisible(NULL))
+    value <- suppressWarnings(as.numeric(value))
+    values[[axis]] <<- c(values[[axis]], value[is.finite(value)])
+    invisible(NULL)
+  }
+
+  for (index in seq_along(axes)) {
+    axis <- axes[index]
+    dimension <- dimensions[index]
+    append_values(axis, trace_data[[axis]])
+    append_values(axis, trace_data[[paste0(dimension, "_lower")]])
+    append_values(axis, trace_data[[paste0(dimension, "_upper")]])
+
+    for (data in list(unit_points, code_nodes)) {
+      if (!is.null(data) && is.data.frame(data)) {
+        append_values(
+          axis,
+          .trajectory_overlay_coordinate(data, dimension, axis, endpoint = FALSE)
+        )
+      }
+    }
+    if (!is.null(network_edges) && is.data.frame(network_edges)) {
+      append_values(
+        axis,
+        .trajectory_overlay_coordinate(
+          network_edges, dimension, axis, endpoint = FALSE
+        )
+      )
+      append_values(
+        axis,
+        .trajectory_overlay_coordinate(
+          network_edges, dimension, axis, endpoint = TRUE
+        )
+      )
+    }
+    if (!length(values[[axis]])) values[[axis]] <- c(-0.8, 0.8)
+  }
+  values
+}
+
 .trajectory_add_code_nodes <- function(plot, nodes, path, dimensions, view,
                                        selected_time, display_scale) {
   if (is.null(nodes)) return(plot)
@@ -1027,8 +1247,12 @@ trajectory_trace_data <- function(path, dimensions = NULL, group_cols = NULL, co
 
   label_column <- .trajectory_node_id_column(nodes)
   labels <- if (is.null(label_column)) rep("Code node", nrow(nodes)) else as.character(nodes[[label_column]])
-  colors <- if ("color" %in% names(nodes)) as.character(nodes$color) else rep("#333333", nrow(nodes))
-  sizes <- if ("size" %in% names(nodes)) as.numeric(nodes$size) else rep(6, nrow(nodes))
+  colors <- if ("color" %in% names(nodes)) {
+    as.character(nodes$color)
+  } else {
+    rep("#F7F7F7", nrow(nodes))
+  }
+  sizes <- if ("size" %in% names(nodes)) as.numeric(nodes$size) else rep(7.5, nrow(nodes))
 
   arguments <- list(
     p = plot,
@@ -1039,7 +1263,12 @@ trajectory_trace_data <- function(path, dimensions = NULL, group_cols = NULL, co
     text = labels,
     textposition = "top center",
     hovertemplate = "%{text}<extra>Code node</extra>",
-    marker = list(color = colors, size = sizes * display_scale),
+    textfont = .trajectory_plot_font(15L, "#171717"),
+    marker = list(
+      color = colors,
+      size = sizes * display_scale,
+      line = list(color = "#333333", width = max(1.5, 2 * display_scale))
+    ),
     name = "Code nodes",
     legendgroup = "__trajectory_code_nodes__",
     showlegend = FALSE,
@@ -1375,9 +1604,188 @@ trajectory_trace_data <- function(path, dimensions = NULL, group_cols = NULL, co
   c(output, list(segment_count = segment_count))
 }
 
+.trajectory_cone_geometry <- function(data, position = 0.62) {
+  output <- list(
+    x = numeric(), y = numeric(), z = numeric(),
+    u = numeric(), v = numeric(), w = numeric(),
+    segment_count = 0L
+  )
+  if (nrow(data) < 2L) return(output)
+
+  coordinates <- as.matrix(data[, c("x", "y", "z"), drop = FALSE])
+  storage.mode(coordinates) <- "double"
+  has_time_order <- "time_order" %in% names(data)
+  time_order <- if (has_time_order) {
+    suppressWarnings(as.numeric(as.character(data$time_order)))
+  } else {
+    rep(NA_real_, nrow(data))
+  }
+  tolerance <- sqrt(.Machine$double.eps)
+
+  for (row in 2:nrow(coordinates)) {
+    if (has_time_order && (
+      !is.finite(time_order[row - 1L]) || !is.finite(time_order[row]) ||
+      time_order[row] <= time_order[row - 1L]
+    )) next
+    from <- coordinates[row - 1L, ]
+    to <- coordinates[row, ]
+    if (any(!is.finite(c(from, to)))) next
+    vector <- to - from
+    magnitude <- sqrt(sum(vector^2))
+    if (!is.finite(magnitude) || magnitude <= tolerance) next
+    direction <- vector / magnitude
+    anchor <- from + position * vector
+
+    output$x <- c(output$x, anchor[1L])
+    output$y <- c(output$y, anchor[2L])
+    output$z <- c(output$z, anchor[3L])
+    output$u <- c(output$u, direction[1L])
+    output$v <- c(output$v, direction[2L])
+    output$w <- c(output$w, direction[3L])
+    output$segment_count <- output$segment_count + 1L
+  }
+  output
+}
+
+.trajectory_origin_axis_geometry <- function(extents, labels) {
+  axes <- c("x", "y", "z")
+  labels <- as.character(labels)[seq_along(axes)]
+  lower <- upper_data <- lengths <- upper <- numeric(3L)
+
+  for (index in seq_along(axes)) {
+    values <- suppressWarnings(as.numeric(extents[[axes[index]]]))
+    values <- values[is.finite(values)]
+    if (!length(values)) values <- c(-0.8, 0.8)
+    lower[index] <- min(c(values, 0)) - 0.10
+    upper_data[index] <- max(c(values, 0)) + 0.10
+    lengths[index] <- max(upper_data[index], 0.90)
+    upper[index] <- max(upper_data[index], lengths[index] + 0.10)
+  }
+  names(lower) <- names(upper) <- names(lengths) <- axes
+
+  list(
+    labels = labels,
+    colors = c("#E00000", "#0000D0", "#008B00"),
+    lower = lower,
+    upper = upper,
+    lengths = lengths,
+    ranges = stats::setNames(
+      lapply(axes, function(axis) c(lower[[axis]], upper[[axis]])),
+      axes
+    )
+  )
+}
+
+.trajectory_add_origin_axes <- function(
+    plot, geometry, display_scale = 1, cone_size = 0.21) {
+  axes <- c("x", "y", "z")
+  directions <- diag(3L)
+  label_offsets <- rbind(
+    c(0, 0.32, -0.22),
+    c(0, -0.02, 0.28),
+    c(0, 0.34, -0.02)
+  )
+
+  for (index in seq_along(axes)) {
+    direction <- directions[index, ]
+    tip <- direction * geometry$lengths[index]
+    label <- tip + label_offsets[index, ]
+    color <- geometry$colors[index]
+    axis_label <- geometry$labels[index]
+
+    plot <- plotly::add_trace(
+      plot,
+      type = "scatter3d",
+      mode = "lines",
+      x = c(0, tip[1L]),
+      y = c(0, tip[2L]),
+      z = c(0, tip[3L]),
+      line = list(color = color, width = 4.4 * display_scale),
+      hoverinfo = "skip",
+      showlegend = FALSE,
+      name = paste0(axis_label, " positive axis"),
+      meta = list(
+        trajectory_role = "coordinate_axis_shaft",
+        axis = axis_label,
+        color = color
+      )
+    )
+    plot <- plotly::add_trace(
+      plot,
+      type = "cone",
+      x = tip[1L], y = tip[2L], z = tip[3L],
+      u = direction[1L], v = direction[2L], w = direction[3L],
+      sizemode = "absolute",
+      sizeref = cone_size * display_scale,
+      anchor = "tip",
+      colorscale = list(c(0, color), c(1, color)),
+      showscale = FALSE,
+      hoverinfo = "skip",
+      showlegend = FALSE,
+      name = paste0(axis_label, " positive arrowhead"),
+      meta = list(
+        trajectory_role = "coordinate_axis_arrowhead",
+        axis = axis_label,
+        color = color
+      )
+    )
+    plot <- plotly::add_trace(
+      plot,
+      type = "scatter3d",
+      mode = "text",
+      x = label[1L], y = label[2L], z = label[3L],
+      text = axis_label,
+      textfont = list(
+        family = "Times New Roman, Times, serif",
+        size = 17 * display_scale,
+        color = color
+      ),
+      hoverinfo = "skip",
+      showlegend = FALSE,
+      name = paste0(axis_label, " positive axis label"),
+      meta = list(
+        trajectory_role = "coordinate_axis_label",
+        axis = axis_label,
+        color = color
+      )
+    )
+  }
+  plot
+}
+
 .trajectory_add_direction_arrows <- function(
     plot, data, scale_data, view, key, color, display_scale, line_width,
-    arrow_size, camera = NULL) {
+    arrow_size, cone_size = 0.13, camera = NULL) {
+  if (identical(view, "3d")) {
+    geometry <- .trajectory_cone_geometry(data)
+    if (geometry$segment_count == 0L) return(plot)
+    return(plotly::add_trace(
+      plot,
+      type = "cone",
+      x = geometry$x,
+      y = geometry$y,
+      z = geometry$z,
+      u = geometry$u,
+      v = geometry$v,
+      w = geometry$w,
+      sizemode = "absolute",
+      sizeref = cone_size * display_scale,
+      anchor = "center",
+      colorscale = list(c(0, color), c(1, color)),
+      showscale = FALSE,
+      name = paste0(data$.trajectory_label[1L], " direction"),
+      legendgroup = key,
+      showlegend = FALSE,
+      hoverinfo = "skip",
+      meta = list(
+        trajectory_role = "direction_arrows",
+        trajectory_key = key,
+        segment_count = geometry$segment_count,
+        position = 0.62
+      )
+    ))
+  }
+
   geometry <- .trajectory_direction_geometry(
     data,
     scale_data = scale_data,
@@ -1408,7 +1816,6 @@ trajectory_trace_data <- function(path, dimensions = NULL, group_cols = NULL, co
       segment_count = geometry$segment_count
     )
   )
-  if (identical(view, "3d")) arguments$z <- geometry$z
   do.call(plotly::add_trace, arguments)
 }
 
@@ -1430,6 +1837,7 @@ trajectory_trace_data <- function(path, dimensions = NULL, group_cols = NULL, co
     marker = list(
       color = data$.trajectory_node_color,
       size = marker_size * display_scale,
+      symbol = "square",
       line = list(
         color = data$.trajectory_color,
         width = max(1, display_scale)
@@ -1458,13 +1866,17 @@ plot_centroid_trajectory <- function(
     colors = NULL,
     camera = NULL,
     display_scale = 1,
+    unit_points = NULL,
     code_nodes = NULL,
     network_edges = NULL,
     selected_time = NULL,
     overlay_hooks = NULL,
     show_warnings = TRUE,
     show_direction = TRUE,
+    show_origin_axes = TRUE,
     arrow_size = 0.0224,
+    cone_size = 0.13,
+    axis_cone_size = 0.21,
     marker_size = 7,
     line_width = 3,
     axis_titles = NULL) {
@@ -1490,9 +1902,21 @@ plot_centroid_trajectory <- function(
       is.na(show_direction)) {
     stop("`show_direction` must be TRUE or FALSE.", call. = FALSE)
   }
+  if (length(show_origin_axes) != 1L || !is.logical(show_origin_axes) ||
+      is.na(show_origin_axes)) {
+    stop("`show_origin_axes` must be TRUE or FALSE.", call. = FALSE)
+  }
   if (length(arrow_size) != 1L || !is.numeric(arrow_size) ||
       !is.finite(arrow_size) || arrow_size <= 0 || arrow_size > 0.2) {
     stop("`arrow_size` must be one finite number greater than 0 and no more than 0.2.", call. = FALSE)
+  }
+  if (length(cone_size) != 1L || !is.numeric(cone_size) ||
+      !is.finite(cone_size) || cone_size <= 0 || cone_size > 1) {
+    stop("`cone_size` must be one finite number greater than 0 and no more than 1.", call. = FALSE)
+  }
+  if (length(axis_cone_size) != 1L || !is.numeric(axis_cone_size) ||
+      !is.finite(axis_cone_size) || axis_cone_size <= 0 || axis_cone_size > 1) {
+    stop("`axis_cone_size` must be one finite number greater than 0 and no more than 1.", call. = FALSE)
   }
 
   trace_data <- trajectory_trace_data(
@@ -1513,12 +1937,33 @@ plot_centroid_trajectory <- function(
     labels <- axis_titles[seq_len(required_dimensions)]
   }
 
+  scene_extents <- .trajectory_scene_extents(
+    trace_data,
+    dimensions,
+    unit_points = unit_points,
+    code_nodes = code_nodes,
+    network_edges = network_edges
+  )
+  axis_geometry <- if (identical(view, "3d") && isTRUE(show_origin_axes)) {
+    .trajectory_origin_axis_geometry(scene_extents, labels)
+  } else {
+    NULL
+  }
+
   plot <- plotly::plot_ly()
+  plot <- .trajectory_add_unit_points(
+    plot, unit_points, path, dimensions, view, display_scale
+  )
   keys <- unique(trace_data$.trajectory_key)
   for (key in keys) {
     data <- trace_data[trace_data$.trajectory_key == key, , drop = FALSE]
     color <- data$.trajectory_color[1L]
     hover <- .trajectory_hover_text(data, dimensions, n_boot = n_boot)
+    if (identical(view, "3d")) {
+      plot <- .trajectory_add_confidence_boxes(
+        plot, data, dimensions, key, color, display_scale
+      )
+    }
     arguments <- list(
       p = plot,
       type = if (view == "3d") "scatter3d" else "scatter",
@@ -1536,10 +1981,9 @@ plot_centroid_trajectory <- function(
       marker = list(
         color = data$.trajectory_node_color,
         size = marker_size * display_scale,
+        symbol = "square",
         line = list(color = color, width = max(1, display_scale))
       ),
-      error_x = .trajectory_error_bar(data, dimensions[1L], color),
-      error_y = .trajectory_error_bar(data, dimensions[2L], color),
       meta = list(
         trajectory_role = "path",
         trajectory_key = key,
@@ -1548,17 +1992,26 @@ plot_centroid_trajectory <- function(
     )
     if (view == "3d") {
       arguments$z <- data$z
-      arguments$error_z <- .trajectory_error_bar(data, dimensions[3L], color)
+    } else {
+      arguments$error_x <- .trajectory_error_bar(data, dimensions[1L], color)
+      arguments$error_y <- .trajectory_error_bar(data, dimensions[2L], color)
     }
     plot <- do.call(plotly::add_trace, arguments)
   }
 
   if (view == "3d") {
+    axis_title <- if (isTRUE(show_origin_axes)) rep("", 3L) else labels
+    axis_range <- if (is.null(axis_geometry)) {
+      rep(list(NULL), 3L)
+    } else {
+      unname(axis_geometry$ranges[c("x", "y", "z")])
+    }
     scene <- list(
-      xaxis = .trajectory_plot_axis(labels[1L]),
-      yaxis = .trajectory_plot_axis(labels[2L]),
-      zaxis = .trajectory_plot_axis(labels[3L]),
-      aspectmode = "data"
+      xaxis = .trajectory_plot_axis(axis_title[1L], axis_range[[1L]]),
+      yaxis = .trajectory_plot_axis(axis_title[2L], axis_range[[2L]]),
+      zaxis = .trajectory_plot_axis(axis_title[3L], axis_range[[3L]]),
+      aspectmode = "data",
+      bgcolor = "#FFFFFF"
     )
     if (!is.null(camera)) scene$camera <- camera
     plot <- plotly::layout(
@@ -1573,7 +2026,9 @@ plot_centroid_trajectory <- function(
           font = .trajectory_plot_font(14L)
         )
       ),
-      margin = list(l = 0, r = 0, b = 0, t = 20)
+      margin = list(l = 0, r = 0, b = 0, t = 20),
+      paper_bgcolor = "#FFFFFF",
+      plot_bgcolor = "#FFFFFF"
     )
   } else {
     plot <- plotly::layout(
@@ -1614,12 +2069,22 @@ plot_centroid_trajectory <- function(
         display_scale = display_scale,
         line_width = line_width,
         arrow_size = arrow_size,
+        cone_size = cone_size,
         camera = camera
       )
     }
-    # These marker-only traces are intentionally last among the trajectory
-    # layers. Their pixel-sized circles mask the arrowhead interior, making the
-    # visible arrow meet the destination node boundary cleanly at any zoom.
+  }
+  if (identical(view, "3d") && isTRUE(show_origin_axes)) {
+    plot <- .trajectory_add_origin_axes(
+      plot,
+      geometry = axis_geometry,
+      display_scale = display_scale,
+      cone_size = axis_cone_size
+    )
+  }
+  if (isTRUE(show_direction)) {
+    # Redraw square centroid nodes above the direction and coordinate arrows so
+    # ordered periods remain crisp at every camera angle.
     for (key in keys) {
       data <- trace_data[trace_data$.trajectory_key == key, , drop = FALSE]
       plot <- .trajectory_add_centroid_node_markers(
@@ -1647,7 +2112,11 @@ plot_centroid_trajectory <- function(
     group_cols = group_cols,
     color_map = color_map,
     show_direction = show_direction,
-    arrow_size = arrow_size
+    show_origin_axes = show_origin_axes,
+    arrow_size = arrow_size,
+    cone_size = cone_size,
+    axis_cone_size = axis_cone_size,
+    axis_geometry = axis_geometry
   )
   plot <- .trajectory_apply_overlay_hooks(plot, overlay_hooks, context)
 
@@ -1666,6 +2135,8 @@ plot_centroid_trajectory <- function(
   )
   attr(plot, "trajectory_view") <- view
   attr(plot, "trajectory_show_direction") <- show_direction
+  attr(plot, "trajectory_show_origin_axes") <- show_origin_axes
+  attr(plot, "trajectory_axis_geometry") <- axis_geometry
   attr(plot, "trajectory_warnings") <- warning_messages
   plot
 }

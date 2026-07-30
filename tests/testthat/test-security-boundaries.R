@@ -59,7 +59,12 @@ test_that("only direct children of the trusted sample directory resolve", {
   expect_identical(allowed, normalizePath(.security_fixture))
   expect_setequal(
     ena3d_list_trusted_samples(sample_root),
-    c("newfrat_enaset.Rdata", "sample_enaset.Rdata", "student_enaset.RData")
+    c(
+      "class1_timepoints_enaset.RData",
+      "newfrat_enaset.Rdata",
+      "sample_enaset.Rdata",
+      "student_enaset.RData"
+    )
   )
 
   expect_error(

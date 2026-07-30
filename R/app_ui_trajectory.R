@@ -32,6 +32,18 @@ trajectory_controls_ui <- function(id) {
       ),
       shiny::conditionalPanel(
         condition = sprintf("input['%s'] !== ''", ns("group_var")),
+        shiny::selectizeInput(
+          ns("display_levels"),
+          "Displayed trajectory levels",
+          choices = character(0),
+          selected = character(0),
+          multiple = TRUE,
+          options = list(plugins = list("remove_button"), closeAfterSelect = TRUE)
+        ),
+        shiny::helpText(
+          "This filter changes only the displayed paths and unit points; all ",
+          "levels remain in the shared ENA rotation and computed analysis."
+        ),
         shiny::fluidRow(
           shiny::column(
             6,
@@ -254,10 +266,11 @@ trajectory_controls_ui <- function(id) {
         shiny::tags$strong("Plot Tools scope"),
         shiny::tags$p(
           style = "margin-bottom: 0;",
-          "X/Y/Z axes and Camera Position apply here. Scale Factor, Edge Width ",
-          "Factor, grid, zero-line, and axis-arrow controls apply only to the ",
-          "legacy model views. Trajectory coordinates are intentionally never ",
-          "rescaled by display controls."
+          "X/Y/Z axes and Camera Position apply here. The 3D trajectory view ",
+          "shows red, blue, and green positive-axis arrows from the origin, ",
+          "labeled with the selected ENA dimensions. Scale Factor, Edge Width ",
+          "Factor, grid, zero-line, and legacy axis-arrow controls do not alter ",
+          "trajectory coordinates."
         )
       ),
       shiny::tags$hr(),

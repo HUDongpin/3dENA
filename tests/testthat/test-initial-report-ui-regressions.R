@@ -421,6 +421,8 @@ test_that("one fullscreen control targets the visible Plotly widget", {
   button_matches <- gregexpr(button_pattern, app_text, perl = TRUE)[[1L]]
   expect_equal(sum(button_matches > 0L), 1L)
   expect_match(app_text, "main_app-fullscreen_btn", fixed = TRUE)
+  expect_match(app_text, "document.addEventListener('fullscreenchange'", fixed = TRUE)
+  expect_match(app_text, "window.dispatchEvent(new Event('resize'))", fixed = TRUE)
   expect_match(
     app_text,
     ".plot-container .plotly.html-widget",

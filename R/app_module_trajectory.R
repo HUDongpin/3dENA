@@ -1986,6 +1986,16 @@ trajectory_server <- function(id, ena_obj, selected_axes = NULL,
       group_var <- .trajectory_or(input$group_var, "")
       choices <- .trajectory_condition_choices(info$points, group_var)
       values <- unname(choices)
+      old_display <- shiny::isolate(input$display_levels)
+      selected_display <- intersect(as.character(old_display), values)
+      if (!length(selected_display)) selected_display <- values
+      shiny::updateSelectizeInput(
+        session,
+        "display_levels",
+        choices = choices,
+        selected = selected_display,
+        server = TRUE
+      )
       old_a <- shiny::isolate(input$condition_a)
       old_b <- shiny::isolate(input$condition_b)
       selected_a <- if (!is.null(old_a) && old_a %in% values) {
@@ -2475,8 +2485,23 @@ trajectory_server <- function(id, ena_obj, selected_axes = NULL,
 
     overlay_data <- shiny::reactive({
       result <- analysis_result()
-      if (is.null(result) || !isTRUE(input$network_overlay)) {
+      if (is.null(result)) {
         return(list(code_nodes = NULL, network_edges = NULL, message = "Overlay off."))
+      }
+
+      source <- analysis_source()
+      base_nodes <- if (!is.null(source) && !is.data.frame(source) &&
+                        !is.null(source$rotation$nodes)) {
+        as.data.frame(source$rotation$nodes)
+      } else {
+        NULL
+      }
+      if (!isTRUE(input$network_overlay)) {
+        return(list(
+          code_nodes = base_nodes,
+          network_edges = NULL,
+          message = "Code nodes shown; mean network overlay off."
+        ))
       }
 
       view <- .trajectory_or(input$view, "3d")
@@ -2486,12 +2511,14 @@ trajectory_server <- function(id, ena_obj, selected_axes = NULL,
         head(result$settings$dimensions, 3L)
       }
       dimensions <- dimensions[!is.na(dimensions) & nzchar(dimensions)]
-      .trajectory_network_overlay(
+      overlay <- .trajectory_network_overlay(
         analysis_source(), dimensions, result$settings$time_var,
         .trajectory_or(input$selected_time, ""),
         group_var = result$settings$group_var,
         selected_group = .trajectory_or(input$overlay_group, "")
       )
+      if (is.null(overlay$code_nodes)) overlay$code_nodes <- base_nodes
+      overlay
     })
 
     output$overlay_status <- shiny::renderText(overlay_data()$message)
@@ -2524,6 +2551,32 @@ trajectory_server <- function(id, ena_obj, selected_axes = NULL,
       } else {
         result$path
       }
+      group_var <- .trajectory_or(result$settings$group_var, "")
+      display_levels <- as.character(.trajectory_or(
+        input$display_levels, character(0)
+      ))
+      if (nzchar(group_var) && group_var %in% names(plot_data)) {
+        keep <- as.character(plot_data[[group_var]]) %in% display_levels
+        plot_data <- plot_data[keep, , drop = FALSE]
+      }
+      shiny::validate(shiny::need(
+        nrow(plot_data) > 0L,
+        "Choose at least one displayed trajectory level."
+      ))
+
+      source <- analysis_source()
+      unit_points <- if (!is.null(source)) {
+        .trajectory_points(source)
+      } else {
+        NULL
+      }
+      if (!is.null(unit_points) && nzchar(group_var) &&
+          group_var %in% names(unit_points)) {
+        unit_points <- unit_points[
+          as.character(unit_points[[group_var]]) %in% display_levels,
+          , drop = FALSE
+        ]
+      }
       overlay <- overlay_data()
       plot_centroid_trajectory(
         path = plot_data,
@@ -2533,6 +2586,7 @@ trajectory_server <- function(id, ena_obj, selected_axes = NULL,
         colors = .trajectory_colors(group_colors),
         camera = .trajectory_resolve_value(camera),
         display_scale = 1,
+        unit_points = unit_points,
         code_nodes = overlay$code_nodes,
         network_edges = overlay$network_edges,
         selected_time = input$selected_time,

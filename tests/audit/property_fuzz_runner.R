@@ -84,6 +84,7 @@ ena3d_property_bundled_round_trip <- function(project_root, seed, iterations) {
       project_root,
       "sample_data",
       c(
+        "class1_timepoints_enaset.RData",
         "sample_enaset.Rdata",
         "newfrat_enaset.Rdata",
         "student_enaset.RData"

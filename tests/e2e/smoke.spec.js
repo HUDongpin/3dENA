@@ -458,7 +458,7 @@ test("trusted sample traverses every model view and trajectory controls", async 
   expect(nodeLegendSummary[0].label).toBe("Order 1 \u00b7 0");
   expect(nodeLegendSummary[14].label).toBe("Order 15 \u00b7 14");
 
-  const directionTraceSummary = await page
+  const trajectoryTraceSummary = await page
     .locator("#main_app-trajectory-trajectory_plot")
     .evaluate((plot) => {
       const traces = plot.data || [];
@@ -471,46 +471,105 @@ test("trusted sample traverses every model view and trajectory controls", async 
       const nodeMarkers = traces.filter(
         (trace) => trace.meta?.trajectory_role === "node_markers"
       );
+      const confidenceBoxes = traces.filter(
+        (trace) => trace.meta?.trajectory_role === "confidence_boxes"
+      );
+      const unitPoints = traces.filter(
+        (trace) => trace.meta?.trajectory_role === "unit_points"
+      );
+      const axisShafts = traces.filter(
+        (trace) => trace.meta?.trajectory_role === "coordinate_axis_shaft"
+      );
+      const axisArrowheads = traces.filter(
+        (trace) => trace.meta?.trajectory_role === "coordinate_axis_arrowhead"
+      );
+      const axisLabels = traces.filter(
+        (trace) => trace.meta?.trajectory_role === "coordinate_axis_label"
+      );
+      const axes = ["x", "y", "z"];
+      const nearlyEqual = (left, right, tolerance = 1e-10) =>
+        Number.isFinite(Number(left)) &&
+        Number.isFinite(Number(right)) &&
+        Math.abs(Number(left) - Number(right)) <= tolerance;
       const samePoint = (left, right) =>
-        ["x", "y", "z"].every(
-          (axis) => Math.abs(Number(left[axis]) - Number(right[axis])) < 1e-12
-        );
+        axes.every((axis) => nearlyEqual(left[axis], right[axis]));
       const pointAt = (trace, index) => ({
         x: trace.x[index],
         y: trace.y[index],
         z: trace.z[index],
       });
-      const wingRuns = arrows.map((trace) => {
-        const runs = [];
-        let run = [];
-        for (let index = 0; index < trace.x.length; index += 1) {
-          if (trace.x[index] == null) {
-            if (run.length) runs.push(run);
-            run = [];
-          } else {
-            run.push(pointAt(trace, index));
-          }
-        }
-        if (run.length) runs.push(run);
-        return runs;
+      const vectorAt = (trace, index) => ({
+        x: trace.u[index],
+        y: trace.v[index],
+        z: trace.w[index],
       });
-      const tipsReachDestinationCenters = arrows.every((arrow, arrowIndex) => {
+      const solidColorScale = (trace, expectedColor) => {
+        const stops = Array.from(trace.colorscale || []);
+        return (
+          stops.length === 2 &&
+          stops.every(
+            (stop) =>
+              Array.isArray(stop) &&
+              String(stop[1]).toUpperCase() === expectedColor.toUpperCase()
+          )
+        );
+      };
+      const skipsHover = (trace) =>
+        trace.hoverinfo === "skip" ||
+        (Array.isArray(trace.hoverinfo) &&
+          trace.hoverinfo.length > 0 &&
+          trace.hoverinfo.every((value) => value === "skip"));
+      const coneGeometryMatchesPaths = arrows.every((arrow) => {
         const path = paths.find(
           (candidate) =>
             candidate.meta.trajectory_key === arrow.meta.trajectory_key
         );
-        const runs = wingRuns[arrowIndex];
+        const segmentCount = Number(arrow.meta.segment_count);
+        const coordinateLengthsMatch = ["x", "y", "z", "u", "v", "w"].every(
+          (coordinate) => arrow[coordinate]?.length === segmentCount
+        );
+        const pathColor = String(path?.line?.color || "");
         return (
           path &&
-          runs.length === 2 * arrow.meta.segment_count &&
-          runs.every((run) => run.length === 2) &&
-          Array.from({ length: arrow.meta.segment_count }, (_, segment) => {
-            const firstTip = runs[2 * segment][1];
-            const secondTip = runs[2 * segment + 1][1];
+          arrow.type === "cone" &&
+          arrow.anchor === "center" &&
+          arrow.sizemode === "absolute" &&
+          nearlyEqual(arrow.sizeref, 0.13) &&
+          nearlyEqual(arrow.meta.position, 0.62) &&
+          arrow.showscale === false &&
+          arrow.showlegend === false &&
+          skipsHover(arrow) &&
+          coordinateLengthsMatch &&
+          solidColorScale(arrow, pathColor) &&
+          path.x.length === segmentCount + 1 &&
+          Array.from({ length: segmentCount }, (_, segment) => {
+            const start = pointAt(path, segment);
             const destination = pointAt(path, segment + 1);
+            const difference = Object.fromEntries(
+              axes.map((axis) => [axis, Number(destination[axis]) - Number(start[axis])])
+            );
+            const length = Math.sqrt(
+              axes.reduce((sum, axis) => sum + difference[axis] ** 2, 0)
+            );
+            const expectedAnchor = Object.fromEntries(
+              axes.map((axis) => [axis, Number(start[axis]) + 0.62 * difference[axis]])
+            );
+            const expectedDirection = Object.fromEntries(
+              axes.map((axis) => [axis, difference[axis] / length])
+            );
+            const actualDirection = vectorAt(arrow, segment);
+            const directionLength = Math.sqrt(
+              axes.reduce(
+                (sum, axis) => sum + Number(actualDirection[axis]) ** 2,
+                0
+              )
+            );
             return (
-              samePoint(firstTip, secondTip) &&
-              samePoint(firstTip, destination)
+              Number.isFinite(length) &&
+              length > 0 &&
+              samePoint(pointAt(arrow, segment), expectedAnchor) &&
+              samePoint(actualDirection, expectedDirection) &&
+              nearlyEqual(directionLength, 1)
             );
           }).every(Boolean)
         );
@@ -554,18 +613,123 @@ test("trusted sample traverses every model view and trajectory controls", async 
       const nodeColors = [
         ...new Set(paths.flatMap((path) => Array.from(path.marker.color || []))),
       ];
+      const squareCentroids = [...paths, ...nodeMarkers].every(
+        (trace) => trace.marker?.symbol === "square"
+      );
+      const confidenceBoxesValid = confidenceBoxes.every((trace) => {
+        const boxCount = Number(trace.meta.box_count);
+        const segmentCount = Number(trace.meta.segment_count);
+        return (
+          trace.type === "scatter3d" &&
+          trace.mode === "lines" &&
+          trace.line?.dash === "dot" &&
+          trace.connectgaps === false &&
+          trace.showlegend === false &&
+          Number.isInteger(boxCount) &&
+          boxCount > 0 &&
+          segmentCount === boxCount * 12 &&
+          axes.every(
+            (axis) =>
+              trace[axis]?.length === segmentCount * 3 &&
+              trace[axis].filter((value) => value == null).length === segmentCount
+          )
+        );
+      });
+      const unitPointsValid = unitPoints.every((trace) => {
+        const pointCount = Number(trace.meta.point_count);
+        return (
+          trace.type === "scatter3d" &&
+          trace.mode === "markers" &&
+          trace.showlegend === false &&
+          trace.meta.time_var === "Week" &&
+          Number.isInteger(pointCount) &&
+          pointCount > 0 &&
+          axes.every(
+            (axis) =>
+              trace[axis]?.length === pointCount &&
+              trace[axis].every((value) => Number.isFinite(Number(value)))
+          ) &&
+          trace.marker?.color?.length === pointCount &&
+          nearlyEqual(trace.marker?.size, 5.5) &&
+          nearlyEqual(trace.marker?.opacity, 0.88) &&
+          String(trace.marker?.line?.color).toUpperCase() === "#FFFFFF"
+        );
+      });
+      const expectedOriginAxes = [
+        { label: "SVD1", dimension: "x", color: "#E00000" },
+        { label: "SVD2", dimension: "y", color: "#0000D0" },
+        { label: "SVD3", dimension: "z", color: "#008B00" },
+      ];
+      const originAxesValid = expectedOriginAxes.every((expected) => {
+        const shaft = axisShafts.find(
+          (trace) => trace.meta.axis === expected.label
+        );
+        const arrowhead = axisArrowheads.find(
+          (trace) => trace.meta.axis === expected.label
+        );
+        const label = axisLabels.find(
+          (trace) => trace.meta.axis === expected.label
+        );
+        if (!shaft || !arrowhead || !label) return false;
+
+        const origin = pointAt(shaft, 0);
+        const tip = pointAt(shaft, 1);
+        const direction = vectorAt(arrowhead, 0);
+        const expectedDirection = Object.fromEntries(
+          axes.map((axis) => [axis, axis === expected.dimension ? 1 : 0])
+        );
+        const labelText = Array.isArray(label.text) ? label.text[0] : label.text;
+        return (
+          shaft.type === "scatter3d" &&
+          shaft.mode === "lines" &&
+          samePoint(origin, { x: 0, y: 0, z: 0 }) &&
+          Number(tip[expected.dimension]) > 0 &&
+          axes
+            .filter((axis) => axis !== expected.dimension)
+            .every((axis) => nearlyEqual(tip[axis], 0)) &&
+          String(shaft.line?.color).toUpperCase() === expected.color &&
+          nearlyEqual(shaft.line?.width, 4.4) &&
+          arrowhead.type === "cone" &&
+          arrowhead.anchor === "tip" &&
+          arrowhead.sizemode === "absolute" &&
+          nearlyEqual(arrowhead.sizeref, 0.21) &&
+          samePoint(pointAt(arrowhead, 0), tip) &&
+          samePoint(direction, expectedDirection) &&
+          solidColorScale(arrowhead, expected.color) &&
+          label.type === "scatter3d" &&
+          label.mode === "text" &&
+          labelText === expected.label &&
+          String(label.textfont?.color).toUpperCase() === expected.color &&
+          String(label.textfont?.family).includes("Times New Roman") &&
+          nearlyEqual(label.textfont?.size, 17) &&
+          [shaft, arrowhead, label].every(
+            (trace) => trace.showlegend === false && skipsHover(trace)
+          )
+        );
+      });
       const hoverlabel = plot._fullLayout?.hoverlabel || {};
       return {
         traceCount: arrows.length,
         segmentCounts: arrows.map((trace) => trace.meta.segment_count),
-        wingCounts: wingRuns.map((runs) => runs.length),
         legendEntries: arrows.filter((trace) => trace.showlegend !== false).length,
         nodeMarkerCount: nodeMarkers.length,
-        tipsReachDestinationCenters,
+        coneGeometryMatchesPaths,
         markersCoverArrows,
         nodeColorsMatch,
+        squareCentroids,
         uniqueNodeColors,
         minimumNodeLuminance: Math.min(...nodeColors.map(relativeLuminance)),
+        unitPointTraceCount: unitPoints.length,
+        unitPointCounts: unitPoints.map((trace) => trace.meta.point_count),
+        unitPointsValid,
+        confidenceBoxTraceCount: confidenceBoxes.length,
+        confidenceBoxesValid,
+        originAxisTraceCounts: [
+          axisShafts.length,
+          axisArrowheads.length,
+          axisLabels.length,
+        ],
+        originAxesValid,
         hoverLabel: {
           bgcolor: hoverlabel.bgcolor,
           bordercolor: hoverlabel.bordercolor,
@@ -574,16 +738,26 @@ test("trusted sample traverses every model view and trajectory controls", async 
         },
       };
     });
-  expect(directionTraceSummary).toMatchObject({
+  expect(trajectoryTraceSummary).toMatchObject({
     traceCount: 1,
     segmentCounts: [14],
-    wingCounts: [28],
     legendEntries: 0,
     nodeMarkerCount: 1,
-    tipsReachDestinationCenters: true,
+    coneGeometryMatchesPaths: true,
     markersCoverArrows: true,
     nodeColorsMatch: true,
+    squareCentroids: true,
     uniqueNodeColors: 15,
+    unitPointTraceCount: 1,
+    unitPointCounts: [255],
+    unitPointsValid: true,
+    // This smoke path deliberately disables bootstrap above; confidence-box
+    // presence and counts are therefore expected to be zero here. The generic
+    // trace contract still guards any confidence-box trace that is emitted.
+    confidenceBoxTraceCount: 0,
+    confidenceBoxesValid: true,
+    originAxisTraceCounts: [3, 3, 3],
+    originAxesValid: true,
     hoverLabel: {
       bgcolor: "#FFFFFF",
       bordercolor: "#526777",
@@ -591,7 +765,7 @@ test("trusted sample traverses every model view and trajectory controls", async 
       fontColor: "#102A43",
     },
   });
-  expect(directionTraceSummary.minimumNodeLuminance).toBeGreaterThanOrEqual(0.16);
+  expect(trajectoryTraceSummary.minimumNodeLuminance).toBeGreaterThanOrEqual(0.16);
 
   const plotBox = await page
     .locator("#main_app-trajectory-trajectory_plot")

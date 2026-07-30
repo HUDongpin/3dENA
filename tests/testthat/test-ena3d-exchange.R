@@ -40,7 +40,8 @@ tryCatch(
   c(
     "sample_enaset.Rdata",
     "newfrat_enaset.Rdata",
-    "student_enaset.RData"
+    "student_enaset.RData",
+    "class1_timepoints_enaset.RData"
   )
 )
 

@@ -16,6 +16,8 @@ ordered centroid trajectories.
 - Choose an available-at-each-time or complete longitudinal cohort.
 - Calculate distance in the selected axes or the full ENA rotation.
 - Project an unchanged trajectory result into 2D or render it in 3D.
+- Orient the 3D view with positive SVD1/SVD2/SVD3 origin arrows and show
+  cone-shaped direction markers along trajectory segments.
 - Add participant-clustered bootstrap intervals.
 - Compare two condition paths after exact entity-and-time matching.
 - Overlay the mean ENA network for a selected time.
@@ -90,6 +92,13 @@ the working directory.
 To explore the included fixtures, open **Data**, select a file under
 **Sample dataset**, and load it. `sample_data/newfrat_enaset.Rdata` is the
 longitudinal example: it contains 15 weeks and 17 repeated entities per week.
+The four reviewed fixtures are documented in
+[`sample_data/README.md`](sample_data/README.md). The Class 1 example is
+`sample_data/class1_timepoints_enaset.RData`: it contains TP1, TP2, and TP3 in
+one shared SVD rotation and declares `Period` as time, `Speaker` as the stable
+entity ID, and `Group` as the trajectory group. Select only `G1` under
+**Displayed trajectory levels** to reproduce the Group 1 view; this filter
+changes the rendered paths and points, not the computed five-group result.
 
 The **Build ENA from raw Excel or CSV** workflow accepts `.csv`, `.xlsx`, and
 `.xls` files up to 5 MiB. After upload, select:
@@ -131,7 +140,11 @@ The converter prints input/output SHA-256 and writes a `.sha256` sidecar. Never
 use it for an untrusted native R file; loading that format can execute code.
 
 Bundled fixtures are resolved only from the read-only `sample_data/` directory.
-Both loaders apply file, object, row, node, dimension, cell, group-level and
+The Class 1 fixture contains no message text and uses stable group-scoped
+pseudonyms instead of learner names and original ENA unit labels. That reviewed
+fixture does not make identifiable research data suitable for upload: users
+must de-identify their own data before sending it to a public deployment. Both
+loaders apply file, object, row, node, dimension, cell, group-level and
 unit-count budgets before replacing the active dataset. A failed load leaves
 the current dataset unchanged.
 
@@ -141,14 +154,16 @@ the current dataset unchanged.
 2. Open **Model > Trajectory**.
 3. Select a time/order variable and a stable entity ID repeated over time.
    Do not use an ID that embeds the time value.
-4. Optionally select a group/condition variable. This draws one path per level
-   and exposes an optional ID-matched comparison between two selected levels.
-5. Review the generated time order. Character labels require particular care.
-6. Choose the cohort, missing-value, and distance-space policies.
-7. Optionally enable bootstrap uncertainty, the paired A/B comparison, or a
+4. Optionally select a group/condition variable. This computes one path per
+   level and exposes an optional ID-matched comparison between two levels.
+5. Optionally narrow **Displayed trajectory levels**. This display-only filter
+   does not recompute the path or change exports.
+6. Review the generated time order. Character labels require particular care.
+7. Choose the cohort, missing-value, and distance-space policies.
+8. Optionally enable bootstrap uncertainty, the paired A/B comparison, or a
    selected-time network overlay.
-8. Select **Run / recompute trajectory**.
-9. Inspect warnings before interpreting or exporting the result.
+9. Select **Run / recompute trajectory**.
+10. Inspect warnings before interpreting or exporting the result.
 
 Changing between 2D and 3D, changing the two projection axes, or changing the
 network overlay does not alter the computed centroids or movement metrics.

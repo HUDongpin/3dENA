@@ -147,7 +147,7 @@ test_that("all bundled samples satisfy the 3D ENA schema", {
     pattern = "\\.[Rr][Dd]ata$",
     full.names = TRUE
   )
-  expect_length(fixtures, 3L)
+  expect_length(fixtures, 4L)
   for (fixture in fixtures) {
     expect_s3_class(.read_trusted_rdata(fixture), "ena.set")
   }

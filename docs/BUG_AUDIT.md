@@ -125,7 +125,7 @@ Rscript tools/run_bundled_real_e2e.R
 ```
 
 The script now discovers the project root from its invocation path, working
-directory, or `ENA3D_PROJECT_ROOT`. It runs the three bundled datasets through
+directory, or `ENA3D_PROJECT_ROOT`. It runs the four bundled datasets through
 real centroid paths, seeded 500-replicate bootstraps, paired or independent
 comparisons, 999-permutation inference where applicable, Plotly numerical
 inspection, CSV re-import, and manifest generation. Its evidence is written to
@@ -190,11 +190,18 @@ separate from checks that only exist in the pre-release workflow.
 | R static audit | Exact pinned detectors inspect 35 runtime files and 454 functions. The `seq_linter` defect was fixed. Four legacy functions remain above the conservative complexity review gate and 11 `codetools` dispatch/usage diagnostics remain explicitly triaged technical debt rather than registered correctness findings. |
 | JavaScript lint/dependencies | After the lockfile install, `npm run lint` completed with no ESLint finding and `npm audit --audit-level=high` reported zero vulnerabilities. |
 | Subsystem coverage | Five subsystems and all 50 named high-risk test contracts passed the no-regression gate: scientific correctness 89.83%, data boundaries 74.62%, AI/privacy 72.24%, reactive/async 73.59%, plotting/rendering 78.51%. |
-| Bundled oracle | A fresh invocation from `/tmp` completed all three bundled datasets. Longitudinal/ordered cross-sectional paths, 500-replicate bootstraps, paired/independent comparisons, Plotly checks, and every declared CSV round trip passed. |
+| Bundled oracle | The 2026-07-20 invocation from `/tmp` completed the then-current three bundled datasets. The runner now declares the fourth Class 1 fixture; a new four-fixture receipt must not be inferred from this older snapshot. |
 | Browser smoke | The isolated three-repeat five-project matrix reported 45/45 passing assertions in 5.7 minutes with no retry or browser error. The default `No Network` Plotly canvas rendered in every full-flow execution. |
 | Accessibility | Strict Axe runs passed 3/3 on desktop, tablet, and mobile Chromium. All three sanitized artifacts contain zero violation and zero incomplete groups. |
 | Reliability soak | The corrected isolated workload passed: 30.2 minutes in the test body and 30.3 minutes total. It repeatedly completed supported longitudinal trajectories, asserted the cross-sectional guard where appropriate, switched through Stats and all bundled datasets, probed health with bounded connection-reset retry, and observed no browser/page error. |
 | Supply chain and container | `npm audit --audit-level=high` reports zero vulnerabilities. Docker, Trivy, Gitleaks, and Syft are unavailable locally, so redacted-secret, SBOM, filesystem/image vulnerability, hardened runtime, and proxy checks remain CI-only release gates. |
+
+The Class 1 extension was replayed locally on 2026-07-30. The four-fixture
+bundled oracle completed with zero failed dataset: Class 1 contributed 72
+student-period points in 15 SVD dimensions, 26 pseudonymous entities, 15
+group-period path rows, three independent condition-comparison rows, and
+passing point/path/bootstrap/comparison CSV round trips. This supplements; it
+does not retroactively alter the dated 2026-07-20 browser and coverage receipts.
 
 Generated local percentages establish the committed coverage baseline; future
 strict runs reject any subsystem decrease greater than 0.01 percentage points.
@@ -234,7 +241,7 @@ exited zero.
 | Stream | Implemented coverage | Evidence state / remaining gap |
 | --- | --- | --- |
 | Browser engines and viewports | Desktop Chromium, Firefox, WebKit; tablet and 390px mobile Chromium | Three clean repetitions completed: 45/45. |
-| Browser flows | Bundled sample, valid/invalid exchange upload, every Model view, Stats, real trajectory, state switch, numerical Plotly checks, CSV/ZIP verification | Passing across all 45 executions with no browser error; the soak cycles all three bundled datasets. Raw browser construction and fake-provider browser success/failure remain future matrix expansion, with provider tests still mocked at unit level. |
+| Browser flows | Bundled sample, valid/invalid exchange upload, every Model view, Stats, real trajectory, state switch, numerical Plotly checks, CSV/ZIP verification | Passing across all 45 executions with no browser error in the 2026-07-20 three-fixture snapshot. The current soak declares all four fixtures, including Class 1; raw browser construction and fake-provider browser success/failure remain future matrix expansion, with provider tests still mocked at unit level. |
 | Accessibility | Keyboard activation/focus, accessible states, responsive overflow, Axe WCAG A/AA on Home/Data/Stats | Strict desktop/tablet/mobile Chromium audit passed with zero findings. |
 | Async resources | Hard timeout, cancel, session cleanup hooks, stale AI promise rejection, dataset invalidation; opt-in browser cancel/soak | Unit/soak coverage present. Worker death, cap/cap-plus-one multi-session pressure, rapid cancel/restart, and slot-release races still need dedicated stress fixtures. |
 | AI boundary | Aggregate evidence, small-cell suppression, consent hash, malformed responses, safe errors, stale/cancel behavior, fake success/failure | Participant-like `Name` fields are rejected before evidence construction and provider call; all provider tests remain mocked. Prompt-injection and cross-session/global quota stress remain future expansion. |

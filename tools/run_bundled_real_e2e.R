@@ -62,10 +62,16 @@ dataset_specs <- list(
     analysis_kind = "longitudinal participant trajectory",
     time_var = "Week",
     id_var = "Name",
+    group_vars = NULL,
+    display_levels = NULL,
     order = as.character(0:14),
     cohort_policy = "complete",
     comparison_design = "paired early-versus-late aligned weeks",
-    comparison_direction = "Late weeks 8-14 - early weeks 0-6"
+    comparison_direction = "Late weeks 8-14 - early weeks 0-6",
+    caveat = paste(
+      "Longitudinal path; the paired comparison aligns early and late",
+      "seven-week windows and excludes Week 7."
+    )
   ),
   sample = list(
     filename = "sample_enaset.Rdata",
@@ -73,10 +79,16 @@ dataset_specs <- list(
     analysis_kind = "ordered cross-sectional group profile",
     time_var = "groupid",
     id_var = "ParticipantID",
+    group_vars = NULL,
+    display_levels = NULL,
     order = c("1", "2"),
     cohort_policy = "available",
     comparison_design = "independent group 1 versus group 2",
-    comparison_direction = "group 2 - group 1"
+    comparison_direction = "group 2 - group 1",
+    caveat = paste(
+      "Ordered group profile, not a longitudinal trajectory; independent",
+      "comparison has only 2 + 2 units and very low inferential power."
+    )
   ),
   student = list(
     filename = "student_enaset.RData",
@@ -84,10 +96,37 @@ dataset_specs <- list(
     analysis_kind = "ordered cross-sectional performance profile",
     time_var = "PerformanceBand",
     id_var = "Name",
+    group_vars = NULL,
+    display_levels = NULL,
     order = c("Low (60-74)", "Middle (75-89)", "High (90-100)"),
     cohort_policy = "available",
     comparison_design = "independent low versus high performance",
-    comparison_direction = "High performance - low performance"
+    comparison_direction = "High performance - low performance",
+    caveat = paste(
+      "Cross-sectional performance profile, not a longitudinal trajectory;",
+      "performance bands are declared as 60-74, 75-89, and 90-100."
+    )
+  ),
+  class1_timepoints = list(
+    filename = "class1_timepoints_enaset.RData",
+    seed = base_seed + 4L,
+    analysis_kind = "longitudinal Class 1 group trajectories",
+    time_var = "Period",
+    id_var = "Speaker",
+    group_vars = "Group",
+    display_levels = "G1",
+    order = c("TP1", "TP2", "TP3"),
+    cohort_policy = "available",
+    declared_defaults = c(
+      time = "Period", id = "Speaker", group = "Group"
+    ),
+    comparison_design = "independent GenAI versus Non-GenAI condition paths",
+    comparison_direction = "GenAI group - Non-GenAI group",
+    caveat = paste(
+      "Pseudonymized longitudinal example in one shared ENA rotation; the",
+      "application can display only G1 without changing the five-group",
+      "analysis. Condition-path inference is independent, not ID-matched."
+    )
   )
 )
 
@@ -197,31 +236,65 @@ build_comparison <- function(slug, points, dimensions, spec) {
     return(comparison)
   }
 
-  side_a <- points[points$PerformanceBand == "Low (60-74)", , drop = FALSE]
-  side_b <- points[points$PerformanceBand == "High (90-100)", , drop = FALSE]
-  side_a$ComparisonTime <- "Snapshot"
-  side_b$ComparisonTime <- "Snapshot"
-  comparison <- suppressWarnings(compare_independent_centroid_paths(
-    points_a = side_a,
-    points_b = side_b,
-    time_var = "ComparisonTime",
-    id_var = "Name",
-    dimensions = dimensions,
-    order = "Snapshot",
-    cohort_policy = "complete",
-    na_policy = "error",
-    distance_space = "selected",
-    n_boot = bootstrap_repetitions,
-    n_perm = permutation_repetitions,
-    conf_level = confidence_level,
-    seed = spec$seed,
-    labels = c("Low performance", "High performance"),
-    p_adjust_method = "holm"
-  ))
-  if (any(comparison$n_a_used != 18L) || any(comparison$n_b_used != 13L)) {
-    stop("student independent comparison must retain 18 low + 13 high units.")
+  if (slug == "student") {
+    side_a <- points[points$PerformanceBand == "Low (60-74)", , drop = FALSE]
+    side_b <- points[points$PerformanceBand == "High (90-100)", , drop = FALSE]
+    side_a$ComparisonTime <- "Snapshot"
+    side_b$ComparisonTime <- "Snapshot"
+    comparison <- suppressWarnings(compare_independent_centroid_paths(
+      points_a = side_a,
+      points_b = side_b,
+      time_var = "ComparisonTime",
+      id_var = "Name",
+      dimensions = dimensions,
+      order = "Snapshot",
+      cohort_policy = "complete",
+      na_policy = "error",
+      distance_space = "selected",
+      n_boot = bootstrap_repetitions,
+      n_perm = permutation_repetitions,
+      conf_level = confidence_level,
+      seed = spec$seed,
+      labels = c("Low performance", "High performance"),
+      p_adjust_method = "holm"
+    ))
+    if (any(comparison$n_a_used != 18L) || any(comparison$n_b_used != 13L)) {
+      stop("student independent comparison must retain 18 low + 13 high units.")
+    }
+    return(comparison)
   }
-  comparison
+
+  if (slug == "class1_timepoints") {
+    side_a <- points[
+      points$Condition == "Non-GenAI group", , drop = FALSE
+    ]
+    side_b <- points[points$Condition == "GenAI group", , drop = FALSE]
+    comparison <- suppressWarnings(compare_independent_centroid_paths(
+      points_a = side_a,
+      points_b = side_b,
+      time_var = spec$time_var,
+      id_var = spec$id_var,
+      dimensions = dimensions,
+      order = spec$order,
+      cohort_policy = spec$cohort_policy,
+      na_policy = "error",
+      distance_space = "selected",
+      n_boot = bootstrap_repetitions,
+      n_perm = permutation_repetitions,
+      conf_level = confidence_level,
+      seed = spec$seed,
+      labels = c("Non-GenAI group", "GenAI group"),
+      p_adjust_method = "holm"
+    ))
+    if (!inherits(comparison, "independent_centroid_path_comparison") ||
+        nrow(comparison) != length(spec$order) ||
+        any(comparison$n_a_used < 1L) || any(comparison$n_b_used < 1L)) {
+      stop("Class 1 condition comparison did not retain both conditions.")
+    }
+    return(comparison)
+  }
+
+  stop("No bundled comparison contract is declared for ", slug, ".")
 }
 
 write_and_check_csv <- function(data, target, metadata = list()) {
@@ -281,13 +354,26 @@ for (slug in names(dataset_specs)) {
   loaded <- load_trusted_ena(source_path)
   ena_set <- loaded$object
   points <- prepare_analysis_points(slug, ena_set$points)
+  if (!is.null(spec$declared_defaults)) {
+    params <- ena_set$`_function.params`
+    observed_defaults <- c(
+      time = params$trajectory.time.by,
+      id = params$trajectory.id.by,
+      group = params$trajectory.group.by
+    )
+    if (!identical(observed_defaults, spec$declared_defaults)) {
+      stop(spec$filename, " does not retain its reviewed trajectory defaults.")
+    }
+  }
   dimensions_all <- ena_dimensions(ena_set$points)
   if (length(dimensions_all) < 3L) {
     stop(spec$filename, " has fewer than three ENA dimensions.")
   }
   dimensions <- dimensions_all[seq_len(3L)]
 
-  required_columns <- unique(c(spec$time_var, spec$id_var, dimensions))
+  required_columns <- unique(c(
+    spec$time_var, spec$id_var, spec$group_vars, dimensions
+  ))
   if (length(setdiff(required_columns, names(points)))) {
     stop(spec$filename, " is missing required analytical columns.")
   }
@@ -297,7 +383,8 @@ for (slug in names(dataset_specs)) {
   bad_dimension <- Reduce(`|`, lapply(points[dimensions], function(x) {
     is.na(x) | !is.finite(x)
   }))
-  duplicate_grain <- duplicated(points[c(spec$time_var, spec$id_var)])
+  analysis_key <- c(spec$group_vars, spec$time_var, spec$id_var)
+  duplicate_grain <- duplicated(points[analysis_key])
   participant_count <- length(unique(points[[spec$id_var]][!bad_key]))
   period_counts <- table(factor(
     as.character(points[[spec$time_var]]), levels = spec$order
@@ -307,6 +394,7 @@ for (slug in names(dataset_specs)) {
     points = points,
     time_var = spec$time_var,
     id_var = spec$id_var,
+    group_vars = spec$group_vars,
     dimensions = dimensions,
     order = spec$order,
     cohort_policy = spec$cohort_policy,
@@ -317,6 +405,7 @@ for (slug in names(dataset_specs)) {
     points = points,
     time_var = spec$time_var,
     id_var = spec$id_var,
+    group_vars = spec$group_vars,
     dimensions = dimensions,
     order = spec$order,
     cohort_policy = spec$cohort_policy,
@@ -341,8 +430,16 @@ for (slug in names(dataset_specs)) {
     identical(trace$type, "scatter3d") &&
       identical(trace$mode, "lines+markers")
   }, logical(1L)))
-  if (path_trace_count != 1L) {
-    stop(slug, " 3D plot must contain exactly one path trace.")
+  expected_path_trace_count <- if (length(spec$group_vars)) {
+    nrow(unique(path[spec$group_vars]))
+  } else {
+    1L
+  }
+  if (path_trace_count != expected_path_trace_count) {
+    stop(
+      slug, " 3D plot must contain ", expected_path_trace_count,
+      " path trace(s)."
+    )
   }
   plot_html <- file.path(dataset_output, "trajectory_3d.html")
   htmlwidgets::saveWidget(
@@ -367,6 +464,8 @@ for (slug in names(dataset_specs)) {
     analysis_kind = spec$analysis_kind,
     time_var = spec$time_var,
     id_var = spec$id_var,
+    group_vars = paste(spec$group_vars, collapse = ";"),
+    display_levels = paste(spec$display_levels, collapse = ";"),
     dimensions = paste(dimensions, collapse = ";"),
     order = paste(spec$order, collapse = ";"),
     cohort_policy = spec$cohort_policy,
@@ -397,6 +496,7 @@ for (slug in names(dataset_specs)) {
     points = points_reimported,
     time_var = spec$time_var,
     id_var = spec$id_var,
+    group_vars = spec$group_vars,
     dimensions = dimensions,
     order = spec$order,
     cohort_policy = spec$cohort_policy,
@@ -511,6 +611,8 @@ for (slug in names(dataset_specs)) {
       kind = spec$analysis_kind,
       time_var = spec$time_var,
       id_var = spec$id_var,
+      group_vars = spec$group_vars,
+      display_levels = spec$display_levels,
       order = spec$order,
       cohort_policy = spec$cohort_policy,
       path_rows = nrow(path),
@@ -533,7 +635,8 @@ for (slug in names(dataset_specs)) {
     plot = list(
       html = "trajectory_3d.html",
       plotly_trace_count = length(built_plot$x$data),
-      path_trace_count = path_trace_count
+      path_trace_count = path_trace_count,
+      expected_path_trace_count = expected_path_trace_count
     ),
     csv_roundtrip = list(
       analysis_points_to_path = "pass",
@@ -542,13 +645,7 @@ for (slug in names(dataset_specs)) {
       comparison = "pass"
     ),
     diagnostics = warnings,
-    caveat = if (slug == "newfrat") {
-      "Longitudinal path; the paired comparison aligns early and late seven-week windows and excludes Week 7."
-    } else if (slug == "sample") {
-      "Ordered group profile, not a longitudinal trajectory; independent comparison has only 2 + 2 units and very low inferential power."
-    } else {
-      "Cross-sectional performance profile, not a longitudinal trajectory; performance bands are declared as 60-74, 75-89, and 90-100."
-    },
+    caveat = spec$caveat,
     generated_utc = format(Sys.time(), tz = "UTC", usetz = TRUE)
   )
   write_json(

@@ -35,12 +35,20 @@ Native R serialization can contain executable objects, so `.RData`, `.rds` and
 workspaces must never be passed from a browser to `load()` or `readRDS()` in
 the Shiny worker.
 
-Only the three reviewed fixtures packaged under `sample_data/` are available.
+Only the four reviewed fixtures packaged under `sample_data/` are available.
 They are resolved as direct children of that directory, validated against ENA
 schema and size limits, and mounted read-only in the production image. Adding a
 sample is a source-code and supply-chain change: review it, run the full test
 suite, commit it, and build a new immutable image. Do not mount a writable data
 directory over `sample_data/`.
+
+The Class 1 fixture remains inside that reviewed trust boundary and is packaged
+only in a de-identified form: it contains one shared ENA rotation and
+pseudonymous learner-period records, with original learner names, original ENA
+unit labels, and message text excluded. This packaging decision does not
+authorize identifiable classroom data on the public site; uploaded datasets
+remain the user's responsibility to de-identify under the applicable
+research-data policy.
 
 The exchange contract is documented in `docs/ENA3D_EXCHANGE_V1.md`. The worker
 reads bounded UTF-8 bytes with `jsonlite`, accepts only JSON scalars under a
