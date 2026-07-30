@@ -105,6 +105,21 @@ test_that("Vercel rewrites every deep link to the shared application document", 
   expect_equal(config$rewrites, expected)
 })
 
+test_that("the bounded Vercel preview listens on the platform container port", {
+  dockerfile <- paste(
+    readLines(
+      file.path(.site_route_root, "Dockerfile.vercel"),
+      warn = FALSE
+    ),
+    collapse = "\n"
+  )
+
+  expect_match(dockerfile, "PORT=80", fixed = TRUE)
+  expect_match(dockerfile, "EXPOSE 80", fixed = TRUE)
+  expect_match(dockerfile, "${PORT:-80}", fixed = TRUE)
+  expect_false(grepl("PORT=3838", dockerfile, fixed = TRUE))
+})
+
 test_that("the application loads and enables the public router", {
   app_source <- paste(
     readLines(file.path(.site_route_root, "R", "app.R"), warn = FALSE),

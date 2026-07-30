@@ -21,6 +21,12 @@ non-authoritative previews until DNS cutover is complete; they explicitly use
 the `ephemeral-preview` runtime profile and cannot pass the persistent-runtime
 gate.
 
+The preview image listens on Vercel's default container HTTP port `80`. Keep
+that setting separate from the persistent Shiny Server image, which exposes
+`3838` behind nginx. A Vercel build marked `Ready` is not a health check: open
+the immutable preview URL and confirm an HTTP response before treating the
+preview as usable.
+
 Shiny Server's robust transport has a bounded 15-second opportunity to
 reattach the browser to the **existing** R session. The app explicitly disables
 Shiny's separate new-session reconnect fallback because replaying browser
