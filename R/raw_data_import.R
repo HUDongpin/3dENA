@@ -250,12 +250,18 @@ ena3d_raw_is_binary_code <- function(values) {
 
 
 ena3d_unit_key <- function(data, columns) {
-  values <- lapply(data[columns], function(column) {
-    value <- as.character(column)
-    value[is.na(value)] <- "<NA>"
-    value
-  })
-  do.call(paste, c(values, sep = "\r"))
+  if (!exists("ena3d_value_identity_keys", mode = "function", inherits = TRUE)) {
+    stop("Typed value identity support is unavailable.", call. = FALSE)
+  }
+  if (!is.data.frame(data) || !length(columns) || anyNA(columns) ||
+      any(!columns %in% names(data))) {
+    stop("Unit keys require existing unit columns.", call. = FALSE)
+  }
+  values <- lapply(data[columns], ena3d_value_identity_keys)
+  # Every component is an ASCII-only self-describing token, and `|` cannot
+  # occur in a component. Column order therefore defines an injective tuple
+  # encoding, including literal "<NA>" and control-character values.
+  do.call(paste, c(values, sep = "|"))
 }
 
 

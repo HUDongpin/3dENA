@@ -37,6 +37,7 @@ library(R6)
 library(rENA)
 .ena3d_source('inline_ui.R')
 .ena3d_source('security_utils.R')
+.ena3d_source('app_connection.R')
 .ena3d_source('qwen_client.R')
 .ena3d_source('ai_evidence.R')
 .ena3d_source('color_list.R')
@@ -66,6 +67,11 @@ config$app_version = Sys.getenv(
     n = 1L,
     warn = FALSE
   ))
+)
+config$runtime_profile = ena3d_runtime_profile()
+config$connection_policy = ena3d_connection_policy(config$runtime_profile)
+config$shiny_server_version = ena3d_validate_runtime_host(
+  config$runtime_profile
 )
 config$sample_files = ena3d_list_trusted_samples(config$sample_data_path)
 config$sample_count = length(config$sample_files)
@@ -133,9 +139,16 @@ jsonlite::write_json(
     status = "ok",
     app = "3D ENA",
     version = config$app_version,
-      build = config$build_id,
-      trusted_samples = config$sample_count,
-      ai_enabled = isTRUE(config$ai$available)
+    build = config$build_id,
+    trusted_samples = config$sample_count,
+    ai_enabled = isTRUE(config$ai$available),
+    runtime_profile = config$runtime_profile,
+    connection_policy = config$connection_policy,
+    shiny_server_version = if (nzchar(config$shiny_server_version)) {
+      config$shiny_server_version
+    } else {
+      NULL
+    }
   ),
   path = file.path(config$health_path, "healthz.json"),
   auto_unbox = TRUE,
@@ -154,6 +167,9 @@ ena3d_security_log(
     app_version = config$app_version,
     sample_count = config$sample_count,
     ai_enabled = isTRUE(config$ai$available),
+    runtime_profile = config$runtime_profile,
+    connection_policy = config$connection_policy,
+    shiny_server_version = config$shiny_server_version,
     r_version = paste(R.version$major, R.version$minor, sep = ".")
   )
 )
@@ -201,7 +217,7 @@ app_ui <- function(){
       tags$meta(property = "og:url", content = "https://3dena.com/"),
       tags$meta(property = "og:image", content = "https://3dena.com/og.png"),
       tags$meta(name = "twitter:card", content = "summary_large_image"),
-      ena3d_vercel_analytics_tags(),
+      ena3d_analytics_tags(),
       tags$link(
         rel = "icon",
         type = "image/svg+xml",
@@ -217,6 +233,9 @@ app_ui <- function(){
             reserved = TRUE
           )
         )
+      ),
+      ena3d_connection_assets(
+        paste(config$app_version, config$build_id, sep = "-")
       ),
       tags$script(
         "Shiny.addCustomMessageHandler('ena3d-plot-visibility', function(message) {
@@ -460,6 +479,7 @@ app_ui <- function(){
                   }
                  "
     ),
+    ena3d_connection_guard_ui(),
     navbarPage(
       title = ena3d_brand_ui(),
       id = "site_nav",
@@ -471,8 +491,8 @@ app_ui <- function(){
         version = 5,
         bg = "#f4f1e9",
         fg = "#102a43",
-        primary = "#087f85",
-        secondary = "#d36f52"
+        primary = "#07747a",
+        secondary = "#a7442e"
       ),
       tabPanel(
         title = "Home",
@@ -578,6 +598,11 @@ app_ui <- function(){
         title = "PAPERS",
         value = "papers",
         ena3d_papers_ui()
+      ),
+      tabPanel(
+        title = "TEAM",
+        value = "team",
+        ena3d_team_ui()
       ),
       tabPanel(
         title = "ABOUT",
@@ -760,6 +785,9 @@ app_ui <- function(){
  Server wrapper, used to passing variables (state) between UI and the
 "
 app_server <- function(input, output, session) {
+  ena3d_disable_new_session_reconnect(session)
+  ena3d_register_connection_proof(input, session)
+
   # Use ena_server_state to communicate between the UI and ena_app_server module
   ena_server_state <- ENA_3D_Server$new()
   ena_server_state$active_tab <- reactive({

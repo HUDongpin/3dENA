@@ -1,0 +1,174 @@
+.ena3d-connection-guard[hidden] {
+  display: none !important;
+}
+
+.ena3d-connection-guard {
+  position: fixed;
+  z-index: 100100;
+  inset: 0;
+  display: grid;
+  box-sizing: border-box;
+  place-items: center;
+  padding: 1.25rem;
+}
+
+.ena3d-connection-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(7, 29, 47, 0.72);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+.ena3d-connection-dialog {
+  position: relative;
+  width: min(31rem, 100%);
+  padding: clamp(1.5rem, 4vw, 2.25rem);
+  color: var(--ena-ink, #102a43);
+  background: var(--ena-paper-light, #fbfaf6);
+  border: 1px solid rgba(16, 42, 67, 0.22);
+  border-top: 0.35rem solid var(--ena-cyan-dark, #07747a);
+  border-radius: 0.25rem;
+  box-shadow: 0 1.5rem 4rem rgba(7, 29, 47, 0.32);
+  outline: none;
+}
+
+.ena3d-connection-status-mark {
+  display: grid;
+  width: 2.75rem;
+  height: 2.75rem;
+  margin-bottom: 1.1rem;
+  place-items: center;
+  color: var(--ena-cyan-dark, #07747a);
+  background: rgba(43, 187, 192, 0.12);
+  border-radius: 50%;
+}
+
+.ena3d-connection-spinner {
+  width: 1.15rem;
+  height: 1.15rem;
+  border: 0.16rem solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: ena3d-connection-spin 0.9s linear infinite;
+}
+
+.ena3d-connection-kicker {
+  margin: 0 0 0.35rem;
+  color: var(--ena-cyan-dark, #07747a);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+
+.ena3d-connection-dialog h2 {
+  margin: 0;
+  color: var(--ena-ink, #102a43);
+  font-family: var(--ena-serif, Georgia, "Times New Roman", serif);
+  font-size: clamp(1.7rem, 5vw, 2.25rem);
+  line-height: 1.15;
+}
+
+.ena3d-connection-message {
+  margin: 1rem 0 0;
+  font-size: 1rem;
+  line-height: 1.55;
+}
+
+.ena3d-connection-warning {
+  margin: 0.8rem 0 0;
+  color: var(--ena-muted, #526777);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.ena3d-connection-actions {
+  display: flex;
+  margin-top: 1.4rem;
+}
+
+.ena3d-connection-reload {
+  min-height: 2.75rem;
+  padding: 0.65rem 1rem;
+  color: #fff;
+  background: var(--ena-ink, #102a43);
+  border: 2px solid var(--ena-ink, #102a43);
+  border-radius: 0.15rem;
+  font: inherit;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.ena3d-connection-reload:hover {
+  background: var(--ena-ink-deep, #071d2f);
+}
+
+.ena3d-connection-reload:focus-visible {
+  outline: 3px solid var(--ena-gold, #d89a2b);
+  outline-offset: 3px;
+}
+
+.ena3d-connection-guard[data-state="failed"] .ena3d-connection-dialog {
+  border-top-color: var(--ena-coral, #a7442e);
+}
+
+.ena3d-connection-guard[data-state="session-replaced"] .ena3d-connection-dialog {
+  border-top-color: var(--ena-coral, #a7442e);
+}
+
+.ena3d-connection-guard[data-state="failed"] .ena3d-connection-status-mark,
+.ena3d-connection-guard[data-state="session-replaced"] .ena3d-connection-status-mark {
+  color: var(--ena-coral, #a7442e);
+  background: rgba(167, 68, 46, 0.12);
+}
+
+.ena3d-connection-guard[data-state="failed"] .ena3d-connection-spinner,
+.ena3d-connection-guard[data-state="session-replaced"] .ena3d-connection-spinner {
+  width: 1.1rem;
+  height: 0.2rem;
+  border: 0;
+  border-radius: 0;
+  background: currentColor;
+  animation: none;
+}
+
+html.ena3d-connection-blocked,
+html.ena3d-connection-blocked body {
+  overflow: hidden;
+}
+
+.ena3d-visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+@keyframes ena3d-connection-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 575.98px) {
+  .ena3d-connection-guard {
+    align-items: end;
+    padding: 0.75rem;
+  }
+
+  .ena3d-connection-dialog {
+    width: 100%;
+    padding: 1.35rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ena3d-connection-spinner {
+    animation-duration: 1.8s;
+  }
+}

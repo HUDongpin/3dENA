@@ -4,14 +4,28 @@
   "private": true,
   "description": "Browser smoke tests for the 3D ENA Shiny application.",
   "engines": {
-    "node": ">=20"
+    "node": ">=20.9"
+  },
+  "allowScripts": {
+    "fsevents": false
   },
   "scripts": {
+    "lint": "eslint playwright.config.js \"tests/e2e/**/*.js\"",
     "test:e2e": "playwright test",
-    "test:e2e:desktop": "playwright test --project=desktop-chromium",
-    "test:e2e:mobile": "playwright test --project=mobile-390px-chromium"
+    "test:e2e:desktop": "playwright test --project=desktop-chromium --project=desktop-firefox --project=desktop-webkit",
+    "test:e2e:chromium": "playwright test --project=desktop-chromium --project=tablet-768px-chromium --project=mobile-390px-chromium",
+    "test:e2e:mobile": "playwright test --project=mobile-390px-chromium",
+    "test:e2e:repeat": "playwright test --repeat-each=3",
+    "test:e2e:a11y": "ENA3D_AUDIT_A11Y=1 playwright test --project=audit-a11y-desktop-chromium --project=audit-a11y-tablet-768px-chromium --project=audit-a11y-mobile-390px-chromium",
+    "test:e2e:a11y:report": "ENA3D_AUDIT_A11Y=1 ENA3D_AUDIT_REPORT_ONLY=1 playwright test --project=audit-a11y-desktop-chromium --project=audit-a11y-tablet-768px-chromium --project=audit-a11y-mobile-390px-chromium",
+    "test:e2e:soak": "ENA3D_AUDIT_SOAK=1 E2E_PORT=${E2E_PORT:-43840} playwright test --project=audit-soak-chromium"
   },
   "devDependencies": {
-    "@playwright/test": "1.61.1"
+    "@axe-core/playwright": "4.12.1",
+    "@eslint/js": "9.39.5",
+    "@playwright/test": "1.61.1",
+    "eslint": "9.39.5",
+    "fflate": "0.8.3",
+    "globals": "16.5.0"
   }
 }

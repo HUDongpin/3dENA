@@ -3,6 +3,31 @@
 The production target is **https://3dena.com**. The project is not deployed to
 `www.ena3d.org`; that address appears only in historical audit material.
 
+## Required production architecture
+
+3D ENA is a stateful Shiny application. Production must run on a persistent
+Linux host as this repository's `linux/amd64` container, with Posit Shiny
+Server inside the container and nginx terminating TLS in front of it:
+
+```text
+browser -> nginx/TLS -> Shiny Server robust transport -> long-lived R worker
+```
+
+Do not deploy the production domain to a request-scoped or serverless function
+runtime. A function can be recycled while the page is still open, which ends
+the in-memory R session and produces Shiny's gray disconnected overlay.
+`Dockerfile.vercel` and `vercel.json` are retained only for bounded,
+non-authoritative previews until DNS cutover is complete; they explicitly use
+the `ephemeral-preview` runtime profile and cannot pass the persistent-runtime
+gate.
+
+Shiny Server's robust transport has a bounded 15-second opportunity to
+reattach the browser to the **existing** R session. The app explicitly disables
+Shiny's separate new-session reconnect fallback because replaying browser
+inputs cannot restore uploaded temporary files, `reactiveValues`, or running
+calculations. If the original session cannot be proven, the page stays blocked
+and requires a reload.
+
 ## Security boundary
 
 The public application accepts only version-1 `.ena3d.json` exchange uploads.
@@ -57,6 +82,25 @@ docker compose -f compose.production.yaml up -d
 curl --fail http://127.0.0.1:3838/ena3d-health/healthz.json
 ```
 
+The health response must contain the immutable build ID plus:
+
+```json
+{
+  "runtime_profile": "persistent",
+  "connection_policy": "host-existing-session-only",
+  "shiny_server_version": "1.5.23.1030"
+}
+```
+
+The image pins the Linux amd64 base image by digest and pins plus
+checksum-verifies the exact Shiny Server package named by Posit's current
+administrator guide; moving aliases or unverified downloads are not accepted.
+Its reviewed entrypoint copies only an
+allowlist of non-secret runtime settings into the non-root R worker's startup
+profile; it never copies a raw provider key. The current Shiny Server binary
+is available only for Linux amd64, so the Compose service fixes that platform
+explicitly.
+
 That command keeps AI disabled and requires no provider credential. To enable
 Qwen after the data-governance review, use the optional overlay and a secret
 file outside the repository:
@@ -77,19 +121,17 @@ root filesystem, bounded temporary storage, a process limit, and container CPU
 and memory limits. Its port binds only to loopback and must be reached through
 the TLS reverse proxy.
 
-## Vercel Web Analytics
+## Preview analytics
 
-The Shiny HTML shell uses Vercel's framework-independent Web Analytics
-bootstrap and loads `/_vercel/insights/script.js`. The Next.js-only
-`@vercel/analytics/next` component is not used because this application is an R
-Shiny container, not a Next.js application.
+Analytics is off by default in the persistent container. The Vercel preview
+image explicitly selects Vercel's framework-independent Web Analytics
+bootstrap and loads `/_vercel/insights/script.js`; the persistent host must not
+emit that platform-relative script because it is not served there.
 
-Web Analytics must also be enabled for the `3dena` project in the Vercel
-dashboard. After deployment, confirm that the script returns JavaScript and
-that a browser visit sends a request to the Vercel insights view endpoint.
-Analytics must remain limited to traffic metadata and page views; do not add
-research data, uploaded content, participant identifiers, or ENA results as
-custom event properties.
+If a production analytics provider is selected later, review it as a separate
+privacy and deployment change. Analytics must remain limited to traffic
+metadata and page views; do not add research data, uploaded content,
+participant identifiers, or ENA results as custom event properties.
 
 ## TLS and reverse proxy
 
@@ -103,7 +145,11 @@ custom event properties.
 4. verify Shiny WebSocket upgrades through nginx;
 5. verify `/healthz`, application load, sample switching, trajectory analysis,
    downloads, sidebar toggling and fullscreen in a supported browser;
-6. confirm nginx and the app both enforce the 2 MB request-body limit.
+6. confirm nginx permits the 6 MiB multipart envelope while the app still
+   enforces the reviewed 2 MiB exchange-file and 5 MiB raw-file limits;
+7. keep the WebSocket read/send timeout at 24 hours and verify that the
+   upstream host or load balancer does not impose a shorter undocumented
+   lifetime.
 
 Do not add a `server_name` for `www.ena3d.org`. DNS, certificates and redirects
 for unrelated historical domains are outside this deployment.
@@ -143,8 +189,11 @@ does not make native R serialization safe.
 
 The app emits one-line `ena3d_event` records with UTC time, severity, event and
 build ID. Logs intentionally contain aggregate sizes and trusted sample names,
-not point tables or participant identifiers. Forward stdout/stderr to the
-chosen log platform, restrict operator access, and define a retention period.
+not point tables or participant identifiers. The nginx template disables
+access logging for `__sockjs__` transport paths so short-lived session
+identifiers are not retained. Forward stdout/stderr and the remaining site
+access logs to the chosen log platform, restrict operator access, and define a
+retention period.
 
 At minimum alert on:
 
@@ -172,10 +221,37 @@ and concrete log retention period before launch.
 1. Work from a clean Git tree; run `Rscript tests/check.R`.
 2. Build with the full commit SHA in `ENA3D_BUILD_ID`.
 3. Record the image digest and scan the image/SBOM for vulnerabilities.
-4. Deploy to staging and complete the proxy/browser smoke tests.
+4. Deploy to an always-on staging host and complete the proxy/browser smoke
+   tests. Keep one page connected through nginx for at least six minutes,
+   perform periodic server round trips, and confirm that its session proof
+   remains unchanged.
+5. Briefly interrupt the staging browser's network for less than 15 seconds.
+   Accept recovery only when the same session proof returns and a new
+   server-side action succeeds. Also test an interruption beyond the recovery
+   window and confirm that the UI stays blocked and requires a reload.
    If Qwen is enabled, complete the aggregate-preview, consent, staleness,
    unit-selection refusal, failure-injection, log-redaction and billing checks
    in `docs/AI_INTERPRETATION.md`.
-5. Deploy the exact tested digest to production.
-6. Keep the preceding digest available and document the rollback command.
-7. Confirm the visible build ID and startup log match the deployed digest.
+6. Deploy the exact tested digest to production.
+7. Keep the preceding digest available and document the rollback command.
+8. Confirm the visible build ID, health metadata, and startup log match the
+   deployed digest.
+9. Change DNS only after the new host passes TLS, health, six-minute
+   connection, and short-interruption checks. Keep the previous deployment
+   available until the same checks pass through the public production domain.
+
+The `production-container` job in
+`.github/workflows/pre-release-audit.yml` automates the six-minute hold,
+periodic server round trips, a two-second nginx/TCP outage, same-session proof,
+a post-recovery round trip, and a 22-second terminal nginx/TCP outage. Stopping
+the proxy forces the established transport to close; a browser offline flag is
+not accepted as evidence unless it actually closes that transport. The terminal
+check requires both the custom blocking message and Shiny Server's native
+Reload state to remain present. It writes only a bounded, identifier-free
+`output/container/browser-session-audit.json`; browser request details,
+console output, traces, video, screenshots, and nginx access logs are not
+captured by this gate.
+
+Repository changes alone do not perform the public cutover. It additionally
+requires an always-on Linux amd64 host, TLS certificate automation, access to
+the DNS zone, and an operator-selected immutable image digest.

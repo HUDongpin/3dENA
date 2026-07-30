@@ -316,6 +316,29 @@ test_that("Change evidence exposes only bounded aggregate consecutive steps", {
 })
 
 
+test_that("Change rejects common participant-name columns before evidence exists", {
+  object <- .ai_evidence_fixture(c(5L, 5L))
+  markers <- c("PRIVATE_PERSON_ALPHA", "PRIVATE_PERSON_BETA")
+  object$points$Name <- rep(markers, each = 5L)
+  object$line.weights$Name <- object$points$Name
+
+  expect_true(all(vapply(
+    c("Name", "Full Name", "Participant Name", "Student Name", "Subject"),
+    .ena3d_ai_is_identifier_name,
+    logical(1L)
+  )))
+  expect_error(
+    ena3d_ai_build_evidence(
+      object,
+      "change",
+      list(change_var = "Name", axes = c("MR1", "SVD2", "SVD3")),
+      min_cell_n = 5L
+    ),
+    "identifier"
+  )
+})
+
+
 test_that("Change omits suppressed labels and never bridges their position", {
   object <- .ai_evidence_fixture(c(6L, 5L))
   object$points$wave <- c(

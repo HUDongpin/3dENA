@@ -46,6 +46,34 @@ test_that("paired observations match character selections to POSIXct groups", {
   expect_equal(result$data$group1_value - result$data$group2_value, c(1, 1))
 })
 
+
+test_that("paired IDs remain distinct across a daylight-saving fold", {
+  fold_ids <- as.POSIXct(
+    c(1730611800, 1730615400),
+    origin = "1970-01-01",
+    tz = "America/New_York"
+  )
+  points <- data.frame(
+    condition = rep(c("before", "after"), each = 2L),
+    pair_id = rep(fold_ids, 2L),
+    MR1 = c(2, 5, 1, 3),
+    stringsAsFactors = FALSE
+  )
+
+  expect_length(unique(as.numeric(fold_ids)), 2L)
+  result <- ena3d_match_pairs(
+    points, "condition", "before", "after", "pair_id", "MR1"
+  )
+  shuffled <- ena3d_match_pairs(
+    points[c(4, 1, 3, 2), ],
+    "condition", "before", "after", "pair_id", "MR1"
+  )
+
+  expect_identical(result$n_pairs, 2L)
+  expect_setequal(as.numeric(result$data$pair_id), as.numeric(fold_ids))
+  expect_identical(result$data, shuffled$data)
+})
+
 test_that("paired matching reports unmatched IDs", {
   points <- data.frame(
     condition = c("before", "before", "after"),

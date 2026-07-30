@@ -13,10 +13,10 @@
   width: 100%;
   min-height: 2.55rem;
   padding: 0.65rem 0.8rem;
-  border: 1px solid var(--ena-cyan-dark, #087f85);
+  border: 1px solid var(--ena-cyan-dark, #07747a);
   border-radius: 0;
   color: #fff;
-  background: var(--ena-cyan-dark, #087f85);
+  background: var(--ena-cyan-dark, #07747a);
   font-size: var(--ena-type-ui, 0.9375rem);
   font-weight: 800;
   letter-spacing: 0.035em;
@@ -107,7 +107,7 @@ body.ena-ai-drawer-open {
 
 .ena3d-tool-page .ena-ai-kicker {
   margin: 0 0 0.3rem;
-  color: var(--ena-cyan-dark, #087f85);
+  color: var(--ena-cyan-dark, #07747a);
   font-size: var(--ena-type-meta, 0.8125rem);
   font-weight: 800;
   letter-spacing: 0.13em;
@@ -418,7 +418,7 @@ body.ena-ai-drawer-open {
   width: 1.8rem;
   height: 1.8rem;
   border: 3px solid rgba(8, 127, 133, 0.22);
-  border-top-color: var(--ena-cyan-dark, #087f85);
+  border-top-color: var(--ena-cyan-dark, #07747a);
   border-radius: 50%;
   animation: ena-ai-spin 0.75s linear infinite;
 }
@@ -430,7 +430,7 @@ body.ena-ai-drawer-open {
 }
 
 .ena3d-tool-page .ena-ai-error-state {
-  border-left: 4px solid var(--ena-coral, #d36f52);
+  border-left: 4px solid var(--ena-coral, #a7442e);
   background: rgba(211, 111, 82, 0.1);
 }
 
@@ -515,9 +515,9 @@ body.ena-ai-drawer-open {
 }
 
 .ena3d-tool-page .ena-ai-interpret-button:hover:not(:disabled) {
-  border-color: var(--ena-cyan-dark, #087f85);
+  border-color: var(--ena-cyan-dark, #07747a);
   color: #fff;
-  background: var(--ena-cyan-dark, #087f85);
+  background: var(--ena-cyan-dark, #07747a);
 }
 
 .ena3d-tool-page .ena-ai-interpret-button:disabled {
@@ -528,7 +528,7 @@ body.ena-ai-drawer-open {
 .ena3d-tool-page .ena-ai-cancel-button {
   display: none;
   flex: 1 1 auto;
-  border: 1px solid var(--ena-coral, #d36f52);
+  border: 1px solid var(--ena-coral, #a7442e);
   color: var(--ena-ink-deep, #071d2f);
   background: transparent;
 }

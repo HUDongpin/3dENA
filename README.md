@@ -211,14 +211,34 @@ absolute script path from another working directory. The historical
 `R/tests/testthat/` screenshot recordings are optional and excluded from the
 standard suite; they are skipped safely when `shinytest2` is not installed.
 
+### Systematic release audit
+
+The systematic detection/remediation audit has report-only and strict
+release-gate modes:
+
+```sh
+Rscript tools/run_bug_audit.R --mode report-only --output output/audit
+Rscript tools/run_property_fuzz.R --mode report-only --output output/audit/property-fuzz
+Rscript tools/run_static_audit.R --mode report-only --output output/audit/static
+Rscript tools/run_coverage_audit.R --mode report-only --output output/audit/coverage
+```
+
+See [the systematic bug-detection and remediation audit](docs/BUG_AUDIT.md)
+for replay seeds, browser and soak commands, the resolved finding register,
+CI-only checks, and the release completion gates. AI remains disabled
+throughout audit execution.
+
 ## Production deployment
 
-The future production target is **https://3dena.com**, not `www.ena3d.org`.
-See [DEPLOYMENT.md](DEPLOYMENT.md) for the locked container build, non-root and
-read-only runtime, health check, resource limits, logging/privacy policy and
-the nginx WebSocket/TLS configuration template. Production remains AI-off
-unless the optional `compose.qwen.yaml` overlay and a mounted Qwen secret are
-provided.
+The production target is **https://3dena.com**, not `www.ena3d.org`. This is a
+stateful application: production requires the persistent Shiny Server
+container behind the reviewed nginx WebSocket/TLS proxy, not a serverless
+function. The app disables unsafe new-session input replay and accepts a
+recovery only when the original session identity is proven. See
+[DEPLOYMENT.md](DEPLOYMENT.md) for the locked build, cutover gates, non-root and
+read-only runtime, health check, resource limits, logging/privacy policy, and
+proxy template. Production remains AI-off unless the optional
+`compose.qwen.yaml` overlay and a mounted Qwen secret are provided.
 
 ## Contributing
 

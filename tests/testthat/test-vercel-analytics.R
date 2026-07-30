@@ -39,6 +39,22 @@ test_that("Vercel Analytics renders the framework-independent bootstrap", {
   )
 })
 
+test_that("analytics is off unless the deployment provider enables it", {
+  disabled <- htmltools::renderTags(
+    .analytics_test_env$ena3d_analytics_tags("none")
+  )$html
+  enabled <- htmltools::renderTags(
+    .analytics_test_env$ena3d_analytics_tags("vercel")
+  )$html
+
+  expect_identical(as.character(disabled), "")
+  expect_match(enabled, "/_vercel/insights/script.js", fixed = TRUE)
+  expect_error(
+    .analytics_test_env$ena3d_analytics_tags("unknown"),
+    "ENA3D_ANALYTICS_PROVIDER must be one of"
+  )
+})
+
 
 test_that("production asset inlining preserves the Vercel analytics route", {
   analytics <- htmltools::renderTags(

@@ -112,6 +112,28 @@ test_that("automatic mapping protects reused student labels across groups", {
 })
 
 
+test_that("raw unit tuple keys are typed and collision-free", {
+  fixture <- data.frame(
+    first = c(
+      paste0("alpha", "\r", "beta"), "alpha", NA_character_, "<NA>",
+      "alpha|beta"
+    ),
+    second = c(
+      "gamma", paste0("beta", "\r", "gamma"), "value", "value",
+      "gamma"
+    ),
+    check.names = FALSE,
+    stringsAsFactors = FALSE
+  )
+  keys <- ena3d_unit_key(fixture, c("first", "second"))
+
+  expect_length(unique(keys), nrow(fixture))
+  expect_false(any(grepl("[\r\n]", keys)))
+  expect_false(identical(keys[[3L]], keys[[4L]]))
+  expect_identical(keys, ena3d_unit_key(fixture, c("first", "second")))
+})
+
+
 test_that("mapped raw rows construct a validator-compatible 3D ENA set", {
   built <- ena3d_build_ena_from_raw(.raw_fixture(), .raw_mapping())
   expect_s3_class(built$ena_obj, "ena.set")

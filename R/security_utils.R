@@ -156,8 +156,22 @@ ena3d_spreadsheet_safe_frame <- function(data) {
 
 
 ena3d_write_safe_csv <- function(data, file) {
+  safe <- ena3d_spreadsheet_safe_frame(data)
+  multiline <- vapply(safe, function(column) {
+    (is.character(column) || is.factor(column)) &&
+      any(!is.na(column) & grepl("[\r\n]", as.character(column)))
+  }, logical(1L))
+  if (any(multiline)) {
+    stop(
+      paste0(
+        "CSV export cannot preserve carriage-return or newline characters ",
+        "exactly. Use the typed .ena3d.json exchange format instead."
+      ),
+      call. = FALSE
+    )
+  }
   utils::write.csv(
-    ena3d_spreadsheet_safe_frame(data),
+    safe,
     file,
     row.names = FALSE,
     na = "",

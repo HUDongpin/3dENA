@@ -912,7 +912,24 @@
   if (is.null(group_var) || !nzchar(group_var) || !group_var %in% names(points)) {
     return(character(0))
   }
-  unique(as.character(points[[group_var]][!is.na(points[[group_var]])]))
+  values <- points[[group_var]]
+  values <- values[!.trajectory_is_missing(values)]
+  if (!length(values)) return(character(0))
+  values <- values[!duplicated(ena3d_value_identity_keys(values))]
+  .trajectory_order_labels(values)
+}
+
+
+.trajectory_condition_choices <- function(points, group_var) {
+  tokens <- .trajectory_condition_values(points, group_var)
+  if (!length(tokens)) return(character(0))
+  values <- points[[group_var]]
+  values <- values[!.trajectory_is_missing(values)]
+  values <- values[!duplicated(ena3d_value_identity_keys(values))]
+  labels <- ena3d_group_value_labels(values)
+  collisions <- duplicated(labels) | duplicated(labels, fromLast = TRUE)
+  labels[collisions] <- tokens[collisions]
+  stats::setNames(tokens, labels)
 }
 
 
@@ -930,15 +947,18 @@
   valid <- !.trajectory_is_missing(points[[group_var]]) &
     !.trajectory_is_missing(points[[id_var]]) &
     !.trajectory_is_missing(points[[time_var]])
-  group_values <- as.character(points[[group_var]])
+  group_values <- points[[group_var]]
+  group_a <- .trajectory_time_filter_mask(group_values, level_a)
+  group_b <- .trajectory_time_filter_mask(group_values, level_b)
   frame <- data.frame(
-    group = group_values[valid],
+    group_a = group_a[valid],
+    group_b = group_b[valid],
     id = .trajectory_value_key(points[[id_var]][valid]),
     time = .trajectory_value_key(points[[time_var]][valid]),
     stringsAsFactors = FALSE
   )
-  a <- frame[frame$group == level_a, , drop = FALSE]
-  b <- frame[frame$group == level_b, , drop = FALSE]
+  a <- frame[frame$group_a, , drop = FALSE]
+  b <- frame[frame$group_b, , drop = FALSE]
   ids_a <- unique(a$id)
   ids_b <- unique(b$id)
   overlap <- intersect(ids_a, ids_b)
@@ -1136,8 +1156,9 @@
         "` is absent from line weights."
       )))
     }
-    keep <- !is.na(line_weights[[group_var]]) &
-      as.character(line_weights[[group_var]]) == as.character(selected_group)
+    keep <- .trajectory_time_filter_mask(
+      line_weights[[group_var]], selected_group
+    )
     line_weights <- line_weights[keep, , drop = FALSE]
   }
   if (!nrow(line_weights)) {
@@ -1963,7 +1984,8 @@ trajectory_server <- function(id, ena_obj, selected_axes = NULL,
       info <- data_info()
       shiny::req(!is.null(info))
       group_var <- .trajectory_or(input$group_var, "")
-      values <- .trajectory_condition_values(info$points, group_var)
+      choices <- .trajectory_condition_choices(info$points, group_var)
+      values <- unname(choices)
       old_a <- shiny::isolate(input$condition_a)
       old_b <- shiny::isolate(input$condition_b)
       selected_a <- if (!is.null(old_a) && old_a %in% values) {
@@ -1980,10 +2002,10 @@ trajectory_server <- function(id, ena_obj, selected_axes = NULL,
         if (length(remaining)) remaining[[1]] else character(0)
       }
       shiny::updateSelectInput(
-        session, "condition_a", choices = values, selected = selected_a
+        session, "condition_a", choices = choices, selected = selected_a
       )
       shiny::updateSelectInput(
-        session, "condition_b", choices = values, selected = selected_b
+        session, "condition_b", choices = choices, selected = selected_b
       )
       old_overlay_group <- shiny::isolate(input$overlay_group)
       selected_overlay_group <- if (!is.null(old_overlay_group) &&
@@ -1997,7 +2019,7 @@ trajectory_server <- function(id, ena_obj, selected_axes = NULL,
         "overlay_group",
         choices = c(
           "Overall across all trajectory groups" = "",
-          stats::setNames(values, values)
+          choices
         ),
         selected = selected_overlay_group
       )
@@ -2213,13 +2235,15 @@ trajectory_server <- function(id, ena_obj, selected_axes = NULL,
           if (nzchar(condition_a) && nzchar(condition_b) &&
               !identical(condition_a, condition_b)) {
             points_a <- points[
-              !is.na(points[[group_var]]) &
-                as.character(points[[group_var]]) == condition_a,
+              .trajectory_time_filter_mask(
+                points[[group_var]], condition_a
+              ),
               , drop = FALSE
             ]
             points_b <- points[
-              !is.na(points[[group_var]]) &
-                as.character(points[[group_var]]) == condition_b,
+              .trajectory_time_filter_mask(
+                points[[group_var]], condition_b
+              ),
               , drop = FALSE
             ]
             comparison_arguments <- list(

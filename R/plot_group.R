@@ -329,7 +329,7 @@ ena_plot_points = function(
     Z = as.numeric(points.layout[[z_axis]])
   )
   this.max = max(abs(as.matrix(points.matrix)), na.rm = TRUE);
-  for(m in 1:nrow(points.matrix)) {
+  for(m in seq_len(nrow(points.matrix))) {
     #print('m')
     #print(points.matrix[m,])
     ena_plot = plotly::add_trace(

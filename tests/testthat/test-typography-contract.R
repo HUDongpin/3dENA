@@ -57,3 +57,39 @@ test_that("workspace layout reserves readable control widths and stacks on table
   expect_match(css, "grid-template-columns: repeat(4, minmax(0, 1fr));", fixed = TRUE)
   expect_match(css, ".ena3d-main-layout > .ena3d-sidebar-column", fixed = TRUE)
 })
+
+
+test_that("interactive accent tokens meet WCAG AA contrast on light surfaces", {
+  css <- .read_typography_file("R", "www", "app_shell.css")
+  app <- .read_typography_file("R", "app.R")
+  token <- function(name) {
+    match <- regexec(
+      paste0("--", name, ":[[:space:]]*(#[0-9a-fA-F]{6})"), css
+    )
+    captures <- regmatches(css, match)[[1L]]
+    if (length(captures) != 2L) stop("Missing color token: ", name)
+    captures[[2L]]
+  }
+  luminance <- function(color) {
+    rgb <- grDevices::col2rgb(color)[, 1L] / 255
+    rgb <- ifelse(
+      rgb <= 0.04045,
+      rgb / 12.92,
+      ((rgb + 0.055) / 1.055)^2.4
+    )
+    sum(c(0.2126, 0.7152, 0.0722) * rgb)
+  }
+  contrast <- function(first, second) {
+    values <- c(luminance(first), luminance(second))
+    (max(values) + 0.05) / (min(values) + 0.05)
+  }
+
+  teal <- token("ena-cyan-dark")
+  coral <- token("ena-coral")
+  for (background in c("#f4f1e9", "#f0f2f5", "#f7f8fa")) {
+    expect_gte(contrast(teal, background), 4.5)
+    expect_gte(contrast(coral, background), 4.5)
+  }
+  expect_match(app, paste0('primary = "', teal, '"'), fixed = TRUE)
+  expect_match(app, paste0('secondary = "', coral, '"'), fixed = TRUE)
+})

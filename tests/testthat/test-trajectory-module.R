@@ -6,6 +6,7 @@ library(shiny)
   file.path(.trajectory_test_root, "R", "trajectory_analysis.R")
 )][1L]
 if (is.na(.trajectory_test_root)) stop("Could not locate the project R directory.")
+source(file.path(.trajectory_test_root, "R", "app_utils.R"), local = FALSE)
 source(file.path(.trajectory_test_root, "R", "trajectory_analysis.R"), local = FALSE)
 source(file.path(.trajectory_test_root, "R", "trajectory_plot.R"), local = FALSE)
 source(file.path(.trajectory_test_root, "R", "app_module_trajectory.R"), local = FALSE)
@@ -136,6 +137,23 @@ test_that("trajectory order UI round-trips labels, gaps, factors, and POSIX time
 })
 
 
+test_that("trajectory condition tokens distinguish adjacent typed values", {
+  adjacent <- c(1, 1 + .Machine$double.eps)
+  points <- data.frame(condition = adjacent, stringsAsFactors = FALSE)
+  choices <- .trajectory_condition_choices(points, "condition")
+  tokens <- unname(choices)
+
+  expect_length(tokens, 2L)
+  expect_length(unique(tokens), 2L)
+  expect_length(unique(names(choices)), 2L)
+  first <- .trajectory_time_filter_mask(points$condition, tokens[[1L]])
+  second <- .trajectory_time_filter_mask(points$condition, tokens[[2L]])
+  expect_identical(first, c(TRUE, FALSE))
+  expect_identical(second, c(FALSE, TRUE))
+  expect_false(any(first & second))
+})
+
+
 test_that("trajectory order UI round-trips boundary whitespace and difftime units", {
   whitespace_values <- c(" baseline", "follow-up ")
   whitespace_order <- .trajectory_default_order(whitespace_values)
@@ -255,20 +273,25 @@ test_that("isolated bootstrap deadline leaves the event loop live and kills its 
   skip_if_not_installed("promises")
 
   worker_file <- tempfile("slow-trajectory-worker-", fileext = ".R")
+  started_file <- tempfile("slow-trajectory-worker-started-")
   writeLines(c(
     "bootstrap_centroid_path <- function(...) {",
-    "  Sys.sleep(5)",
+    sprintf("  writeLines('started', %s)", deparse(started_file)),
+    "  Sys.sleep(30)",
     "  data.frame(unexpected = TRUE)",
     "}",
     "compare_centroid_paths <- function(...) data.frame(unexpected = TRUE)"
   ), worker_file)
-  on.exit(unlink(worker_file), add = TRUE)
+  on.exit(unlink(c(worker_file, started_file)), add = TRUE)
 
   heartbeat <- FALSE
   later::later(function() heartbeat <<- TRUE, delay = 0.01)
   job <- .trajectory_start_bootstrap_job(
     uncertainty_arguments = list(),
-    timeout_seconds = 0.3,
+    # The deadline is deliberately much longer than a cold callr startup.
+    # The worker itself sleeps well beyond it, so this still exercises the
+    # hosted hard cap without racing process initialization on loaded CI hosts.
+    timeout_seconds = 10,
     analysis_file = worker_file,
     poll_interval = 0.01
   )
@@ -285,14 +308,17 @@ test_that("isolated bootstrap deadline leaves the event loop live and kills its 
   # A timer scheduled in the parent must fire while the child is still doing
   # work.  This distinguishes the implementation from a synchronous
   # callr::r(..., timeout=) wrapper, which would still block Shiny.
-  expect_true(.wait_for_trajectory_condition(function() heartbeat, timeout = 1))
+  expect_true(.wait_for_trajectory_condition(
+    function() file.exists(started_file), timeout = 15
+  ))
+  expect_true(.wait_for_trajectory_condition(function() heartbeat, timeout = 2))
   expect_true(job$process$is_alive())
   expect_true(.wait_for_trajectory_condition(
-    function() !is.null(rejection), timeout = 3
+    function() !is.null(rejection), timeout = 15
   ))
 
   expect_s3_class(rejection, "trajectory_bootstrap_timeout")
-  expect_match(conditionMessage(rejection), "executable 0.3-second limit")
+  expect_match(conditionMessage(rejection), "executable 10.0-second limit")
   expect_match(conditionMessage(rejection), "worker was terminated")
   expect_false(job$process$is_alive())
   .trajectory_prune_bootstrap_processes()

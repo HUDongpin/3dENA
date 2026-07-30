@@ -1,0 +1,8 @@
+{
+  "format": "ena3d-exchange",
+  "format": "ena3d-exchange",
+  "version": 1,
+  "dimensions": ["D1", "D2", "D3"],
+  "group_variables": ["group"],
+  "tables": {}
+}

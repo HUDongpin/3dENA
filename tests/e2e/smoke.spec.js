@@ -1,5 +1,6 @@
 const { test, expect } = require("@playwright/test");
 const path = require("node:path");
+const { strFromU8, unzipSync } = require("fflate");
 
 const SAMPLE_NAME = "newfrat_enaset.Rdata";
 const EXCHANGE_FIXTURE = path.join(
@@ -7,19 +8,11 @@ const EXCHANGE_FIXTURE = path.join(
   "fixtures",
   "small-valid.ena3d.json"
 );
-
-test.beforeEach(async ({ page }) => {
-  // Vercel serves this platform route only on deployed environments. Fulfill it
-  // during localhost smoke tests so the expected development 404 is not
-  // mistaken for an application error.
-  await page.route("**/_vercel/insights/script.js", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/javascript",
-      body: "// Vercel Web Analytics test stub.\n",
-    })
-  );
-});
+const INVALID_EXCHANGE_FIXTURE = path.join(
+  __dirname,
+  "fixtures",
+  "duplicate-format.ena3d.json"
+);
 
 function captureBrowserErrors(page) {
   const messages = [];
@@ -91,6 +84,31 @@ async function openModelTab(page, name, target) {
   await waitForShinyIdle(page);
 }
 
+async function captureDownload(page, locator) {
+  await expect(locator).toBeVisible();
+  const href = await locator.getAttribute("href");
+  expect(href).toBeTruthy();
+  // Request through the browser context so Shiny's session cookies and the
+  // session-scoped download URL are both preserved. This avoids navigation
+  // differences between attachment handling in Chromium, Firefox, and WebKit
+  // while still exercising the exact href exposed to the user.
+  const response = await page.context().request.get(new URL(href, page.url()).href);
+  expect(response.ok()).toBeTruthy();
+  const disposition = response.headers()["content-disposition"] || "";
+  const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  const ordinaryName = disposition.match(/filename="?([^";]+)"?/i)?.[1];
+  return {
+    bytes: await response.body(),
+    filename: encodedName
+      ? decodeURIComponent(encodedName)
+      : ordinaryName || path.basename(new URL(href, page.url()).pathname),
+  };
+}
+
+function normalizedText(bytes) {
+  return bytes.toString("utf8").replace(/^\uFEFF/, "").replace(/\r\n/g, "\n");
+}
+
 test("home foregrounds trajectory analysis in a compact responsive hero", async ({
   page,
 }, testInfo) => {
@@ -106,8 +124,7 @@ test("home foregrounds trajectory analysis in a compact responsive hero", async 
 
   await expect(
     page.locator('script[src="/_vercel/insights/script.js"]')
-  ).toHaveCount(1);
-  expect(await page.evaluate(() => typeof window.va)).toBe("function");
+  ).toHaveCount(0);
 
   await expect(home).toBeVisible();
   await expect(heading).toBeVisible();
@@ -118,11 +135,26 @@ test("home foregrounds trajectory analysis in a compact responsive hero", async 
   await expect(visual).toContainText("Ordered nodes");
   await expect(visual).toContainText("Direction");
   await expect(visual).toContainText("Group comparison");
-  await expect(
-    visual.getByRole("img", {
-      name: /three-dimensional centroid trajectory/i,
-    })
-  ).toBeVisible();
+  const trajectoryPreview = visual.getByRole("img", {
+    name: /three-dimensional ENA visualization/i,
+  });
+  await expect(trajectoryPreview).toBeVisible();
+  await expect(trajectoryPreview).toHaveAttribute(
+    "src",
+    "ena3d-assets/trajectory-home-preview-3d.png"
+  );
+  await expect
+    .poll(() =>
+      trajectoryPreview.evaluate(
+        (image) => ({
+          complete: image.complete,
+          naturalWidth: image.naturalWidth,
+          naturalHeight: image.naturalHeight,
+        })
+      )
+    )
+    .toEqual({ complete: true, naturalWidth: 1446, naturalHeight: 1310 });
+  await expect(page.locator("#home_trajectory_plot")).toHaveCount(0);
 
   const measurements = await page.evaluate(() => {
     const heroElement = document.querySelector(".ena3d-hero");
@@ -143,7 +175,7 @@ test("home foregrounds trajectory analysis in a compact responsive hero", async 
     measurements.viewportWidth
   );
   expect(measurements.visualBackground).toContain("linear-gradient");
-  if (testInfo.project.name === "desktop-chromium") {
+  if (testInfo.project.name.startsWith("desktop-")) {
     expect(measurements.heroHeight).toBeLessThanOrEqual(700);
     expect(measurements.headingLines).toBeLessThanOrEqual(3.1);
   } else {
@@ -183,10 +215,13 @@ test("home foregrounds trajectory analysis in a compact responsive hero", async 
 });
 
 test("papers page exposes three verified copy-ready APA citations", async ({
+  browserName,
   page,
   context,
 }) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  if (browserName === "chromium") {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  }
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await waitForShinyIdle(page);
 
@@ -208,11 +243,18 @@ test("papers page exposes three verified copy-ready APA citations", async ({
   await expect(page.locator(".ena3d-copy-citation")).toHaveCount(3);
 
   const methodCopy = page.locator(".ena3d-copy-citation").first();
+  const citationTarget = await methodCopy.getAttribute("data-citation-target");
+  const expectedCitation = await page
+    .locator(`#${citationTarget}`)
+    .getAttribute("data-citation-text");
+  expect(expectedCitation).toContain("Yu, J., Hu, D., & Wang, C.-H. (2024).");
+  expect(expectedCitation).toContain("10.1007/978-3-031-76335-9_11");
   await methodCopy.click();
   await expect(methodCopy).toHaveText("Copied");
-  const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
-  expect(clipboardText).toContain("Yu, J., Hu, D., & Wang, C.-H. (2024).");
-  expect(clipboardText).toContain("10.1007/978-3-031-76335-9_11");
+  if (browserName === "chromium") {
+    const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
+    expect(clipboardText).toBe(expectedCitation);
+  }
 
   const dimensions = await page.evaluate(() => ({
     viewportWidth: window.innerWidth,
@@ -231,7 +273,11 @@ test("trusted sample traverses every model view and trajectory controls", async 
     timeout: 10_000,
   });
   expect(health.ok()).toBeTruthy();
-  expect(await health.json()).toMatchObject({ status: "ok", app: "3D ENA" });
+  expect(await health.json()).toMatchObject({
+    status: "ok",
+    app: "3D ENA",
+    ai_enabled: false,
+  });
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await waitForShinyIdle(page);
@@ -287,6 +333,24 @@ test("trusted sample traverses every model view and trajectory controls", async 
 
   await selectTrustedSample(page);
 
+  // A rejected exchange must be transactional: the current dataset card and
+  // hash stay byte-for-byte stable, and subsequent analyses remain usable.
+  const activeDatasetCard = page.locator(".active-dataset-card");
+  const activeDatasetBeforeRejectedUpload = await activeDatasetCard.innerText();
+  const activeHashBeforeRejectedUpload = await activeDatasetCard
+    .locator(".dataset-hash")
+    .innerText();
+  await exchangeUpload.setInputFiles(INVALID_EXCHANGE_FIXTURE);
+  await expect(page.locator(".shiny-notification-error").last()).toContainText(
+    "The previously active dataset remains unchanged.",
+    { timeout: 30_000 }
+  );
+  await expect(activeDatasetCard).toHaveText(activeDatasetBeforeRejectedUpload);
+  await expect(activeDatasetCard.locator(".dataset-hash")).toHaveText(
+    activeHashBeforeRejectedUpload
+  );
+  await waitForShinyIdle(page);
+
   const modelTab = page.getByRole("tab", { name: "Model", exact: true });
   await modelTab.click();
   await expect(modelTab).toHaveAttribute("aria-selected", "true");
@@ -302,6 +366,16 @@ test("trusted sample traverses every model view and trajectory controls", async 
     "ena3d-network-v1:none"
   );
   await expect(page.getByRole("combobox", { name: "Show Network" })).toBeVisible();
+  await expect(page.locator("#main_app-ena_network_plot")).toBeVisible();
+  // "No Network" suppresses network edges but intentionally retains the
+  // group geometry. The global browser-error collector below is the BUG-010
+  // regression gate for the former Plotly runtime failure on this path.
+  await expect(
+    page.locator("#main_app-ena_network_plot .main-svg").first()
+  ).toBeVisible();
+  await expect(
+    page.locator("#main_app-ena_network_plot.shiny-output-error")
+  ).toHaveCount(0);
 
   await openModelTab(
     page,
@@ -545,6 +619,98 @@ test("trusted sample traverses every model view and trajectory controls", async 
   await expect(trajectoryDownloads).toContainText("Path CSV");
   await expect(trajectoryDownloads).toContainText("Metadata CSV");
 
+  const pathDownload = await captureDownload(
+    page,
+    page.locator("#main_app-trajectory-download_path")
+  );
+  expect(pathDownload.filename).toMatch(/^centroid-path-\d{8}\.csv$/);
+  const pathCsv = normalizedText(pathDownload.bytes);
+  const pathCsvLines = pathCsv.trimEnd().split("\n");
+  expect(pathCsvLines).toHaveLength(16);
+  expect(pathCsvLines[0]).toContain("centroid_SVD1");
+  expect(pathCsvLines[0]).toContain("n_used");
+  expect(pathCsvLines[0]).toContain(".analysis_time_var");
+
+  const metadataDownload = await captureDownload(
+    page,
+    page.locator("#main_app-trajectory-download_metadata")
+  );
+  expect(metadataDownload.filename).toMatch(/^centroid-path-metadata-\d{8}\.csv$/);
+  const metadataCsv = normalizedText(metadataDownload.bytes);
+  expect(metadataCsv).toMatch(/^"field","value"\n/);
+  expect(metadataCsv).toContain('"dataset_sha256"');
+  expect(metadataCsv).toContain('"time_var","Week"');
+  expect(metadataCsv).toContain('"r_version"');
+
+  const bundleDownload = await captureDownload(
+    page,
+    page.locator("#main_app-trajectory-download_bundle")
+  );
+  expect(bundleDownload.filename).toMatch(
+    /^ena3d-trajectory-analysis-\d{8}\.zip$/
+  );
+  expect(bundleDownload.bytes.subarray(0, 2).toString("ascii")).toBe("PK");
+  const archive = unzipSync(new Uint8Array(bundleDownload.bytes));
+  expect(Object.keys(archive).sort()).toEqual([
+    "diagnostics.csv",
+    "manifest.json",
+    "metadata.csv",
+    "path.csv",
+  ]);
+  expect(strFromU8(archive["path.csv"]).replace(/\r\n/g, "\n")).toBe(pathCsv);
+  const manifest = JSON.parse(strFromU8(archive["manifest.json"]));
+  expect(manifest).toMatchObject({
+    schema: "urn:3dena:trajectory-analysis-bundle:1",
+    schema_version: 1,
+    files: ["path.csv", "diagnostics.csv", "metadata.csv"],
+    settings: { time_var: "Week" },
+  });
+  expect(manifest.metadata.dataset_sha256).toMatch(/^[0-9a-f]{64}$/);
+
+  // Top-level view switches must not silently recompute or discard a completed
+  // result. Exercise real Stats output, then compare the path trace on return.
+  const trajectoryPathBeforeStats = await page
+    .locator("#main_app-trajectory-trajectory_plot")
+    .evaluate((plot) =>
+      (plot.data || [])
+        .filter((trace) => trace.meta?.trajectory_role === "path")
+        .map((trace) => ({ x: trace.x, y: trace.y, z: trace.z }))
+    );
+  const statsTab = page.getByRole("tab", { name: "Stats", exact: true });
+  await statsTab.click();
+  await expect(statsTab).toHaveAttribute("aria-selected", "true");
+  await page.getByRole("combobox", { name: "Study design" }).click();
+  await page
+    .getByRole("option", {
+      name: "Independent groups (between participants)",
+      exact: true,
+    })
+    .click();
+  await expect(page.locator("#main_app-stats_design_status")).toContainText(
+    "Independent-groups design selected.",
+    { timeout: 30_000 }
+  );
+  await expect(page.locator("#main_app-stats_box_x_axis-data_table table")).toBeVisible();
+  await expect(page.locator("#main_app-stats_box_x_axis-p_adjust_method")).toContainText(
+    "Adjusted p (holm):"
+  );
+
+  await modelTab.click();
+  await openModelTab(
+    page,
+    "Trajectory",
+    page.getByRole("combobox", { name: "Time / order variable" })
+  );
+  await expect(page.locator("#main_app-trajectory-status")).toContainText("Completed");
+  const trajectoryPathAfterStats = await page
+    .locator("#main_app-trajectory-trajectory_plot")
+    .evaluate((plot) =>
+      (plot.data || [])
+        .filter((trace) => trace.meta?.trajectory_role === "path")
+        .map((trace) => ({ x: trace.x, y: trace.y, z: trace.z }))
+    );
+  expect(trajectoryPathAfterStats).toEqual(trajectoryPathBeforeStats);
+
   if (testInfo.project.name === "mobile-390px-chromium") {
     expect(await page.evaluate(() => window.innerWidth)).toBe(390);
     await expect(page.getByRole("tablist").first()).toBeVisible();
@@ -557,6 +723,22 @@ test("trusted sample traverses every model view and trajectory controls", async 
       page.getByRole("status").filter({ hasText: "small-valid.ena3d.json" })
     ).toBeVisible({ timeout: 30_000 });
     await waitForShinyIdle(page);
+    await expect(activeDatasetCard.locator("strong")).toHaveText(
+      "small-valid.ena3d.json"
+    );
+    await expect(activeDatasetCard.locator(".dataset-hash")).not.toHaveText(
+      activeHashBeforeRejectedUpload
+    );
+    await modelTab.click();
+    await openModelTab(
+      page,
+      "Trajectory",
+      page.getByRole("combobox", { name: "Time / order variable" })
+    );
+    await expect(page.locator("#main_app-trajectory-status")).toContainText(
+      "Run the trajectory analysis again."
+    );
+    await expect(page.locator(".trajectory-downloads")).toHaveCount(0);
   }
 
   if (browserErrors.length) {

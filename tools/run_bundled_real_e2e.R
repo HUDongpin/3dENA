@@ -1,8 +1,36 @@
 options(stringsAsFactors = FALSE, warn = 1)
 
-project_root <- normalizePath(
-  "/Users/peter/Desktop/3dENA/ENA_3d-main", mustWork = TRUE
+.ena3d_find_project_root <- function(starts) {
+  starts <- unique(normalizePath(starts, mustWork = FALSE))
+  for (start in starts) {
+    candidate <- start
+    repeat {
+      if (file.exists(file.path(candidate, "R", "app.R")) &&
+          file.exists(file.path(candidate, "sample_data")) &&
+          file.exists(file.path(candidate, "tests", "testthat.R"))) {
+        return(normalizePath(candidate, mustWork = TRUE))
+      }
+      parent <- dirname(candidate)
+      if (identical(parent, candidate)) break
+      candidate <- parent
+    }
+  }
+  stop("Could not locate the 3D ENA project root.", call. = FALSE)
+}
+
+file_args <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE))
+script_dirs <- dirname(file_args[file.exists(file_args)])
+configured_root <- Sys.getenv("ENA3D_PROJECT_ROOT", unset = "")
+root_candidates <- c(
+  if (nzchar(configured_root)) configured_root else character(),
+  getwd(),
+  script_dirs
 )
+project_root <- .ena3d_find_project_root(root_candidates)
+activation_file <- file.path(project_root, "renv", "activate.R")
+if (file.exists(activation_file)) {
+  source(activation_file, local = TRUE)
+}
 output_root <- file.path(project_root, "output", "bundled-real-e2e")
 dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
 
@@ -16,8 +44,8 @@ suppressPackageStartupMessages({
 source(file.path(project_root, "R", "security_utils.R"), local = FALSE)
 source(file.path(project_root, "R", "app_utils.R"), local = FALSE)
 source(file.path(project_root, "R", "transition.R"), local = FALSE)
-source(file.path(project_root, "R", "app_module_load_dataset.R"), local = FALSE)
 source(file.path(project_root, "R", "ena3d_exchange.R"), local = FALSE)
+source(file.path(project_root, "R", "app_module_load_dataset.R"), local = FALSE)
 source(file.path(project_root, "R", "trajectory_analysis.R"), local = FALSE)
 source(file.path(project_root, "R", "trajectory_plot.R"), local = FALSE)
 source(file.path(project_root, "R", "app_module_trajectory.R"), local = FALSE)

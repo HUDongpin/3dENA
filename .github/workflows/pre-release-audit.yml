@@ -1,0 +1,1305 @@
+name: 3D ENA pre-release audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      enforcement:
+        description: Report findings, or enforce all release gates
+        required: true
+        default: report-only
+        type: choice
+        options:
+          - report-only
+          - strict
+      browser_repeats:
+        description: Repetitions for every browser/viewport project
+        required: true
+        default: "3"
+        type: choice
+        options:
+          - "1"
+          - "3"
+          - "5"
+      run_soak:
+        description: Run the 30-minute Chromium reliability soak
+        required: true
+        default: false
+        type: boolean
+  release:
+    types:
+      - prereleased
+      - published
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ena3d-pre-release-audit-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  RENV_CONFIG_AUTO_SNAPSHOT: "FALSE"
+  RENV_CONFIG_SANDBOX_ENABLED: "FALSE"
+  RENV_PATHS_LIBRARY: "${{ github.workspace }}/renv/library"
+  R_LIBS: "${{ github.workspace }}/renv/library"
+  R_KEEP_PKG_SOURCE: "yes"
+  ENA3D_AI_ENABLED: "false"
+  DASHSCOPE_API_KEY: ""
+  DASHSCOPE_API_KEY_FILE: ""
+  ENA3D_AUDIT_SEED: "20260719"
+  ENA3D_AUDIT_ENFORCEMENT: ${{ github.event_name == 'release' && 'strict' || inputs.enforcement }}
+  ENA3D_BROWSER_REPEATS: ${{ github.event_name == 'release' && '3' || inputs.browser_repeats }}
+
+jobs:
+  locked-r-audit:
+    name: Locked R, deterministic harness and static detectors
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - name: Check out the audited revision
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Install R system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            gfortran \
+            libcurl4-openssl-dev \
+            libfontconfig1-dev \
+            libfreetype6-dev \
+            libfribidi-dev \
+            libharfbuzz-dev \
+            libjpeg-dev \
+            libpng-dev \
+            libssl-dev \
+            libtiff-dev \
+            libxml2-dev
+
+      - name: Set up exact R version
+        uses: r-lib/actions/setup-r@d3c5be51b12e724e68f33216ca3c148b66d5f0b6 # v2
+        with:
+          r-version: "4.4.1"
+          use-public-rspm: true
+
+      - name: Set up exact Node.js major
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Restore the locked R library
+        run: Rscript renv/bootstrap.R
+
+      - name: Record the sanitized audit baseline
+        env:
+          AUDIT_GITHUB_EVENT: ${{ github.event_name }}
+          AUDIT_GITHUB_REF: ${{ github.ref }}
+        run: |
+          mkdir -p output/audit/baseline
+          {
+            rg --no-filename --only-matching 'ENA3D_[A-Z0-9_]+' \
+              R tests tools Dockerfile Dockerfile.vercel deploy .env.example
+            awk -F= '/^[A-Z][A-Z0-9_]*=/{print $1}' .env.example
+            printf '%s\n' PORT
+          } | sort -u > output/audit/baseline/config-names.txt
+          sha256sum renv.lock package-lock.json Dockerfile \
+            > output/audit/baseline/lock-hashes.sha256
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import platform
+          import subprocess
+
+          def command(*args):
+              return subprocess.check_output(args, text=True).strip()
+
+          with open("output/audit/baseline/config-names.txt", encoding="utf-8") as source:
+              config_names = [line.strip() for line in source if line.strip()]
+
+          metadata = {
+              "commit": command("git", "rev-parse", "HEAD"),
+              "ref": os.environ["AUDIT_GITHUB_REF"],
+              "event": os.environ["AUDIT_GITHUB_EVENT"],
+              "dirty_tracked_files": bool(command(
+                  "git", "status", "--porcelain", "--untracked-files=no"
+              )),
+              "runner": platform.platform(),
+              "r_version": command("Rscript", "-e", "cat(as.character(getRversion()))"),
+              "node_version": command("node", "--version"),
+              "npm_version": command("npm", "--version"),
+              "configuration_names": config_names,
+              "seeds": {
+                  "audit": int("20260719"),
+                  "property_matrix": [104729, 20260719, 8675309],
+                  "property_fuzz": {"seed": 20260719, "iterations": 128},
+              },
+              "lock_hashes": {
+                  name: hashlib.sha256(open(name, "rb").read()).hexdigest()
+                  for name in ("renv.lock", "package-lock.json", "Dockerfile")
+              },
+          }
+          with open("output/audit/baseline/metadata.json", "w", encoding="utf-8") as target:
+              json.dump(metadata, target, indent=2, sort_keys=True)
+              target.write("\n")
+          PY
+
+      - name: Verify lock synchronization and required runtime packages
+        run: |
+          set +e
+          Rscript - <<'RS'
+          stopifnot(identical(as.character(getRversion()), "4.4.1"))
+          expected <- normalizePath("renv/library", mustWork = TRUE)
+          stopifnot(identical(normalizePath(.libPaths()[[1L]]), expected))
+          required <- c(
+            "shiny", "plotly", "data.table", "R6", "rENA", "bslib",
+            "scales", "digest", "jsonlite", "zip", "testthat"
+          )
+          stopifnot(all(vapply(required, requireNamespace, logical(1), quietly = TRUE)))
+          lock <- renv::lockfile_read("renv.lock")
+          expected_versions <- vapply(lock$Packages, function(record) {
+            if (is.null(record$Version)) NA_character_ else as.character(record$Version)
+          }, character(1L))
+          recommended <- vapply(lock$Packages, function(record) {
+            identical(as.character(record$Priority), "recommended")
+          }, logical(1L))
+          visible_versions <- vapply(names(expected_versions), function(package) {
+            tryCatch(
+              as.character(utils::packageVersion(package)),
+              error = function(condition) NA_character_
+            )
+          }, character(1L))
+          visible_paths <- vapply(names(expected_versions), function(package) {
+            tryCatch(
+              normalizePath(find.package(package), mustWork = TRUE),
+              error = function(condition) NA_character_
+            )
+          }, character(1L))
+          missing <- is.na(visible_versions)
+          fallback <- !missing & !recommended & (
+            is.na(visible_paths) |
+              !startsWith(
+                paste0(visible_paths, .Platform$file.sep),
+                paste0(expected, .Platform$file.sep)
+              )
+          )
+          mismatched <- !missing & !is.na(expected_versions)
+          mismatch_indexes <- which(mismatched)
+          mismatched[mismatch_indexes] <- vapply(mismatch_indexes, function(index) {
+            utils::compareVersion(
+              visible_versions[[index]], expected_versions[[index]]
+            ) != 0L
+          }, logical(1L))
+          synchronized <- !any(missing) && !any(mismatched) && !any(fallback)
+          jsonlite::write_json(
+            list(
+              synchronized = synchronized,
+              locked_package_count = length(expected_versions),
+              missing_package_count = sum(missing),
+              version_mismatch_count = sum(mismatched),
+              unexpected_fallback_package_count = sum(fallback),
+              recommended_system_package_count = sum(
+                recommended & !missing & !startsWith(
+                  paste0(visible_paths, .Platform$file.sep),
+                  paste0(expected, .Platform$file.sep)
+                ),
+                na.rm = TRUE
+              ),
+              r_version = as.character(getRversion()),
+              library = "renv/library"
+            ),
+            "output/audit/baseline/renv-status.json",
+            auto_unbox = TRUE,
+            pretty = TRUE
+          )
+          if (!synchronized) quit(status = 1L)
+          RS
+          lock_status=$?
+          set -e
+          printf '%s\n' "$lock_status" > output/audit/baseline/renv-status.exit
+
+      - name: Run the standard R suite
+        env:
+          AUDIT_TEST_LOG: ${{ runner.temp }}/ena3d-tests-check.log
+        run: |
+          set +e
+          Rscript tests/check.R > "$AUDIT_TEST_LOG" 2>&1
+          test_status=$?
+          set -e
+          export TEST_COMMAND_STATUS="$test_status"
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+
+          with open(os.environ["AUDIT_TEST_LOG"], encoding="utf-8") as source:
+              transcript = source.read()
+          sections = re.split(r"(?m)^══ ", transcript)
+
+          def finding_count(prefix):
+              matching = [section for section in sections if section.startswith(prefix)]
+              if not matching:
+                  return 0
+              numbered = sum(
+                  len(re.findall(r"(?m)^\d+\. ", section)) for section in matching
+              )
+              return max(1, numbered)
+
+          summary = {
+              "test_command_exit_code": int(os.environ["TEST_COMMAND_STATUS"]),
+              "warning_count": finding_count("Warnings "),
+              "skipped_count": finding_count("Skipped"),
+          }
+          summary["unapproved_evidence_count"] = (
+              summary["warning_count"] + summary["skipped_count"]
+          )
+          with open(
+              "output/audit/baseline/tests-check-summary.json",
+              "w",
+              encoding="utf-8",
+          ) as target:
+              json.dump(summary, target, indent=2, sort_keys=True)
+              target.write("\n")
+          PY
+          if ! jq -e \
+            '.warning_count == 0 and .skipped_count == 0' \
+            output/audit/baseline/tests-check-summary.json >/dev/null; then
+            test_status=1
+          fi
+          printf '%s\n' "$test_status" > output/audit/baseline/tests-check.exit
+          if [ "$test_status" -ne 0 ]; then
+            printf '%s\n' \
+              'The R suite emitted failures, warnings, or skipped-test evidence.' >&2
+          fi
+
+      - name: Run lintr, codetools and complexity detectors
+        run: |
+          set +e
+          Rscript tools/run_static_audit.R \
+            --mode report-only \
+            --output output/audit/static
+          static_status=$?
+          set -e
+          printf '%s\n' "$static_status" > output/audit/static/detectors.exit
+
+      - name: Collect subsystem-level R coverage
+        run: |
+          set +e
+          Rscript tools/run_coverage_audit.R \
+            --mode report-only \
+            --output output/audit/coverage
+          coverage_status=$?
+          set -e
+          printf '%s\n' "$coverage_status" > output/audit/coverage/coverage.exit
+
+      - name: Install and lint JavaScript from the lockfile
+        run: |
+          set +e
+          npm ci
+          npm_install_status=$?
+          if [ "$npm_install_status" -eq 0 ]; then
+            npm run lint > output/audit/static/eslint.log 2>&1
+            eslint_status=$?
+          else
+            eslint_status=$npm_install_status
+          fi
+          set -e
+          printf '%s\n' "$npm_install_status" > output/audit/static/npm-ci.exit
+          printf '%s\n' "$eslint_status" > output/audit/static/eslint.exit
+          if [ "$eslint_status" -ne 0 ]; then
+            tail -n 200 output/audit/static/eslint.log 2>/dev/null || true
+          fi
+
+      - name: Run deterministic seeded property matrix
+        run: |
+          mkdir -p output/audit/property-matrix
+          property_status=0
+          for audit_seed in 104729 20260719 8675309; do
+            Rscript tools/run_bug_audit.R \
+              --mode report-only \
+              --output "output/audit/property-matrix/seed-${audit_seed}" \
+              --seed "$audit_seed" \
+              --only ENA-PROP-001,ENA-PROP-002,ENA-PROP-003,ENA-PROP-004 \
+              || property_status=1
+            property_report="output/audit/property-matrix/seed-${audit_seed}/audit-report.json"
+            if ! jq -e '
+              .summary.checks_selected == 4 and
+              .summary.property_probe_pass_count == 4 and
+              .summary.property_probe_failure_count == 0 and
+              .summary.detector_error_count == 0 and
+              (.property_probes | length == 4) and
+              (all(.property_probes[]; .status == "passed")) and
+              (([.property_probes[].id] | sort) == [
+                "ENA-PROP-001", "ENA-PROP-002", "ENA-PROP-003", "ENA-PROP-004"
+              ])
+            ' "$property_report" >/dev/null; then
+              property_status=1
+            fi
+          done
+          printf '%s\n' "$property_status" \
+            > output/audit/property-matrix/report-only.exit
+          python3 - <<'PY'
+          import json
+
+          seeds = [104729, 20260719, 8675309]
+          manifest = {
+              "seeds": seeds,
+              "checks": [
+                  "ENA-PROP-001",
+                  "ENA-PROP-002",
+                  "ENA-PROP-003",
+                  "ENA-PROP-004",
+              ],
+              "replay": [
+                  (
+                      "Rscript tools/run_bug_audit.R --mode report-only "
+                      f"--output output/audit/property-matrix/seed-{seed} "
+                      f"--seed {seed} --only "
+                      "ENA-PROP-001,ENA-PROP-002,ENA-PROP-003,ENA-PROP-004"
+                  )
+                  for seed in seeds
+              ],
+          }
+          with open(
+              "output/audit/property-matrix/manifest.json", "w", encoding="utf-8"
+          ) as target:
+              json.dump(manifest, target, indent=2, sort_keys=True)
+              target.write("\n")
+          PY
+
+      - name: Run deterministic mutation and boundary fuzz audit
+        run: |
+          mkdir -p output/audit/property-fuzz
+          set +e
+          Rscript tools/run_property_fuzz.R \
+            --mode report-only \
+            --output output/audit/property-fuzz \
+            --seed 20260719 \
+            --iterations 128
+          fuzz_status=$?
+          set -e
+          printf '%s\n' "$fuzz_status" \
+            > output/audit/property-fuzz/report-only.exit
+
+      - name: Run deterministic audit harness in report-only mode
+        run: |
+          set +e
+          Rscript tools/run_bug_audit.R --mode report-only --output output/audit
+          harness_status=$?
+          set -e
+          printf '%s\n' "$harness_status" > output/audit/report-only.exit
+
+      - name: Confirm audit did not mutate tracked source
+        run: git diff --exit-code
+
+      - name: Upload sanitized R audit evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ena3d-r-audit-${{ github.run_id }}-${{ github.run_attempt }}
+          path: output/audit
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Enforce strict deterministic release gate
+        if: ${{ env.ENA3D_AUDIT_ENFORCEMENT == 'strict' }}
+        run: |
+          gate_status=0
+          for status_file in \
+            output/audit/baseline/renv-status.exit \
+            output/audit/baseline/tests-check.exit \
+            output/audit/static/detectors.exit \
+            output/audit/static/npm-ci.exit \
+            output/audit/static/eslint.exit \
+            output/audit/coverage/coverage.exit \
+            output/audit/property-matrix/report-only.exit \
+            output/audit/property-fuzz/report-only.exit \
+            output/audit/report-only.exit; do
+            if [ ! -f "$status_file" ] || [ "$(cat "$status_file")" -ne 0 ]; then
+              gate_status=1
+            fi
+          done
+          Rscript tools/run_static_audit.R \
+            --mode strict \
+            --output output/audit/static/strict \
+            || gate_status=1
+          Rscript tools/run_coverage_audit.R \
+            --mode strict \
+            --output output/audit/coverage/strict \
+            || gate_status=1
+          Rscript tools/run_property_fuzz.R \
+            --mode strict \
+            --output output/audit/property-fuzz/strict \
+            --seed 20260719 \
+            --iterations 128 \
+            || gate_status=1
+          Rscript tools/run_bug_audit.R --mode strict --output output/audit \
+            || gate_status=1
+          exit "$gate_status"
+
+  browser-matrix:
+    name: ${{ matrix.project }} x ${{ github.event_name == 'release' && '3' || inputs.browser_repeats }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: desktop-chromium
+            browser: chromium
+            accessibility: "0"
+          - project: desktop-firefox
+            browser: firefox
+            accessibility: "0"
+          - project: desktop-webkit
+            browser: webkit
+            accessibility: "0"
+          - project: tablet-768px-chromium
+            browser: chromium
+            accessibility: "0"
+          - project: mobile-390px-chromium
+            browser: chromium
+            accessibility: "0"
+          - project: audit-a11y-desktop-chromium
+            browser: chromium
+            accessibility: "1"
+          - project: audit-a11y-tablet-768px-chromium
+            browser: chromium
+            accessibility: "1"
+          - project: audit-a11y-mobile-390px-chromium
+            browser: chromium
+            accessibility: "1"
+    steps:
+      - name: Check out the audited revision
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Install R system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            gfortran \
+            libcurl4-openssl-dev \
+            libfontconfig1-dev \
+            libfreetype6-dev \
+            libfribidi-dev \
+            libharfbuzz-dev \
+            libjpeg-dev \
+            libpng-dev \
+            libssl-dev \
+            libtiff-dev \
+            libxml2-dev
+
+      - name: Set up exact R version
+        uses: r-lib/actions/setup-r@d3c5be51b12e724e68f33216ca3c148b66d5f0b6 # v2
+        with:
+          r-version: "4.4.1"
+          use-public-rspm: true
+
+      - name: Restore the locked R library
+        run: Rscript renv/bootstrap.R
+
+      - name: Set up exact Node.js major
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install browser test dependencies
+        run: |
+          npm ci
+          npx playwright install --with-deps "${{ matrix.browser }}"
+
+      - name: Repeat browser project without retaining page content
+        env:
+          AUDIT_PROJECT: ${{ matrix.project }}
+          ENA3D_BUILD_ID: browser-audit-${{ github.sha }}
+          ENA3D_AUDIT_A11Y: ${{ matrix.accessibility }}
+          ENA3D_AUDIT_REPORT_ONLY: ${{ env.ENA3D_AUDIT_ENFORCEMENT == 'report-only' && '1' || '0' }}
+          E2E_PORT: "3838"
+        run: |
+          mkdir -p output/browser-audit
+          raw_report="${RUNNER_TEMP}/playwright-${AUDIT_PROJECT}.json"
+          raw_stderr="${RUNNER_TEMP}/playwright-${AUDIT_PROJECT}.stderr.log"
+          result_dir="${RUNNER_TEMP}/playwright-${AUDIT_PROJECT}-results"
+          set +e
+          npx playwright test \
+            --project="$AUDIT_PROJECT" \
+            --repeat-each="$ENA3D_BROWSER_REPEATS" \
+            --retries=0 \
+            --fail-on-flaky-tests \
+            --trace=off \
+            --output="$result_dir" \
+            --reporter=json > "$raw_report" 2> "$raw_stderr"
+          browser_status=$?
+          set -e
+          if rg --quiet --fixed-strings '[WebServer] Warning: Error' \
+               "$raw_stderr" || \
+             rg --quiet --fixed-strings 'Execution halted' "$raw_stderr"; then
+            browser_status=1
+          fi
+          printf '%s\n' "$browser_status" \
+            > "output/browser-audit/${AUDIT_PROJECT}.exit"
+          node - "$raw_report" "output/browser-audit/${AUDIT_PROJECT}.json" \
+            "$AUDIT_PROJECT" "$ENA3D_BROWSER_REPEATS" "$raw_stderr" <<'NODE'
+          const fs = require("node:fs");
+          const [source, target, project, repeats, stderrPath] = process.argv.slice(2);
+          const report = JSON.parse(fs.readFileSync(source, "utf8"));
+          const stderr = fs.readFileSync(stderrPath, "utf8");
+          const failures = [];
+          function visit(suite, parents = []) {
+            const path = [...parents, suite.title].filter(Boolean);
+            for (const spec of suite.specs || []) {
+              for (const test of spec.tests || []) {
+                const statuses = (test.results || []).map((result) => result.status);
+                if (statuses.some((status) => !["passed", "skipped"].includes(status))) {
+                  failures.push({ title: [...path, spec.title].join(" > "), statuses });
+                }
+              }
+            }
+            for (const child of suite.suites || []) visit(child, path);
+          }
+          for (const suite of report.suites || []) visit(suite);
+          const diagnostics = [
+            {
+              signature: "webserver-warning-error",
+              count: (stderr.match(/\[WebServer\] Warning: Error/g) || []).length,
+            },
+            {
+              signature: "r-execution-halted",
+              count: (stderr.match(/Execution halted/g) || []).length,
+            },
+          ].filter((diagnostic) => diagnostic.count > 0);
+          const sanitized = {
+            project,
+            repeats: Number.parseInt(repeats, 10),
+            stats: report.stats,
+            failures,
+            diagnostic_count: diagnostics.reduce(
+              (total, diagnostic) => total + diagnostic.count,
+              0
+            ),
+            diagnostics,
+          };
+          fs.writeFileSync(target, `${JSON.stringify(sanitized, null, 2)}\n`);
+          NODE
+
+      - name: Upload sanitized browser result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: browser-${{ matrix.project }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            output/browser-audit
+            output/playwright/audit
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Enforce browser result
+        if: ${{ env.ENA3D_AUDIT_ENFORCEMENT == 'strict' }}
+        run: test "$(cat 'output/browser-audit/${{ matrix.project }}.exit')" -eq 0
+
+  reliability-soak:
+    name: 30-minute load, switch and trajectory soak
+    if: ${{ github.event_name == 'release' || inputs.run_soak }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      E2E_PORT: "43840"
+      ENA3D_BUILD_ID: soak-${{ github.sha }}
+      ENA3D_AUDIT_SOAK: "1"
+      ENA3D_AUDIT_SOAK_MINUTES: "30"
+      ENA3D_MAX_RSS_GROWTH_KB: "524288"
+    steps:
+      - name: Check out the audited revision
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Install R system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            gfortran \
+            libcurl4-openssl-dev \
+            libfontconfig1-dev \
+            libfreetype6-dev \
+            libfribidi-dev \
+            libharfbuzz-dev \
+            libjpeg-dev \
+            libpng-dev \
+            libssl-dev \
+            libtiff-dev \
+            libxml2-dev
+
+      - name: Set up exact R version
+        uses: r-lib/actions/setup-r@d3c5be51b12e724e68f33216ca3c148b66d5f0b6 # v2
+        with:
+          r-version: "4.4.1"
+          use-public-rspm: true
+
+      - name: Restore the locked R library
+        run: Rscript renv/bootstrap.R
+
+      - name: Set up exact Node.js major
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install Chromium test dependencies
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Exercise one app process for at least 30 minutes
+        run: |
+          mkdir -p output/soak
+          tempdirs_before=$(find /tmp -maxdepth 1 -user "$(id -u)" \
+            -type d -name 'Rtmp*' | wc -l)
+          printf 'elapsed_seconds\tprocess_group_rss_kb\n' > output/soak/memory.tsv
+          setsid Rscript tests/e2e/start-app.R > "${RUNNER_TEMP}/ena3d-soak.log" 2>&1 &
+          app_pid=$!
+          monitor_pid=""
+          cleanup() {
+            touch "${RUNNER_TEMP}/stop-soak-monitor"
+            if [ -n "$monitor_pid" ]; then
+              wait "$monitor_pid" 2>/dev/null || true
+            fi
+            kill -- "-$app_pid" 2>/dev/null || true
+            wait "$app_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          for attempt in $(seq 1 120); do
+            if curl --fail --silent --show-error --max-time 5 \
+              http://127.0.0.1:43840/ena3d-health/healthz.json >/dev/null; then
+              break
+            fi
+            if ! kill -0 "$app_pid" 2>/dev/null; then
+              tail -n 200 "${RUNNER_TEMP}/ena3d-soak.log"
+              exit 1
+            fi
+            if [ "$attempt" -eq 120 ]; then
+              tail -n 200 "${RUNNER_TEMP}/ena3d-soak.log"
+              exit 1
+            fi
+            sleep 1
+          done
+
+          start_time=$(date +%s)
+          (
+            while [ ! -f "${RUNNER_TEMP}/stop-soak-monitor" ]; do
+              rss_kb=$(ps -ax -o pgid=,rss= | awk -v pgid="$app_pid" \
+                '$1 == pgid { total += $2 } END { print total + 0 }')
+              printf '%s\t%s\n' "$(( $(date +%s) - start_time ))" "$rss_kb" \
+                >> output/soak/memory.tsv
+              sleep 10
+            done
+          ) &
+          monitor_pid=$!
+
+          raw_report="${RUNNER_TEMP}/soak-report.json"
+          set +e
+          CI="" npx playwright test \
+            --project=audit-soak-chromium \
+            --retries=0 \
+            --trace=off \
+            --output="${RUNNER_TEMP}/soak-results" \
+            --reporter=json > "$raw_report"
+          soak_status=$?
+          set -e
+          touch "${RUNNER_TEMP}/stop-soak-monitor"
+          wait "$monitor_pid" 2>/dev/null || true
+          monitor_pid=""
+
+          first_rss=$(sed -n '2p' output/soak/memory.tsv | cut -f2)
+          final_rss=$(tail -n 1 output/soak/memory.tsv | cut -f2)
+          first_rss=${first_rss:-0}
+          final_rss=${final_rss:-0}
+          growth_kb=$((final_rss - first_rss))
+          elapsed_seconds=$(( $(date +%s) - start_time ))
+          node - "$raw_report" output/soak/playwright-summary.json <<'NODE'
+          const fs = require("node:fs");
+          const [source, target] = process.argv.slice(2);
+          const report = JSON.parse(fs.readFileSync(source, "utf8"));
+          const failures = [];
+          function visit(suite, parents = []) {
+            const path = [...parents, suite.title].filter(Boolean);
+            for (const spec of suite.specs || []) {
+              for (const test of spec.tests || []) {
+                const statuses = (test.results || []).map((result) => result.status);
+                if (statuses.some((status) => !["passed", "skipped"].includes(status))) {
+                  failures.push({ title: [...path, spec.title].join(" > "), statuses });
+                }
+              }
+            }
+            for (const child of suite.suites || []) visit(child, path);
+          }
+          for (const suite of report.suites || []) visit(suite);
+          fs.writeFileSync(target, `${JSON.stringify({ stats: report.stats, failures }, null, 2)}\n`);
+          NODE
+          printf '{"duration_minutes":30,"elapsed_seconds":%s,"first_rss_kb":%s,"final_rss_kb":%s,"growth_kb":%s}\n' \
+            "$elapsed_seconds" "$first_rss" "$final_rss" "$growth_kb" \
+            > output/soak/summary.json
+          if [ "$elapsed_seconds" -lt 1800 ] || \
+             [ "$growth_kb" -gt "$ENA3D_MAX_RSS_GROWTH_KB" ]; then
+            soak_status=1
+          fi
+          curl --fail --silent --show-error --max-time 5 \
+            http://127.0.0.1:43840/ena3d-health/healthz.json >/dev/null \
+            || soak_status=1
+          cleanup
+          trap - EXIT
+          node - "${RUNNER_TEMP}/ena3d-soak.log" \
+            output/soak/server-diagnostics.json <<'NODE'
+          const fs = require("node:fs");
+          const [source, target] = process.argv.slice(2);
+          const stderr = fs.readFileSync(source, "utf8");
+          const diagnostics = [
+            {
+              signature: "webserver-warning-error",
+              count: (stderr.match(/Warning: Error/g) || []).length,
+            },
+            {
+              signature: "r-execution-halted",
+              count: (stderr.match(/Execution halted/g) || []).length,
+            },
+          ].filter((diagnostic) => diagnostic.count > 0);
+          const sanitized = {
+            diagnostic_count: diagnostics.reduce(
+              (total, diagnostic) => total + diagnostic.count,
+              0
+            ),
+            diagnostics,
+          };
+          fs.writeFileSync(target, `${JSON.stringify(sanitized, null, 2)}\n`);
+          NODE
+          if ! jq -e '.diagnostic_count == 0' \
+            output/soak/server-diagnostics.json >/dev/null; then
+            soak_status=1
+          fi
+          sleep 2
+          remaining_processes=$(ps -ax -o pgid= | awk -v pgid="$app_pid" \
+            '$1 == pgid { count += 1 } END { print count + 0 }')
+          tempdirs_after=$(find /tmp -maxdepth 1 -user "$(id -u)" \
+            -type d -name 'Rtmp*' | wc -l)
+          printf '{"remaining_processes":%s,"r_tempdirs_before":%s,"r_tempdirs_after":%s}\n' \
+            "$remaining_processes" "$tempdirs_before" "$tempdirs_after" \
+            > output/soak/cleanup.json
+          if [ "$remaining_processes" -ne 0 ] || \
+             [ "$tempdirs_after" -gt "$tempdirs_before" ]; then
+            soak_status=1
+          fi
+          printf '%s\n' "$soak_status" > output/soak/soak.exit
+
+      - name: Upload sanitized soak metrics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: reliability-soak-${{ github.run_id }}-${{ github.run_attempt }}
+          path: output/soak
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Enforce soak result
+        if: ${{ env.ENA3D_AUDIT_ENFORCEMENT == 'strict' }}
+        run: test "$(cat output/soak/soak.exit)" -eq 0
+
+  supply-chain:
+    name: Dependency, secret and repository SBOM scans
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out the audited revision
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up exact Node.js major
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Audit npm dependencies without running lifecycle scripts
+        run: |
+          mkdir -p output/supply-chain
+          set +e
+          npm audit --audit-level=high --json > output/supply-chain/npm-audit.json
+          npm_status=$?
+          set -e
+          printf '%s\n' "$npm_status" > output/supply-chain/npm-audit.exit
+
+      - name: Install checksum-verified Gitleaks 8.28.0
+        env:
+          GITLEAKS_VERSION: "8.28.0"
+        run: |
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          release="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+          mkdir -p "${RUNNER_TEMP}/gitleaks"
+          curl --fail --silent --show-error --location \
+            "${release}/${archive}" -o "${RUNNER_TEMP}/gitleaks/${archive}"
+          curl --fail --silent --show-error --location \
+            "${release}/gitleaks_${GITLEAKS_VERSION}_checksums.txt" \
+            -o "${RUNNER_TEMP}/gitleaks/checksums.txt"
+          expected=$(awk -v file="$archive" '$2 == file {print $1}' \
+            "${RUNNER_TEMP}/gitleaks/checksums.txt")
+          actual=$(sha256sum "${RUNNER_TEMP}/gitleaks/${archive}" | cut -d' ' -f1)
+          test -n "$expected"
+          test "$actual" = "$expected"
+          tar -xzf "${RUNNER_TEMP}/gitleaks/${archive}" \
+            -C "${RUNNER_TEMP}/gitleaks" gitleaks
+          "${RUNNER_TEMP}/gitleaks/gitleaks" version
+
+      - name: Scan the current tracked tree for secrets with redaction
+        run: |
+          mkdir -p "${RUNNER_TEMP}/audit-tree"
+          git archive HEAD -- . ':(exclude,glob)**/All API Keys.docx' \
+            | tar -x -C "${RUNNER_TEMP}/audit-tree"
+          cat > "${RUNNER_TEMP}/gitleaks-audit.toml" <<'TOML'
+          [extend]
+          useDefault = true
+
+          [[allowlists]]
+          description = "Files explicitly excluded from this audit's access boundary"
+          paths = ['''(^|/)All API Keys\.docx$''']
+          TOML
+          set +e
+          "${RUNNER_TEMP}/gitleaks/gitleaks" dir \
+            --config "${RUNNER_TEMP}/gitleaks-audit.toml" \
+            --no-banner \
+            --no-color \
+            --redact=100 \
+            --max-archive-depth=0 \
+            --report-format=sarif \
+            --report-path=output/supply-chain/gitleaks.sarif \
+            "${RUNNER_TEMP}/audit-tree"
+          gitleaks_status=$?
+          set -e
+          printf '%s\n' "$gitleaks_status" > output/supply-chain/gitleaks.exit
+
+      - name: Scan repository dependencies and configuration
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: ${{ runner.temp }}/audit-tree
+          scanners: vuln,misconfig
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          ignore-unfixed: false
+          format: json
+          output: output/supply-chain/trivy-filesystem.json
+          exit-code: "0"
+          version: v0.69.3
+
+      - name: Generate a repository SBOM without publishing release assets
+        uses: anchore/sbom-action@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.20.6
+        with:
+          path: ${{ runner.temp }}/audit-tree
+          format: spdx-json
+          output-file: output/supply-chain/repository.spdx.json
+          syft-version: v1.44.0
+          upload-artifact: false
+          upload-release-assets: false
+          dependency-snapshot: false
+
+      - name: Upload sanitized supply-chain evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: supply-chain-${{ github.run_id }}-${{ github.run_attempt }}
+          path: output/supply-chain
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Enforce strict supply-chain gate
+        if: ${{ env.ENA3D_AUDIT_ENFORCEMENT == 'strict' }}
+        run: |
+          test "$(cat output/supply-chain/gitleaks.exit)" -eq 0
+          test "$(cat output/supply-chain/npm-audit.exit)" -eq 0
+          jq -e '[.Results[]? |
+            (.Vulnerabilities[]?, .Misconfigurations[]?) |
+            select(.Severity == "HIGH" or .Severity == "CRITICAL")] |
+            length == 0' output/supply-chain/trivy-filesystem.json
+
+  production-container:
+    name: Hardened container, proxy and image vulnerability audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    steps:
+      - name: Check out the audited revision
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up exact Node.js major
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install locked connection-audit browser
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Build production image without publishing
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: ./Dockerfile
+          build-args: |
+            ENA3D_BUILD_ID=${{ github.sha }}
+            ENA3D_APP_VERSION=pre-release-audit
+          push: false
+          load: true
+          tags: ena3d:pre-release-audit
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify hardened runtime, health metadata and nginx proxy
+        env:
+          TEST_BUILD_ID: ${{ github.sha }}
+        run: |
+          mkdir -p output/container
+          connection_audit_dir=$(mktemp -d \
+            "${RUNNER_TEMP}/ena3d-playwright-audit.XXXXXX")
+          mkdir -p "${connection_audit_dir}/output"
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends nginx openssl
+          nginx_pid=""
+          playwright_started=0
+          pwcli() {
+            (
+              cd "${connection_audit_dir}"
+              "${GITHUB_WORKSPACE}/node_modules/.bin/playwright" \
+                cli -s=ena3d-production-audit "$@"
+            )
+          }
+          stop_nginx() {
+            if [ -z "$nginx_pid" ]; then
+              return
+            fi
+            local old_pid="$nginx_pid"
+            nginx_pid=""
+            kill -TERM "$old_pid"
+            local wait_status=0
+            wait "$old_pid" || wait_status=$?
+            case "$wait_status" in
+              0|143) ;;
+              *)
+                echo "nginx exited unexpectedly with status ${wait_status}" >&2
+                return "$wait_status"
+                ;;
+            esac
+          }
+          start_nginx() {
+            test -z "$nginx_pid"
+            nginx -c "${connection_audit_dir}/nginx.conf" -g 'daemon off;' &
+            nginx_pid=$!
+          }
+          wait_for_nginx() {
+            local health_output="$1"
+            for attempt in $(seq 1 30); do
+              if curl --fail --insecure --silent --show-error --max-time 5 \
+                --resolve 3dena.com:18443:127.0.0.1 \
+                https://3dena.com:18443/healthz \
+                --output "$health_output"; then
+                return
+              fi
+              if ! kill -0 "$nginx_pid" 2>/dev/null || [ "$attempt" -eq 30 ]; then
+                cat "${connection_audit_dir}/nginx-error.log"
+                return 1
+              fi
+              sleep 1
+            done
+          }
+          cleanup() {
+            if [ "$playwright_started" -eq 1 ]; then
+              pwcli close >/dev/null 2>&1 || true
+            fi
+            stop_nginx || true
+            docker inspect --format '{{json .State}}' ena3d-pre-release-audit \
+              > output/container/final-container-state.json 2>/dev/null || true
+            docker rm --force ena3d-pre-release-audit >/dev/null 2>&1 || true
+            case "$connection_audit_dir" in
+              "${RUNNER_TEMP}"/ena3d-playwright-audit.*)
+                rm -rf -- "$connection_audit_dir"
+                ;;
+            esac
+          }
+          trap cleanup EXIT
+          provenance_rejection_message='ena3d: runtime provenance does not match image provenance; refusing to start'
+          forged_build_log="${connection_audit_dir}/forged-build.log"
+          if docker run --rm \
+            --env ENA3D_BUILD_ID=forged-build-id \
+            ena3d:pre-release-audit \
+            >"$forged_build_log" 2>&1; then
+            echo "forged build ID was accepted" >&2
+            exit 1
+          else
+            test "$?" -eq 78
+          fi
+          grep -Fx "$provenance_rejection_message" "$forged_build_log"
+
+          forged_version_log="${connection_audit_dir}/forged-version.log"
+          if docker run --rm \
+            --env ENA3D_APP_VERSION=forged-version \
+            ena3d:pre-release-audit \
+            >"$forged_version_log" 2>&1; then
+            echo "forged app version was accepted" >&2
+            exit 1
+          else
+            test "$?" -eq 78
+          fi
+          grep -Fx "$provenance_rejection_message" "$forged_version_log"
+
+          docker run --detach \
+            --name ena3d-pre-release-audit \
+            --read-only \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=256m,uid=10001,gid=10001 \
+            --tmpfs /home/ena3d:rw,noexec,nosuid,nodev,size=64m,uid=10001,gid=10001 \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --pids-limit 256 \
+            --memory 2g \
+            --cpus 2 \
+            --env ENA3D_AI_ENABLED=false \
+            --publish 127.0.0.1:3838:3838 \
+            ena3d:pre-release-audit
+
+          for attempt in $(seq 1 120); do
+            health_status=$(docker inspect --format \
+              '{{if .State.Health}}{{.State.Health.Status}}{{end}}' \
+              ena3d-pre-release-audit)
+            if [ "$health_status" = healthy ]; then break; fi
+            if [ "$health_status" = unhealthy ] || \
+               ! docker inspect --format '{{.State.Running}}' \
+                 ena3d-pre-release-audit | grep -qx true; then
+              docker logs ena3d-pre-release-audit
+              exit 1
+            fi
+            if [ "$attempt" -eq 120 ]; then
+              docker logs ena3d-pre-release-audit
+              exit 1
+            fi
+            sleep 1
+          done
+          curl --fail --silent --show-error --max-time 5 \
+            http://127.0.0.1:3838/ena3d-health/healthz.json \
+            --output output/container/direct-health.json
+          python3 - <<'PY'
+          import json
+          import os
+
+          with open("output/container/direct-health.json", encoding="utf-8") as source:
+              health = json.load(source)
+          assert health["status"] == "ok", health
+          assert health["app"] == "3D ENA", health
+          assert health["version"] == "pre-release-audit", health
+          assert health["build"] == os.environ["TEST_BUILD_ID"], health
+          assert health["runtime_profile"] == "persistent", health
+          assert health["connection_policy"] == "host-existing-session-only", health
+          assert health["shiny_server_version"] == "1.5.23.1030", health
+          PY
+
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+            -subj '/CN=3dena.com' \
+            -addext 'subjectAltName=DNS:3dena.com,DNS:www.3dena.com' \
+            -keyout "${connection_audit_dir}/proxy.key" \
+            -out "${connection_audit_dir}/proxy.crt" >/dev/null 2>&1
+          sed \
+            -e 's/listen 80;/listen 18080;/' \
+            -e 's/listen \[::\]:80;/listen [::]:18080;/' \
+            -e 's/listen 443 ssl http2;/listen 18443 ssl http2;/' \
+            -e 's/listen \[::\]:443 ssl http2;/listen [::]:18443 ssl http2;/' \
+            -e "s#/etc/letsencrypt/live/3dena.com/fullchain.pem#${connection_audit_dir}/proxy.crt#g" \
+            -e "s#/etc/letsencrypt/live/3dena.com/privkey.pem#${connection_audit_dir}/proxy.key#g" \
+            deploy/nginx/3dena.com.conf.example \
+            > "${connection_audit_dir}/ena3d-site.conf"
+          cat > "${connection_audit_dir}/nginx.conf" <<NGINX
+          pid ${connection_audit_dir}/nginx.pid;
+          error_log ${connection_audit_dir}/nginx-error.log notice;
+          events {}
+          http {
+            access_log off;
+            include /etc/nginx/mime.types;
+            include ${connection_audit_dir}/ena3d-site.conf;
+          }
+          NGINX
+          nginx -t -c "${connection_audit_dir}/nginx.conf"
+          start_nginx
+          wait_for_nginx output/container/proxy-health.json
+          cmp output/container/direct-health.json output/container/proxy-health.json
+
+          curl --fail --silent --show-error --max-time 5 \
+            http://127.0.0.1:3838/__sockjs__/info \
+            --output output/container/direct-sockjs-info.json
+          curl --fail --insecure --silent --show-error --max-time 5 \
+            --resolve 3dena.com:18443:127.0.0.1 \
+            https://3dena.com:18443/__sockjs__/info \
+            --output output/container/proxy-sockjs-info.json
+          jq -e '.websocket == true' output/container/direct-sockjs-info.json
+          jq -e '.websocket == true' output/container/proxy-sockjs-info.json
+          # This endpoint is a routing diagnostic only. The browser/session
+          # identity audit is the authority for real existing-session recovery.
+
+          curl --silent --show-error --dump-header \
+            output/container/http-redirect.headers --output /dev/null \
+            -H 'Host: www.3dena.com' \
+            http://127.0.0.1:18080/audit-path?probe=1
+          grep -Eq '^HTTP/[0-9.]+ 301' output/container/http-redirect.headers
+          grep -Fqi 'location: https://3dena.com/audit-path?probe=1' \
+            output/container/http-redirect.headers
+          curl --fail --insecure --silent --show-error --dump-header \
+            output/container/proxy-health.headers --output /dev/null \
+            --resolve 3dena.com:18443:127.0.0.1 \
+            https://3dena.com:18443/healthz
+          grep -Fqi 'strict-transport-security:' output/container/proxy-health.headers
+          grep -Fqi 'x-content-type-options: nosniff' output/container/proxy-health.headers
+
+          nginx -T -c "${connection_audit_dir}/nginx.conf" 2>&1 \
+            | grep -Eq 'proxy_http_version 1\.1'
+          nginx -T -c "${connection_audit_dir}/nginx.conf" 2>&1 \
+            | grep -Eq 'proxy_set_header Upgrade \\$http_upgrade'
+          nginx -T -c "${connection_audit_dir}/nginx.conf" 2>&1 \
+            | grep -Eq 'proxy_set_header Connection \\$ena3d_connection_upgrade'
+          nginx -T -c "${connection_audit_dir}/nginx.conf" 2>&1 \
+            | grep -Eq 'proxy_buffering off'
+
+          jq -n \
+            --arg output_dir "${connection_audit_dir}/output" \
+            '{
+              browser: {
+                browserName: "chromium",
+                isolated: true,
+                launchOptions: {
+                  headless: true,
+                  args: [
+                    "--host-resolver-rules=MAP 3dena.com 127.0.0.1"
+                  ]
+                },
+                contextOptions: {
+                  ignoreHTTPSErrors: true
+                }
+              },
+              saveSession: false,
+              outputDir: $output_dir
+            }' > "${connection_audit_dir}/cli.config.json"
+
+          playwright_started=1
+          pwcli open about:blank \
+            --config "${connection_audit_dir}/cli.config.json" >/dev/null
+          pwcli --raw run-code \
+            --filename="${GITHUB_WORKSPACE}/tools/playwright_connection_audit/monitor.js"
+          pwcli goto https://3dena.com:18443/ >/dev/null
+          pwcli --raw run-code \
+            --filename="${GITHUB_WORKSPACE}/tools/playwright_connection_audit/ready.js"
+
+          hold_started=$(date +%s)
+          for checkpoint in $(seq 0 12); do
+            checkpoint_deadline=$((hold_started + checkpoint * 30))
+            while [ "$(date +%s)" -lt "$checkpoint_deadline" ]; do
+              sleep 1
+            done
+            pwcli --raw run-code \
+              --filename="${GITHUB_WORKSPACE}/tools/playwright_connection_audit/roundtrip.js"
+          done
+          hold_seconds=$(($(date +%s) - hold_started))
+          test "$hold_seconds" -ge 360
+
+          arm_result=$(pwcli --raw run-code \
+            --filename="${GITHUB_WORKSPACE}/tools/playwright_connection_audit/arm-interruption.js")
+          jq -e '.interruptionArmed == true' <<<"$arm_result"
+          stop_nginx
+          sleep 2
+          start_nginx
+          wait_for_nginx output/container/proxy-health.json
+          recovery_result=$(pwcli --raw run-code \
+            --filename="${GITHUB_WORKSPACE}/tools/playwright_connection_audit/recovery.js")
+          jq -e '
+            .transportInterrupted == true and
+            .sameSessionRecovered == true and
+            .postRecoveryRoundTrip == true and
+            .roundTrips == 14
+          ' <<<"$recovery_result"
+
+          arm_result=$(pwcli --raw run-code \
+            --filename="${GITHUB_WORKSPACE}/tools/playwright_connection_audit/arm-interruption.js")
+          jq -e '.interruptionArmed == true' <<<"$arm_result"
+          stop_nginx
+          sleep 22
+          start_nginx
+          wait_for_nginx output/container/proxy-health.json
+          terminal_result=$(pwcli --raw run-code \
+            --filename="${GITHUB_WORKSPACE}/tools/playwright_connection_audit/terminal.js")
+          jq -e '
+            .longInterruptionBlocked == true and
+            .nativeDisconnectPreserved == true and
+            .newSessionReplayPrevented == true and
+            .outageSeconds == 22
+          ' <<<"$terminal_result"
+
+          jq -n \
+            --argjson duration_seconds "$hold_seconds" \
+            --argjson recovery "$recovery_result" \
+            --argjson terminal "$terminal_result" \
+            '{
+              duration_seconds: $duration_seconds,
+              server_round_trips: $recovery.roundTrips,
+              recovery_proxy_outage_seconds: 2,
+              transport_interrupted: $recovery.transportInterrupted,
+              same_session_recovered: $recovery.sameSessionRecovered,
+              post_recovery_round_trip: $recovery.postRecoveryRoundTrip,
+              terminal_proxy_outage_seconds: $terminal.outageSeconds,
+              long_interruption_blocked: $terminal.longInterruptionBlocked,
+              native_disconnect_preserved: $terminal.nativeDisconnectPreserved,
+              new_session_replay_prevented: $terminal.newSessionReplayPrevented
+            }' > output/container/browser-session-audit.json
+
+          pwcli close >/dev/null
+          playwright_started=0
+
+      - name: Generate container SBOM without publishing release assets
+        uses: anchore/sbom-action@f8bdd1d8ac5e901a77a92f111440fdb1b593736b # v0.20.6
+        with:
+          image: ena3d:pre-release-audit
+          format: spdx-json
+          output-file: output/container/ena3d-image.spdx.json
+          syft-version: v1.44.0
+          upload-artifact: false
+          upload-release-assets: false
+          dependency-snapshot: false
+
+      - name: Scan container image vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ena3d:pre-release-audit
+          scanners: vuln
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          ignore-unfixed: false
+          format: json
+          output: output/container/trivy-image.json
+          exit-code: "0"
+          version: v0.69.3
+
+      - name: Upload sanitized container evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: production-container-${{ github.run_id }}-${{ github.run_attempt }}
+          path: output/container
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Enforce strict container vulnerability gate
+        if: ${{ env.ENA3D_AUDIT_ENFORCEMENT == 'strict' }}
+        run: |
+          jq -e '[.Results[]?.Vulnerabilities[]? |
+            select(.Severity == "HIGH" or .Severity == "CRITICAL")] |
+            length == 0' output/container/trivy-image.json

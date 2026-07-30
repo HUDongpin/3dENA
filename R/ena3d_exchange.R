@@ -6,6 +6,10 @@
 
 ENA3D_EXCHANGE_FORMAT <- "ena3d-exchange"
 ENA3D_EXCHANGE_VERSION <- 1L
+# JSON numbers need 17 significant decimal digits to round-trip every finite
+# IEEE-754 double accepted by the v1 schema. jsonlite's `digits = NA` uses a
+# shorter representation for list scalars and can collapse adjacent doubles.
+ENA3D_EXCHANGE_JSON_DIGITS <- 17L
 
 
 ena3d_exchange_fail <- function(message) {
@@ -738,7 +742,7 @@ ena3d_write_exchange_file <- function(ena_object, file_path,
     auto_unbox = TRUE,
     null = "null",
     na = "null",
-    digits = NA,
+    digits = ENA3D_EXCHANGE_JSON_DIGITS,
     pretty = FALSE
   )
   temporary <- tempfile(

@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "manifest_schema_version": 1,
+  "tolerance_percentage_points": 0.01,
+  "detector_versions": {
+    "covr": "3.6.5",
+    "testthat": "3.2.1.1"
+  },
+  "subsystems": [
+    {
+      "id": "scientific-correctness",
+      "covered_expressions": 1959,
+      "total_expressions": 2182,
+      "percent": 89.7800183318
+    },
+    {
+      "id": "data-boundaries",
+      "covered_expressions": 942,
+      "total_expressions": 1269,
+      "percent": 74.2316784870
+    },
+    {
+      "id": "ai-privacy-boundary",
+      "covered_expressions": 1232,
+      "total_expressions": 1731,
+      "percent": 71.1727325246
+    },
+    {
+      "id": "reactive-async-state",
+      "covered_expressions": 1680,
+      "total_expressions": 2302,
+      "percent": 72.9800173762
+    },
+    {
+      "id": "plotting-rendering",
+      "covered_expressions": 1023,
+      "total_expressions": 1319,
+      "percent": 77.5587566338
+    }
+  ]
+}

@@ -274,6 +274,45 @@ test_that("dates, datetimes, difftimes, and ordered factors round trip", {
 })
 
 
+test_that("exchange files preserve adjacent doubles and fractional durations", {
+  native <- .exchange_native()
+  row_count <- nrow(native$points)
+  adjacent <- rep(c(1, 1 + .Machine$double.eps), length.out = row_count)
+  elapsed <- as.difftime(
+    rep(c(0, 1 / 60, 1 + .Machine$double.eps), length.out = row_count),
+    units = "hours"
+  )
+  class(adjacent) <- c("ena.metadata", class(adjacent))
+  class(elapsed) <- c("ena.metadata", class(elapsed))
+  for (component in c("meta.data", "points", "line.weights")) {
+    native[[component]][["adjacent identity"]] <- adjacent
+    native[[component]][["fractional elapsed"]] <- elapsed
+  }
+
+  path <- tempfile(fileext = ".ena3d.json")
+  on.exit(unlink(path), add = TRUE)
+  ena3d_write_exchange_file(native, path)
+  restored <- ena3d_read_exchange_file(path)
+
+  expect_identical(
+    sprintf("%a", as.numeric(restored$meta.data[["adjacent identity"]])),
+    sprintf("%a", as.numeric(adjacent))
+  )
+  expect_identical(
+    sprintf("%a", as.numeric(
+      restored$meta.data[["fractional elapsed"]], units = "hours"
+    )),
+    sprintf("%a", as.numeric(elapsed, units = "hours"))
+  )
+  expect_identical(
+    ena3d_exchange_encode_column(
+      restored$meta.data[["adjacent identity"]], "adjacent identity", "restored"
+    ),
+    ena3d_exchange_encode_column(adjacent, "adjacent identity", "original")
+  )
+})
+
+
 test_that("strict schema rejects unknown, duplicate, and ill-typed fields", {
   payload <- .exchange_payload()
   payload$unexpected <- TRUE

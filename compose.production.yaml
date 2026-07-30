@@ -1,5 +1,6 @@
 services:
   ena3d:
+    platform: linux/amd64
     build:
       context: .
       args:
@@ -8,15 +9,15 @@ services:
     image: ena3d:${ENA3D_BUILD_ID}
     restart: unless-stopped
     init: true
+    stop_grace_period: 30s
     read_only: true
     ports:
       - "127.0.0.1:3838:3838"
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=256m,uid=10001,gid=10001
-      - /home/ena3d:rw,noexec,nosuid,nodev,size=64m,uid=10001,gid=10001
+      - /home/ena3d:rw,noexec,nosuid,nodev,size=64m,uid=10001,gid=10001,mode=0700
     environment:
-      ENA3D_BUILD_ID: ${ENA3D_BUILD_ID}
-      ENA3D_APP_VERSION: ${ENA3D_APP_VERSION:-0.2.0-dev}
+      ENA3D_RUNTIME_PROFILE: "persistent"
       ENA3D_AI_ENABLED: "false"
       ENA3D_MAX_REQUEST_BYTES: "5242880"
       ENA3D_MAX_EXCHANGE_FILE_BYTES: "2097152"

@@ -1,0 +1,354 @@
+{
+  "schema_version": 1,
+  "seed": 20260719,
+  "subsystems": [
+    {
+      "id": "scientific-correctness",
+      "sources": [
+        "R/trajectory_analysis.R",
+        "R/app_module_stats.R",
+        "R/build_network.R",
+        "R/plot_group.R"
+      ],
+      "tests": [
+        "tests/testthat/test-trajectory_analysis.R",
+        "tests/testthat/test-trajectory-public-api-numerics.R",
+        "tests/testthat/test-trajectory-public-api-semantics.R",
+        "tests/testthat/test-trajectory-independent-comparison.R",
+        "tests/testthat/test-app_module_stats.R",
+        "tests/testthat/test-build_network.R",
+        "tests/testthat/test-plot_group.R"
+      ],
+      "risk_test_contracts": [
+        {
+          "risk": "row-order invariance and exact paired matching",
+          "test_file": "tests/testthat/test-trajectory_analysis.R",
+          "test_name": "paired comparison matches explicit IDs and is row-order invariant"
+        },
+        {
+          "risk": "selected versus full rotation distance",
+          "test_file": "tests/testthat/test-trajectory_analysis.R",
+          "test_name": "selected and full distance spaces are distinct and documented"
+        },
+        {
+          "risk": "missing, duplicate, and cohort policies",
+          "test_file": "tests/testthat/test-trajectory_analysis.R",
+          "test_name": "duplicate participant-period rows are collapsed without inflation"
+        },
+        {
+          "risk": "extreme finite numerical values",
+          "test_file": "tests/testthat/test-trajectory-public-api-numerics.R",
+          "test_name": "finite extreme weights produce finite public-API centroids"
+        },
+        {
+          "risk": "RNG restoration and deterministic seeded bootstrap",
+          "test_file": "tests/testthat/test-trajectory_analysis.R",
+          "test_name": "participant bootstrap preserves clusters, is deterministic, and restores RNG"
+        },
+        {
+          "risk": "multiplicity correction",
+          "test_file": "tests/testthat/test-app_module_stats.R",
+          "test_name": "p-value adjustment ignores unavailable tests and adjusts the family"
+        },
+        {
+          "risk": "POSIXct daylight-saving-fold pairing identity",
+          "test_file": "tests/testthat/test-app_module_stats.R",
+          "test_name": "paired IDs remain distinct across a daylight-saving fold"
+        },
+        {
+          "risk": "Date, factor, numeric, and character identities",
+          "test_file": "tests/testthat/test-trajectory_analysis.R",
+          "test_name": "numeric, Date, factor, and character order are stable and explicit"
+        },
+        {
+          "risk": "difftime identity",
+          "test_file": "tests/testthat/test-trajectory-public-api-numerics.R",
+          "test_name": "physically equivalent difftime units share one order key space"
+        },
+        {
+          "risk": "independent permutation inference",
+          "test_file": "tests/testthat/test-trajectory-independent-comparison.R",
+          "test_name": "Monte Carlo p-value agrees with an exact participant-label test"
+        },
+        {
+          "risk": "network trace calculation",
+          "test_file": "tests/testthat/test-build_network.R",
+          "test_name": "dense networks use bounded batched traces with per-edge hover"
+        }
+      ]
+    },
+    {
+      "id": "data-boundaries",
+      "sources": [
+        "R/security_utils.R",
+        "R/app_utils.R",
+        "R/transition.R",
+        "R/ena3d_exchange.R",
+        "R/app_module_load_dataset.R",
+        "R/raw_data_import.R",
+        "R/app_module_upload_data.R"
+      ],
+      "tests": [
+        "tests/testthat/test-ena3d-exchange.R",
+        "tests/testthat/test-raw-data-import.R",
+        "tests/testthat/test-load-dataset.R",
+        "tests/testthat/test-security-boundaries.R",
+        "tests/testthat/test-csv-security.R",
+        "tests/testthat/test-app-utils-identities.R"
+      ],
+      "risk_test_contracts": [
+        {
+          "risk": "bundled JSON round trips",
+          "test_file": "tests/testthat/test-ena3d-exchange.R",
+          "test_name": "all bundled samples have deterministic uploadable round trips"
+        },
+        {
+          "risk": "typed Date, POSIXct, difftime, and factor round trips",
+          "test_file": "tests/testthat/test-ena3d-exchange.R",
+          "test_name": "dates, datetimes, difftimes, and ordered factors round trip"
+        },
+        {
+          "risk": "duplicate and ill-typed JSON fields",
+          "test_file": "tests/testthat/test-ena3d-exchange.R",
+          "test_name": "strict schema rejects unknown, duplicate, and ill-typed fields"
+        },
+        {
+          "risk": "structural resource limits",
+          "test_file": "tests/testthat/test-ena3d-exchange.R",
+          "test_name": "exchange decoding applies configured structural resource limits"
+        },
+        {
+          "risk": "non-finite nodes and edge weights",
+          "test_file": "tests/testthat/test-ena3d-exchange.R",
+          "test_name": "nodes and edge weights must be complete finite numbers"
+        },
+        {
+          "risk": "transactional upload rollback",
+          "test_file": "tests/testthat/test-ena3d-exchange.R",
+          "test_name": "exchange upload commits only after complete validation"
+        },
+        {
+          "risk": "raw multi-column unit construction",
+          "test_file": "tests/testthat/test-raw-data-import.R",
+          "test_name": "automatic mapping protects reused student labels across groups"
+        },
+        {
+          "risk": "raw unit keys with separator and missing-like values",
+          "test_file": "tests/testthat/test-raw-data-import.R",
+          "test_name": "raw unit tuple keys are typed and collision-free"
+        },
+        {
+          "risk": "adjacent-double and fractional-difftime exchange identity",
+          "test_file": "tests/testthat/test-ena3d-exchange.R",
+          "test_name": "exchange files preserve adjacent doubles and fractional durations"
+        },
+        {
+          "risk": "CSV delimiter parsing",
+          "test_file": "tests/testthat/test-raw-data-import.R",
+          "test_name": "CSV parsing preserves raw headers and detects common separators"
+        },
+        {
+          "risk": "spreadsheet formula injection",
+          "test_file": "tests/testthat/test-csv-security.R",
+          "test_name": "safe CSV writer serializes inert header and cell text"
+        },
+        {
+          "risk": "CSV carriage-return and newline identity",
+          "test_file": "tests/testthat/test-csv-security.R",
+          "test_name": "safe CSV writer rejects non-reversible multiline controls"
+        },
+        {
+          "risk": "trusted object budgets",
+          "test_file": "tests/testthat/test-security-boundaries.R",
+          "test_name": "trusted serialized fixtures obey hard file and object budgets"
+        }
+      ]
+    },
+    {
+      "id": "ai-privacy-boundary",
+      "sources": [
+        "R/security_utils.R",
+        "R/ai_evidence.R",
+        "R/qwen_client.R",
+        "R/app_module_ai_interpretation.R"
+      ],
+      "tests": [
+        "tests/testthat/test-ai-evidence.R",
+        "tests/testthat/test-qwen-client.R",
+        "tests/testthat/test-ai-interpretation-module.R",
+        "tests/testthat/test-csv-security.R"
+      ],
+      "risk_test_contracts": [
+        {
+          "risk": "aggregate-only public evidence",
+          "test_file": "tests/testthat/test-ai-evidence.R",
+          "test_name": "Overall evidence is deterministic, bounded, and aggregate-only"
+        },
+        {
+          "risk": "small-cell suppression",
+          "test_file": "tests/testthat/test-ai-evidence.R",
+          "test_name": "small cells suppress group and comparison results"
+        },
+        {
+          "risk": "identifier and control-character rejection",
+          "test_file": "tests/testthat/test-ai-evidence.R",
+          "test_name": "ledger validation rejects unit fields, controls, and row tables"
+        },
+        {
+          "risk": "participant Name exclusion from AI Change evidence",
+          "test_file": "tests/testthat/test-ai-evidence.R",
+          "test_name": "Change rejects common participant-name columns before evidence exists"
+        },
+        {
+          "risk": "consent hash invalidation",
+          "test_file": "tests/testthat/test-ai-interpretation-module.R",
+          "test_name": "server rejects consent that is not bound to a reviewed preview"
+        },
+        {
+          "risk": "source-change cancellation and stale completion",
+          "test_file": "tests/testthat/test-ai-interpretation-module.R",
+          "test_name": "analytical source changes cancel a pending job and ignore late results"
+        },
+        {
+          "risk": "safe provider failures",
+          "test_file": "tests/testthat/test-qwen-client.R",
+          "test_name": "HTTP failures expose safe classes but never provider response bodies"
+        },
+        {
+          "risk": "malformed provider responses",
+          "test_file": "tests/testthat/test-qwen-client.R",
+          "test_name": "malformed or incomplete API completions are rejected"
+        },
+        {
+          "risk": "no transport while AI is disabled",
+          "test_file": "tests/testthat/test-qwen-client.R",
+          "test_name": "disabled integration fails before credential or transport access"
+        }
+      ]
+    },
+    {
+      "id": "reactive-async-state",
+      "sources": [
+        "R/app_utils.R",
+        "R/app_module_load_dataset.R",
+        "R/app_module_stats.R",
+        "R/app_module_trajectory.R",
+        "R/app_module_ai_interpretation.R"
+      ],
+      "tests": [
+        "tests/testthat/test-load-dataset.R",
+        "tests/testthat/test-app_module_stats.R",
+        "tests/testthat/test-trajectory-module.R",
+        "tests/testthat/test-ai-interpretation-module.R",
+        "tests/testthat/test-app-utils-identities.R"
+      ],
+      "risk_test_contracts": [
+        {
+          "risk": "dataset-derived cache reset",
+          "test_file": "tests/testthat/test-load-dataset.R",
+          "test_name": "dataset reset clears every dataset-derived cache"
+        },
+        {
+          "risk": "transactional dataset switching",
+          "test_file": "tests/testthat/test-load-dataset.R",
+          "test_name": "switching bundled samples commits one transaction and drops stale plots"
+        },
+        {
+          "risk": "invalid-load rollback",
+          "test_file": "tests/testthat/test-load-dataset.R",
+          "test_name": "a failed validation cannot replace live dataset state"
+        },
+        {
+          "risk": "stale trajectory invalidation",
+          "test_file": "tests/testthat/test-trajectory-module.R",
+          "test_name": "changing the dataset invalidates every completed trajectory result"
+        },
+        {
+          "risk": "worker deadline and cleanup",
+          "test_file": "tests/testthat/test-trajectory-module.R",
+          "test_name": "isolated bootstrap deadline leaves the event loop live and kills its worker"
+        },
+        {
+          "risk": "worker job hard cap",
+          "test_file": "tests/testthat/test-trajectory-module.R",
+          "test_name": "bootstrap jobs have a hosted hard cap and a visible cost estimate"
+        },
+        {
+          "risk": "adjacent typed trajectory condition filtering",
+          "test_file": "tests/testthat/test-trajectory-module.R",
+          "test_name": "trajectory condition tokens distinguish adjacent typed values"
+        },
+        {
+          "risk": "pending AI cancellation and stale completion",
+          "test_file": "tests/testthat/test-ai-interpretation-module.R",
+          "test_name": "analytical source changes cancel a pending job and ignore late results"
+        },
+        {
+          "risk": "reactive Stats invalidation",
+          "test_file": "tests/testthat/test-app_module_stats.R",
+          "test_name": "changing the paired alternative invalidates and reruns Stats output"
+        }
+      ]
+    },
+    {
+      "id": "plotting-rendering",
+      "sources": [
+        "R/app_utils.R",
+        "R/plot_group.R",
+        "R/build_network.R",
+        "R/trajectory_plot.R"
+      ],
+      "tests": [
+        "tests/testthat/test-plot_group.R",
+        "tests/testthat/test-build_network.R",
+        "tests/testthat/test-trajectory_plot.R",
+        "tests/testthat/test-trajectory-public-plot-api.R",
+        "tests/testthat/test-initial-report-ui-regressions.R",
+        "tests/testthat/test-network-selector.R",
+        "tests/testthat/test-app-utils-identities.R"
+      ],
+      "risk_test_contracts": [
+        {
+          "risk": "duplicate selected axes",
+          "test_file": "tests/testthat/test-plot_group.R",
+          "test_name": "selected-axis extraction rejects duplicate axes"
+        },
+        {
+          "risk": "non-default dimension identities",
+          "test_file": "tests/testthat/test-plot_group.R",
+          "test_name": "an ENA points object retains non-default dimension names"
+        },
+        {
+          "risk": "finite-cohort group means",
+          "test_file": "tests/testthat/test-plot_group.R",
+          "test_name": "group means use one coherent finite selected-axis cohort"
+        },
+        {
+          "risk": "projection and camera preserve analytical values",
+          "test_file": "tests/testthat/test-trajectory_plot.R",
+          "test_name": "2D, 3D, display scale, and camera preserve analytical values"
+        },
+        {
+          "risk": "bounded dense-network rendering",
+          "test_file": "tests/testthat/test-build_network.R",
+          "test_name": "dense networks use bounded batched traces with per-edge hover"
+        },
+        {
+          "risk": "Plotly autorange recovery",
+          "test_file": "tests/testthat/test-initial-report-ui-regressions.R",
+          "test_name": "Network, Change, and Comparison plots explicitly autorange"
+        },
+        {
+          "risk": "formula construction for backticks and backslashes",
+          "test_file": "tests/testthat/test-initial-report-ui-regressions.R",
+          "test_name": "plot formulas preserve accepted quoting characters exactly"
+        },
+        {
+          "risk": "default No Network Plotly empty state",
+          "test_file": "tests/testthat/test-network-selector.R",
+          "test_name": "Network fallback renders a usable Plotly empty state"
+        }
+      ]
+    }
+  ]
+}

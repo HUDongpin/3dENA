@@ -46,6 +46,7 @@ ena3d_plotly_axis_layout <- function(title, showgrid = TRUE,
 }
 
 ena3d_apply_plotly_typography <- function(plot) {
+  if (is.null(plot)) return(NULL)
   plotly::layout(
     plot,
     font = ena3d_plotly_font(14L),
@@ -54,6 +55,28 @@ ena3d_apply_plotly_typography <- function(plot) {
       title = list(font = ena3d_plotly_font(14L))
     )
   )
+}
+
+ena3d_plotly_empty_state <- function(source, title, message) {
+  plotly::plot_ly(source = source) |>
+    plotly::layout(
+      title = list(text = as.character(title)),
+      annotations = list(list(
+        text = as.character(message),
+        x = 0.5,
+        y = 0.5,
+        xref = "paper",
+        yref = "paper",
+        showarrow = FALSE,
+        font = ena3d_plotly_font(16L)
+      )),
+      scene = list(
+        xaxis = list(visible = FALSE),
+        yaxis = list(visible = FALSE),
+        zaxis = list(visible = FALSE)
+      ),
+      showlegend = FALSE
+    )
 }
 
 get_ena_group<- function(ena_obj){
@@ -74,6 +97,62 @@ get_ena_group_var<- function(ena_obj){
   }
   return(ena_obj$`_function.params`$units.by)
 }
+
+
+# Return a deterministic, ASCII-only identity key for every scalar in a
+# vector. The key preserves exact numeric values (including adjacent doubles),
+# exact POSIXct instants, semantic difftime values, storage type, and missing
+# values without using a delimiter that can occur in user data.
+ena3d_value_identity_keys <- function(values) {
+  encode_hex <- function(value) {
+    bytes <- charToRaw(enc2utf8(as.character(value)))
+    if (!length(bytes)) return("")
+    paste(sprintf("%02x", as.integer(bytes)), collapse = "")
+  }
+
+  if (inherits(values, "POSIXt")) {
+    type <- "datetime"
+    plain <- sprintf("%a", as.numeric(values))
+  } else if (inherits(values, "Date")) {
+    type <- "date"
+    plain <- sprintf("%a", as.numeric(values))
+  } else if (inherits(values, "difftime")) {
+    type <- "duration_seconds"
+    plain <- sprintf("%a", as.numeric(values, units = "secs"))
+  } else if (is.ordered(values)) {
+    type <- "ordered"
+    plain <- as.character(values)
+  } else if (is.factor(values)) {
+    type <- "factor"
+    plain <- as.character(values)
+  } else if (is.double(values)) {
+    type <- "double"
+    plain <- sprintf("%a", values)
+  } else if (is.integer(values)) {
+    type <- "integer"
+    plain <- as.character(values)
+  } else if (is.logical(values)) {
+    type <- "logical"
+    plain <- ifelse(values, "true", "false")
+  } else if (is.character(values)) {
+    type <- "character"
+    plain <- enc2utf8(values)
+  } else {
+    type <- paste(class(values), collapse = "/")
+    plain <- enc2utf8(as.character(values))
+  }
+
+  missing <- is.na(values)
+  if (is.numeric(values) || inherits(values, c("Date", "POSIXt", "difftime"))) {
+    missing <- missing | !is.finite(as.numeric(values))
+  }
+  type_key <- encode_hex(type)
+  vapply(seq_along(values), function(index) {
+    if (missing[[index]]) return(paste0("ena3d:v1:", type_key, ":n"))
+    paste0("ena3d:v1:", type_key, ":v:", encode_hex(plain[[index]]))
+  }, character(1L), USE.NAMES = FALSE)
+}
+
 
 # Values emitted by Shiny selectors are strings, while ENA metadata may retain
 # richer R classes. POSIXct needs special handling because two different
@@ -260,16 +339,22 @@ get_points_with_group <-function(points,groupVar,group_name){
   )
 }
 tilde_var_or_null = function(var_name){
-  result <- NULL
-  if(is.null(var_name)){
-    result <- NULL
-  }else{
-    escaped_name <- gsub("`", "\\\\`", as.character(var_name), fixed = TRUE)
-    result <- as.formula(sprintf("~`%s`", escaped_name))
+  if (is.null(var_name)) return(NULL)
+  if (!is.character(var_name) || length(var_name) != 1L ||
+      is.na(var_name) || !nzchar(var_name)) {
+    stop("A plot variable must be one non-empty column name.", call. = FALSE)
   }
-  result
+
+  # Build the formula language object directly. Interpolating a name into
+  # formula source is not safe for accepted column names containing backticks
+  # or backslashes, even when the backtick itself is escaped.
+  stats::as.formula(
+    call("~", as.name(var_name)),
+    env = parent.frame()
+  )
 }
 add_3d_axis = function(plot){
+  if (is.null(plot)) return(NULL)
   plot<-add_x_3d_axis(plot)
   plot<-add_y_3d_axis(plot)
   plot<-add_z_3d_axis(plot)
@@ -280,9 +365,10 @@ add_3d_axis = function(plot){
   
 }
 add_x_3d_axis<-function(plot){
+  if (is.null(plot)) return(NULL)
   # Create a 3D plot with scatter3d trace for lines
-  plot <- plot %>%
-    add_trace(
+  plot <- plotly::add_trace(
+    plot,
       type = "scatter3d",
       mode = "lines+markers",
       x = c(0,1),
@@ -292,13 +378,12 @@ add_x_3d_axis<-function(plot){
       marker = list(size = 1, color = "red")
     )
   
-  cone_base_radius <- 1
   cone_height <- 1
   cone_center <- c(1, 0, 0)
   
   # Create a 3D plot with cone trace
-  plot <- plot %>%
-    add_trace(
+  plot <- plotly::add_trace(
+    plot,
       type = "cone",
       x = cone_center[1],
       y = cone_center[2],
@@ -314,7 +399,8 @@ add_x_3d_axis<-function(plot){
     )
   
   
-  plot <- plot %>% add_text(
+  plot <- plotly::add_text(
+    plot,
     x = cone_center[1],
     y = cone_center[2],
     z = cone_center[3]  + 0.1, # Adjust the height of the text above the cone
@@ -324,10 +410,10 @@ add_x_3d_axis<-function(plot){
   plot
 }
 add_y_3d_axis<-function(plot){
-  cone_base_radius <- 1
+  if (is.null(plot)) return(NULL)
   cone_height <- 1
-  plot <- plot %>%
-    add_trace(
+  plot <- plotly::add_trace(
+    plot,
       type = "scatter3d",
       mode = "lines+markers",
       x = c(0,0),
@@ -340,8 +426,8 @@ add_y_3d_axis<-function(plot){
   cone_center <- c(0, 1, 0)
   
   # Create a 3D plot with cone trace
-  plot <- plot %>%
-    add_trace(
+  plot <- plotly::add_trace(
+    plot,
       type = "cone",
       x = cone_center[1],
       y = cone_center[2],
@@ -355,7 +441,8 @@ add_y_3d_axis<-function(plot){
       colorscale = list(c(0, 'blue'), c(1, 'blue')),
       anchor = "tail"
     ) 
-  plot <- plot %>% add_text(
+  plot <- plotly::add_text(
+    plot,
     x = cone_center[1],
     y = cone_center[2],
     z = cone_center[3]  + 0.1, # Adjust the height of the text above the cone
@@ -365,10 +452,10 @@ add_y_3d_axis<-function(plot){
   plot
 }
 add_z_3d_axis<-function(plot){
-  cone_base_radius <- 1
+  if (is.null(plot)) return(NULL)
   cone_height <- 1
-  plot <- plot %>%
-    add_trace(
+  plot <- plotly::add_trace(
+    plot,
       type = "scatter3d",
       mode = "lines+markers",
       x = c(0,0),
@@ -381,8 +468,8 @@ add_z_3d_axis<-function(plot){
   cone_center <- c(0, 0, 1)
   
   # Create a 3D plot with cone trace
-  plot <- plot %>%
-    add_trace(
+  plot <- plotly::add_trace(
+    plot,
       type = "cone",
       x = cone_center[1],
       y = cone_center[2],
@@ -396,7 +483,8 @@ add_z_3d_axis<-function(plot){
       colorscale = list(c(0, 'green'), c(1, 'green')),
       anchor = "tail"
     ) 
-  plot <- plot %>% add_text(
+  plot <- plotly::add_text(
+    plot,
     x = cone_center[1],
     y = cone_center[2],
     z = cone_center[3]  + 0.1, # Adjust the height of the text above the cone

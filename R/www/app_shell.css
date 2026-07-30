@@ -5,8 +5,8 @@
   --ena-paper-light: #fbfaf6;
   --ena-line: rgba(16, 42, 67, 0.17);
   --ena-cyan: #2bbbc0;
-  --ena-cyan-dark: #087f85;
-  --ena-coral: #d36f52;
+  --ena-cyan-dark: #07747a;
+  --ena-coral: #a7442e;
   --ena-violet: #7357c8;
   --ena-gold: #d89a2b;
   --ena-muted: #526777;
@@ -398,9 +398,10 @@ body.bslib-page-navbar > nav.navbar + div.container-fluid
 
 .ena3d-figure-frame {
   position: relative;
+  height: clamp(22rem, 30vw, 27rem);
   overflow: hidden;
   border: 1px solid rgba(16, 42, 67, 0.12);
-  background: #eef6f5;
+  background: #fff;
 }
 
 .ena3d-figure-frame::before,
@@ -431,7 +432,7 @@ body.bslib-page-navbar > nav.navbar + div.container-fluid
 .ena3d-figure-frame img {
   display: block;
   width: 100%;
-  height: clamp(22rem, 30vw, 27rem);
+  height: 100%;
   background: #fff;
   object-fit: contain;
   object-position: center;
@@ -814,6 +815,376 @@ body.bslib-page-navbar > nav.navbar + div.container-fluid
   text-decoration: none;
 }
 
+.ena3d-team-page {
+  min-height: calc(100vh - 78px);
+  background: var(--ena-paper-light);
+}
+
+.ena3d-team-hero {
+  position: relative;
+  display: grid;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: clamp(4.5rem, 8vw, 8rem) clamp(1.5rem, 7vw, 7rem);
+  grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.75fr);
+  align-items: end;
+  gap: clamp(3rem, 8vw, 8rem);
+}
+
+.ena3d-team-hero-copy,
+.ena3d-team-spectrum {
+  position: relative;
+  z-index: 1;
+}
+
+.ena3d-team-hero h1 {
+  max-width: 12ch;
+  margin: 0;
+  color: var(--ena-ink-deep);
+  font-family: var(--ena-serif);
+  font-size: clamp(3.3rem, 6.25vw, 6.4rem);
+  font-weight: 400;
+  line-height: 0.96;
+  letter-spacing: -0.055em;
+  text-wrap: balance;
+}
+
+.ena3d-team-lede {
+  max-width: 48rem;
+  margin: 2rem 0 0;
+  color: var(--ena-muted);
+  font-size: clamp(var(--ena-type-lede), 1.55vw, 1.4rem);
+  line-height: 1.7;
+}
+
+.ena3d-team-spectrum {
+  padding: clamp(1.65rem, 3vw, 2.5rem);
+  border-top: 4px solid var(--ena-cyan);
+  color: #fff;
+  background: var(--ena-ink-deep);
+  box-shadow: 1.2rem 1.2rem 0 rgba(16, 42, 67, 0.08);
+}
+
+.ena3d-team-spectrum .ena3d-card-label {
+  color: var(--ena-cyan);
+}
+
+.ena3d-team-spectrum dl {
+  margin: 0;
+}
+
+.ena3d-team-spectrum dl > div {
+  display: grid;
+  padding: 1.1rem 0;
+  grid-template-columns: minmax(5.5rem, 0.55fr) minmax(0, 1fr);
+  align-items: baseline;
+  gap: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.17);
+}
+
+.ena3d-team-spectrum dl > div:first-child {
+  border-top: 0;
+}
+
+.ena3d-team-spectrum dt {
+  color: #fff;
+  font-family: var(--ena-serif);
+  font-size: clamp(1.5rem, 2.5vw, 2.35rem);
+  font-weight: 400;
+  line-height: 1;
+}
+
+.ena3d-team-spectrum dd {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.68);
+  font-size: var(--ena-type-small);
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ena3d-team-roster {
+  padding: clamp(4rem, 7vw, 7rem) clamp(1.5rem, 7vw, 7rem);
+  border-top: 1px solid var(--ena-line);
+  background:
+    radial-gradient(circle at 10% 92%, rgba(43, 187, 192, 0.1), transparent 25rem),
+    var(--ena-paper);
+}
+
+.ena3d-team-roster-heading {
+  display: flex;
+  max-width: 1280px;
+  margin: 0 auto clamp(2.5rem, 5vw, 4.5rem);
+  align-items: end;
+  justify-content: space-between;
+  gap: 3rem;
+}
+
+.ena3d-team-roster-heading h2 {
+  margin: 0;
+  color: var(--ena-ink-deep);
+  font-family: var(--ena-serif);
+  font-size: clamp(2.6rem, 4.6vw, 4.5rem);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: -0.045em;
+}
+
+.ena3d-team-roster-heading > p {
+  max-width: 36rem;
+  margin: 0;
+  color: var(--ena-muted);
+  line-height: 1.75;
+}
+
+.ena3d-team-list {
+  display: grid;
+  max-width: 1280px;
+  margin: 0 auto;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 1px;
+  border: 1px solid var(--ena-line);
+  background: var(--ena-line);
+  box-shadow: 0 2.2rem 5rem rgba(16, 42, 67, 0.1);
+}
+
+.ena3d-team-member {
+  display: flex;
+  min-width: 0;
+  grid-column: span 6;
+  flex-direction: column;
+  background: var(--ena-paper-light);
+}
+
+.ena3d-team-member--featured {
+  display: grid;
+  min-height: 35rem;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(320px, 0.78fr) minmax(0, 1.22fr);
+  background:
+    linear-gradient(125deg, rgba(43, 187, 192, 0.09), transparent 55%),
+    #fff;
+}
+
+.ena3d-team-member--lead {
+  background: #fff;
+}
+
+.ena3d-team-member--closing {
+  display: grid;
+  min-height: 29rem;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(320px, 0.78fr) minmax(0, 1.22fr);
+  background:
+    linear-gradient(125deg, rgba(115, 87, 200, 0.08), transparent 58%),
+    #fff;
+}
+
+.ena3d-team-portrait {
+  position: relative;
+  margin: 0;
+  overflow: hidden;
+  aspect-ratio: 4 / 3;
+  background:
+    linear-gradient(145deg, rgba(43, 187, 192, 0.18), rgba(115, 87, 200, 0.13)),
+    #e9efef;
+}
+
+.ena3d-team-member--featured .ena3d-team-portrait {
+  height: 100%;
+  min-height: 35rem;
+  aspect-ratio: auto;
+}
+
+.ena3d-team-member--closing .ena3d-team-portrait {
+  height: 100%;
+  min-height: 29rem;
+  aspect-ratio: auto;
+}
+
+.ena3d-team-portrait::after {
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: inset 0 -7rem 8rem -7rem rgba(7, 29, 47, 0.48);
+  content: "";
+  pointer-events: none;
+}
+
+.ena3d-team-portrait img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: filter 320ms ease;
+}
+
+.ena3d-team-portrait--balanced img {
+  --ena3d-team-portrait-x: 50%;
+  --ena3d-team-portrait-y: 0%;
+  object-position:
+    var(--ena3d-team-portrait-x)
+    var(--ena3d-team-portrait-y);
+}
+
+.ena3d-team-member:hover .ena3d-team-portrait img {
+  filter: saturate(1.025) contrast(1.01);
+}
+
+.ena3d-team-member--hwang .ena3d-team-portrait img {
+  object-position: 50% 35%;
+}
+
+.ena3d-team-member--tu .ena3d-team-portrait img {
+  --ena3d-team-portrait-y: 0%;
+}
+
+.ena3d-team-member--peter .ena3d-team-portrait img {
+  --ena3d-team-portrait-y: 50%;
+}
+
+.ena3d-team-member--huang .ena3d-team-portrait img {
+  --ena3d-team-portrait-y: 8%;
+}
+
+.ena3d-team-member--kang .ena3d-team-portrait img {
+  --ena3d-team-portrait-y: 3%;
+}
+
+.ena3d-team-member--wu .ena3d-team-portrait img {
+  --ena3d-team-portrait-y: 50%;
+}
+
+.ena3d-team-member--cao .ena3d-team-portrait img {
+  --ena3d-team-portrait-y: 50%;
+}
+
+.ena3d-team-member--li .ena3d-team-portrait img {
+  --ena3d-team-portrait-x: 42%;
+  --ena3d-team-portrait-y: 50%;
+}
+
+.ena3d-team-member--yu .ena3d-team-portrait img {
+  --ena3d-team-portrait-y: 4%;
+}
+
+.ena3d-team-member-copy {
+  display: flex;
+  min-width: 0;
+  padding: clamp(1.7rem, 3.5vw, 3.2rem);
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.ena3d-team-member--featured .ena3d-team-member-copy {
+  padding: clamp(2.4rem, 5vw, 5rem);
+  justify-content: center;
+}
+
+.ena3d-team-member--closing .ena3d-team-member-copy {
+  padding: clamp(2.4rem, 4vw, 4rem);
+  justify-content: center;
+}
+
+.ena3d-team-role {
+  margin: 0 0 0.75rem;
+  color: var(--ena-coral);
+  font-size: var(--ena-type-meta);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 1.55;
+  text-transform: uppercase;
+}
+
+.ena3d-team-member h2 {
+  margin: 0;
+  color: var(--ena-ink-deep);
+  font-family: var(--ena-serif);
+  font-size: clamp(2rem, 3vw, 3.15rem);
+  font-weight: 400;
+  line-height: 1.05;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+
+.ena3d-team-member--featured h2 {
+  font-size: clamp(2.8rem, 4.8vw, 5rem);
+}
+
+.ena3d-team-affiliation {
+  display: grid;
+  max-width: 34rem;
+  margin: 1rem 0 0;
+  color: var(--ena-cyan-dark);
+  font-weight: 750;
+  line-height: 1.5;
+}
+
+.ena3d-team-affiliation span + span {
+  color: var(--ena-muted);
+  font-size: var(--ena-type-small);
+  font-weight: 650;
+}
+
+.ena3d-team-bio {
+  max-width: 44rem;
+  margin: 1.6rem 0 0;
+  color: var(--ena-muted);
+  font-size: clamp(1rem, 1.22vw, 1.1rem);
+  line-height: 1.75;
+}
+
+.ena3d-team-expertise {
+  display: flex;
+  margin: 1.7rem 0 0;
+  padding: 0;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  list-style: none;
+}
+
+.ena3d-team-expertise li {
+  padding: 0.42rem 0.68rem;
+  border: 1px solid rgba(16, 42, 67, 0.16);
+  color: var(--ena-ink);
+  background: rgba(255, 255, 255, 0.72);
+  font-size: var(--ena-type-meta);
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.ena3d-team-profile-link {
+  display: inline-flex;
+  min-height: 2.75rem;
+  margin-top: 1.8rem;
+  padding: 0.65rem 0 0.35rem;
+  align-items: center;
+  gap: 0.8rem;
+  border: 0;
+  border-bottom: 1px solid var(--ena-ink);
+  border-radius: 0;
+  color: var(--ena-ink);
+  background: transparent;
+  font-size: var(--ena-type-small);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.ena3d-team-profile-link:hover,
+.ena3d-team-profile-link:focus-visible {
+  color: var(--ena-cyan-dark);
+  background: transparent;
+  text-decoration: none;
+}
+
+.ena3d-team-profile-link:focus-visible {
+  outline: 2px solid var(--ena-coral);
+  outline-offset: 3px;
+}
+
 .ena3d-about-page {
   min-height: calc(100vh - 78px);
   padding: 0 clamp(1.5rem, 7vw, 7rem) 2rem;
@@ -1143,21 +1514,24 @@ body > .selectize-dropdown {
     padding: 2.1rem 2.25rem 2.25rem;
   }
 
-  .ena3d-figure-frame img {
+  .ena3d-figure-frame {
     height: 18rem;
   }
 
   .ena3d-method-section,
   .ena3d-papers-hero,
+  .ena3d-team-hero,
   .ena3d-about-hero {
     grid-template-columns: 1fr;
   }
 
-  .ena3d-papers-hero {
+  .ena3d-papers-hero,
+  .ena3d-team-hero {
     align-items: start;
   }
 
-  .ena3d-citation-guidance {
+  .ena3d-citation-guidance,
+  .ena3d-team-spectrum {
     max-width: 42rem;
   }
 
@@ -1209,6 +1583,28 @@ body > .selectize-dropdown {
     max-width: 48rem;
   }
 
+  .ena3d-team-member--featured {
+    min-height: 0;
+    grid-template-columns: 1fr;
+  }
+
+  .ena3d-team-member--closing {
+    min-height: 0;
+    grid-template-columns: 1fr;
+  }
+
+  .ena3d-team-member--featured .ena3d-team-portrait {
+    height: auto;
+    min-height: 0;
+    aspect-ratio: 16 / 10;
+  }
+
+  .ena3d-team-member--closing .ena3d-team-portrait {
+    height: auto;
+    min-height: 0;
+    aspect-ratio: 16 / 10;
+  }
+
   .ena3d-main-layout > .ena3d-sidebar-column,
   .ena3d-main-layout > .plot-container {
     float: none;
@@ -1254,6 +1650,27 @@ body > .selectize-dropdown {
     width: 100%;
     margin: 0.5rem 0 1rem;
     transform: none !important;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 991.98px) {
+  .navbar {
+    padding-right: 1rem;
+    padding-left: 1rem;
+  }
+
+  .ena3d-brand-copy small {
+    display: none;
+  }
+
+  .navbar-nav {
+    gap: 0;
+  }
+
+  .navbar-nav > li > a,
+  .navbar-nav .nav-link {
+    padding-right: 0.68rem !important;
+    padding-left: 0.68rem !important;
   }
 }
 
@@ -1310,7 +1727,7 @@ body > .selectize-dropdown {
     padding: 1.6rem 1.2rem 1.8rem;
   }
 
-  .ena3d-figure-frame img {
+  .ena3d-figure-frame {
     height: 14rem;
   }
 
@@ -1339,22 +1756,27 @@ body > .selectize-dropdown {
   .ena3d-method-section,
   .ena3d-papers-hero,
   .ena3d-papers-library,
+  .ena3d-team-hero,
+  .ena3d-team-roster,
   .ena3d-about-page {
     padding-right: 1.3rem;
     padding-left: 1.3rem;
   }
 
-  .ena3d-papers-hero {
+  .ena3d-papers-hero,
+  .ena3d-team-hero {
     padding-top: 4rem;
     padding-bottom: 4rem;
     gap: 2.5rem;
   }
 
-  .ena3d-papers-hero h1 {
+  .ena3d-papers-hero h1,
+  .ena3d-team-hero h1 {
     font-size: clamp(2.8rem, 14vw, 4.1rem);
   }
 
-  .ena3d-papers-heading {
+  .ena3d-papers-heading,
+  .ena3d-team-roster-heading {
     align-items: flex-start;
     flex-direction: column;
     gap: 1.5rem;
@@ -1383,6 +1805,31 @@ body > .selectize-dropdown {
   .ena3d-citation {
     padding-left: 1.5rem;
     text-indent: -1.5rem;
+  }
+
+  .ena3d-team-spectrum {
+    box-shadow: 0.75rem 0.75rem 0 rgba(16, 42, 67, 0.08);
+  }
+
+  .ena3d-team-member {
+    grid-column: 1 / -1;
+  }
+
+  .ena3d-team-portrait,
+  .ena3d-team-member--featured .ena3d-team-portrait,
+  .ena3d-team-member--closing .ena3d-team-portrait {
+    aspect-ratio: 4 / 3;
+  }
+
+  .ena3d-team-member-copy,
+  .ena3d-team-member--featured .ena3d-team-member-copy,
+  .ena3d-team-member--closing .ena3d-team-member-copy {
+    padding: 2rem 1.5rem 2.2rem;
+  }
+
+  .ena3d-team-member h2,
+  .ena3d-team-member--featured h2 {
+    font-size: clamp(2.15rem, 10vw, 3rem);
   }
 
   .ena3d-method-grid li {

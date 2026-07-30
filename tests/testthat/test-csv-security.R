@@ -70,3 +70,32 @@ test_that("safe CSV writer serializes inert header and cell text", {
   expect_identical(round_tripped[[1L]], c("'+SUM(A1:A2)", "ordinary"))
   expect_identical(round_tripped$value, c(-1L, 1L))
 })
+
+
+test_that("safe CSV writer rejects non-reversible multiline controls", {
+  unsafe <- data.frame(
+    value = c("carriage\rreturn", "line\nbreak", "carriage\r\nreturn"),
+    stringsAsFactors = FALSE
+  )
+  path <- tempfile(fileext = ".csv")
+  on.exit(unlink(path), add = TRUE)
+
+  expect_error(
+    ena3d_write_safe_csv(unsafe, path),
+    "cannot preserve carriage-return or newline"
+  )
+  expect_false(file.exists(path))
+
+  safe <- data.frame(
+    value = c("tab\tvalue", "comma,value", "quote\"value", "中文 🙂"),
+    stringsAsFactors = FALSE
+  )
+  ena3d_write_safe_csv(safe, path)
+  restored <- utils::read.csv(
+    path,
+    check.names = FALSE,
+    stringsAsFactors = FALSE,
+    fileEncoding = "UTF-8"
+  )
+  expect_identical(restored, safe)
+})

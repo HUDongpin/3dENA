@@ -1,0 +1,8 @@
+# Historical shinytest2 recordings are optional and excluded from the
+# authoritative repository-level suite in tests/testthat/.
+/R/tests/
+
+# Generated browser/audit artifacts and JavaScript dependencies are outside
+# the R dependency graph.
+/node_modules/
+/output/

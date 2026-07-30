@@ -242,11 +242,18 @@ test_that("weights, missing values, and zero weights follow declared policies", 
                           na_policy = "error"),
     "na_policy"
   )
-  expect_error(
-    compute_centroid_path(weighted, "time", "id", dimensions = c("x", "y"),
-                          weights = c(1, -1)),
-    NA
+  negative_weight_path <- expect_warning(
+    expect_error(
+      compute_centroid_path(
+        weighted, "time", "id", dimensions = c("x", "y"),
+        weights = c(1, -1)
+      ),
+      NA
+    ),
+    "one_entity_slice"
   )
+  expect_true("one_entity_slice" %in%
+                attr(negative_weight_path, "trajectory_warnings")$code)
 })
 
 test_that("selected and full distance spaces are distinct and documented", {
@@ -258,18 +265,27 @@ test_that("selected and full distance spaces are distinct and documented", {
     z = c(0, 0, 4, 4),
     scale_factor = c(1, 10, 100, 1000)
   )
-  selected <- compute_centroid_path(
-    points, "time", "id", dimensions = c("x", "y"),
-    distance_space = "selected"
+  selected <- expect_warning(
+    compute_centroid_path(
+      points, "time", "id", dimensions = c("x", "y"),
+      distance_space = "selected"
+    ),
+    "zero_variance_slice"
   )
-  full <- compute_centroid_path(
-    points, "time", "id", dimensions = c("x", "y"),
-    distance_space = "full", full_dimensions = c("x", "y", "z")
+  full <- expect_warning(
+    compute_centroid_path(
+      points, "time", "id", dimensions = c("x", "y"),
+      distance_space = "full", full_dimensions = c("x", "y", "z")
+    ),
+    "zero_variance_slice"
   )
   stripped <- points
   stripped$scale_factor <- NULL
-  selected_again <- compute_centroid_path(
-    stripped, "time", "id", dimensions = c("x", "y")
+  selected_again <- expect_warning(
+    compute_centroid_path(
+      stripped, "time", "id", dimensions = c("x", "y")
+    ),
+    "zero_variance_slice"
   )
 
   expect_equal(selected$step_distance, c(0, 3))
@@ -350,15 +366,21 @@ test_that("participant bootstrap preserves clusters, is deterministic, and resto
 
   set.seed(812)
   rng_before <- .Random.seed
-  boot_one <- bootstrap_centroid_path(
-    points, "time", "id", dimensions = c("x", "y"),
-    n_boot = 39, seed = 44
+  boot_one <- expect_warning(
+    bootstrap_centroid_path(
+      points, "time", "id", dimensions = c("x", "y"),
+      n_boot = 39, seed = 44
+    ),
+    "bootstrap_insufficient_replicates"
   )
   expect_identical(points, original_points)
   expect_identical(.Random.seed, rng_before)
-  boot_two <- bootstrap_centroid_path(
-    points[sample(nrow(points)), ], "time", "id",
-    dimensions = c("x", "y"), n_boot = 39, seed = 44
+  boot_two <- expect_warning(
+    bootstrap_centroid_path(
+      points[sample(nrow(points)), ], "time", "id",
+      dimensions = c("x", "y"), n_boot = 39, seed = 44
+    ),
+    "bootstrap_insufficient_replicates"
   )
   expect_equal(boot_one$centroid_x_lower, boot_two$centroid_x_lower)
   expect_equal(boot_one$centroid_x_upper, boot_two$centroid_x_upper)

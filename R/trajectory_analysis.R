@@ -77,23 +77,19 @@
   if (inherits(x, "Date")) {
     value <- format(x, "%Y-%m-%d")
   } else if (inherits(x, "POSIXt")) {
-    value <- format(as.numeric(x), digits = 17L, scientific = TRUE,
-                    trim = TRUE)
+    value <- sprintf("%a", as.numeric(x))
   } else if (inherits(x, "difftime")) {
     # `difftime` units are presentation metadata, not part of the physical
     # time key. Canonical seconds let equivalent hour/minute/second vectors
     # match across explicit orders and paired inputs.
-    value <- format(as.numeric(x, units = "secs"),
-                    digits = 17L, scientific = TRUE,
-                    trim = TRUE)
+    value <- sprintf("%a", as.numeric(x, units = "secs"))
   } else if (is.numeric(x)) {
     # Integer and double vectors represent the same analytical key space.
     # Formatting integer storage directly (for example, `1L`) used to produce
     # "1", while the semantically identical double `1` produced "1e+00".
     # Normalising storage first keeps cross-table ID, time, and group matches
     # independent of this implementation detail.
-    value <- format(as.numeric(x), digits = 17L, scientific = TRUE,
-                    trim = TRUE)
+    value <- sprintf("%a", as.numeric(x))
   } else {
     value <- as.character(x)
   }

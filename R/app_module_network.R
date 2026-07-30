@@ -424,6 +424,14 @@ ena_network_plot_output <-  function(input, output, session,
   output$ena_network_plot <- renderPlotly({
     comparison_plot <- generate_plot()
 
+    if (is.null(comparison_plot)) {
+      comparison_plot <- ena3d_plotly_empty_state(
+        source = "network",
+        title = "Network view",
+        message = "Select a group or unit under Show Network to display its network."
+      )
+    }
+
     comparison_plot <- add_3d_axis_based_on_user_selection(comparison_plot)
 
     comparison_plot <- ena3d_apply_plotly_typography(comparison_plot)

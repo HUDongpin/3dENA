@@ -246,6 +246,22 @@ test_that("axis changes swap collisions and always remain three-dimensional", {
 })
 
 
+test_that("plot formulas preserve accepted quoting characters exactly", {
+  dimensions <- c(
+    paste0("dimension", "`", "one"),
+    paste0("dimension", "\\", "two"),
+    "dimension with spaces"
+  )
+  formulas <- lapply(dimensions, tilde_var_or_null)
+
+  expect_identical(
+    vapply(formulas, function(formula) all.vars(formula)[[1L]], character(1L)),
+    dimensions
+  )
+  expect_true(all(vapply(formulas, inherits, logical(1L), "formula")))
+})
+
+
 test_that("Network, Change, and Comparison plots explicitly autorange", {
   skip_if_not_installed("plotly")
 

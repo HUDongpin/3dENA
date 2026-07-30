@@ -35,6 +35,31 @@ ena3d_vercel_analytics_tags <- function() {
   )
 }
 
+ena3d_analytics_provider <- function(
+    value = Sys.getenv("ENA3D_ANALYTICS_PROVIDER", unset = "none")) {
+  provider <- tolower(trimws(as.character(value)[[1L]]))
+  allowed <- c("none", "vercel")
+  if (!provider %in% allowed) {
+    stop(
+      paste0(
+        "ENA3D_ANALYTICS_PROVIDER must be one of: ",
+        paste(allowed, collapse = ", "),
+        "."
+      ),
+      call. = FALSE
+    )
+  }
+  provider
+}
+
+ena3d_analytics_tags <- function(provider = ena3d_analytics_provider()) {
+  switch(
+    ena3d_analytics_provider(provider),
+    none = htmltools::tagList(),
+    vercel = ena3d_vercel_analytics_tags()
+  )
+}
+
 ena3d_asset_data_uri <- function(path) {
   paste0(
     "data:",

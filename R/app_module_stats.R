@@ -42,16 +42,22 @@ ena3d_match_pairs <- function(points, group_var, group1, group2, id_var, axis) {
   dropped_id_group2 <- sum(!second_id_valid)
   first <- first[first_id_valid, , drop = FALSE]
   second <- second[second_id_valid, , drop = FALSE]
-  first$.pair_key <- as.character(first$pair_id)
-  second$.pair_key <- as.character(second$pair_id)
+  first$.pair_key <- ena3d_value_identity_keys(first$pair_id)
+  second$.pair_key <- ena3d_value_identity_keys(second$pair_id)
 
-  duplicate_first <- unique(first$.pair_key[duplicated(first$.pair_key)])
-  duplicate_second <- unique(second$.pair_key[duplicated(second$.pair_key)])
-  if (length(duplicate_first) || length(duplicate_second)) {
+  duplicate_first <- duplicated(first$.pair_key) |
+    duplicated(first$.pair_key, fromLast = TRUE)
+  duplicate_second <- duplicated(second$.pair_key) |
+    duplicated(second$.pair_key, fromLast = TRUE)
+  if (any(duplicate_first) || any(duplicate_second)) {
+    duplicate_labels <- unique(c(
+      ena3d_group_value_labels(first$pair_id[duplicate_first]),
+      ena3d_group_value_labels(second$pair_id[duplicate_second])
+    ))
     stop(
       paste0(
         "Pairing ID must identify one observation per selected group. Duplicate IDs: ",
-        paste(unique(c(duplicate_first, duplicate_second)), collapse = ", ")
+        paste(duplicate_labels, collapse = ", ")
       )
     )
   }

@@ -105,11 +105,11 @@ jobs:
             http://127.0.0.1:3838/ena3d-health/healthz.json | \
             Rscript -e 'payload <- jsonlite::fromJSON(paste(readLines(file("stdin")), collapse = "")); stopifnot(identical(payload$status, "ok"))'
 
-      - name: Run desktop and 390px mobile browser smoke
+      - name: Run fast Chromium browser smoke
         env:
           E2E_PORT: "3838"
           ENA3D_BUILD_ID: e2e-${{ github.sha }}
-        run: npm run test:e2e
+        run: npm run test:e2e:chromium
 
   docker-build:
     name: Validate production Docker build

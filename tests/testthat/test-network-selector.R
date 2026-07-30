@@ -146,3 +146,28 @@ test_that("typed Network targets select distinct group and unit line weights", {
   expect_identical(selected_mean("group", "No Network"), 9)
   expect_identical(selected_mean("unit", "No Network"), 1)
 })
+
+
+test_that("Network fallback renders a usable Plotly empty state", {
+  skip_if_not_installed("plotly")
+  expect_null(add_x_3d_axis(NULL))
+  expect_null(ena3d_apply_plotly_typography(NULL))
+
+  empty <- ena3d_plotly_empty_state(
+    source = "network",
+    title = "Network view",
+    message = "Select a group or unit under Show Network to display its network."
+  )
+  expect_s3_class(empty, "plotly")
+  empty <- add_x_3d_axis(empty)
+  empty <- ena3d_apply_plotly_typography(empty)
+  expect_silent(plotly::event_register(empty, "plotly_relayout"))
+
+  built <- plotly::plotly_build(empty)
+  annotations <- built$x$layout$annotations
+  expect_true(any(vapply(
+    annotations,
+    function(annotation) grepl("Select a group or unit", annotation$text),
+    logical(1L)
+  )))
+})

@@ -238,8 +238,10 @@ ena3d_ai_clean_label <- function(value, max_chars = 96L) {
   normalized <- tolower(gsub("[^[:alnum:]]", "", as.character(value[[1L]])))
   normalized %in% c(
     "enaunit", "unit", "unitid", "participant", "participantid",
-    "respondent", "respondentid", "subjectid", "userid", "username",
-    "studentid", "personid", "id"
+    "participantname", "respondent", "respondentid", "respondentname",
+    "subject", "subjectid", "subjectname", "user", "userid", "username",
+    "student", "studentid", "studentname", "person", "personid",
+    "personname", "fullname", "name", "id"
   )
 }
 
