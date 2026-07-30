@@ -132,9 +132,10 @@ test("home foregrounds trajectory analysis in a compact responsive hero", async 
     page.getByRole("heading", { name: "Follow change through time" })
   ).toBeVisible();
   await expect(visual).toContainText("TRAJECTORY ANALYSIS");
-  await expect(visual).toContainText("Ordered nodes");
-  await expect(visual).toContainText("Direction");
-  await expect(visual).toContainText("Group comparison");
+  await expect(visual).not.toContainText("Ordered nodes");
+  await expect(visual).not.toContainText("Direction");
+  await expect(visual).not.toContainText("Group comparison");
+  await expect(visual.locator(".ena3d-trajectory-key")).toHaveCount(0);
   const trajectoryPreview = visual.getByRole("img", {
     name: /three-dimensional ENA visualization/i,
   });

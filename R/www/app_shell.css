@@ -438,43 +438,6 @@ body.bslib-page-navbar > nav.navbar + div.container-fluid
   object-position: center;
 }
 
-.ena3d-trajectory-key {
-  display: grid;
-  margin: 0;
-  padding: 0.85rem 0 0;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.6rem;
-  color: var(--ena-muted);
-  font-size: var(--ena-type-meta);
-  font-weight: 750;
-  letter-spacing: 0.035em;
-  list-style: none;
-}
-
-.ena3d-trajectory-key li {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 0.45rem;
-}
-
-.ena3d-trajectory-key li::before {
-  width: 0.62rem;
-  height: 0.62rem;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  background: var(--ena-cyan);
-  content: "";
-}
-
-.ena3d-key-direction::before {
-  background: var(--ena-coral) !important;
-}
-
-.ena3d-key-comparison::before {
-  background: var(--ena-violet) !important;
-}
-
 .ena3d-method-section {
   display: grid;
   max-width: 1440px;
@@ -1741,16 +1704,6 @@ body > .selectize-dropdown {
 
   .ena3d-feature-badge {
     padding: 0.3rem 0.42rem;
-  }
-
-  .ena3d-trajectory-key {
-    gap: 0.35rem;
-  }
-
-  .ena3d-trajectory-key li {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 0.25rem;
   }
 
   .ena3d-method-section,

@@ -84,13 +84,6 @@ ena3d_home_ui <- function() {
               decoding = "async",
               fetchpriority = "high"
             )
-          ),
-          tags$ul(
-            class = "ena3d-trajectory-key",
-            `aria-label` = "Trajectory visualization features",
-            tags$li(class = "ena3d-key-order", "Ordered nodes"),
-            tags$li(class = "ena3d-key-direction", "Direction"),
-            tags$li(class = "ena3d-key-comparison", "Group comparison")
           )
         )
       )
