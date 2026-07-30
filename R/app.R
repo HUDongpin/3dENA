@@ -38,6 +38,7 @@ library(rENA)
 .ena3d_source('inline_ui.R')
 .ena3d_source('security_utils.R')
 .ena3d_source('app_connection.R')
+.ena3d_source('site_routes.R')
 .ena3d_source('qwen_client.R')
 .ena3d_source('ai_evidence.R')
 .ena3d_source('color_list.R')
@@ -236,6 +237,16 @@ app_ui <- function(){
       ),
       ena3d_connection_assets(
         paste(config$app_version, config$build_id, sep = "-")
+      ),
+      tags$script(
+        defer = NA,
+        src = paste0(
+          "/site_routes.js?v=",
+          utils::URLencode(
+            paste(config$app_version, config$build_id, sep = "-"),
+            reserved = TRUE
+          )
+        )
       ),
       tags$script(
         "Shiny.addCustomMessageHandler('ena3d-plot-visibility', function(message) {
@@ -853,7 +864,7 @@ options(
 inline_assets <- tolower(Sys.getenv("ENA3D_INLINE_ASSETS", unset = "false")) %in%
   c("1", "true", "yes", "on")
 
-if (inline_assets) {
+ena3d_app <- if (inline_assets) {
   ena3d_register_plotly_resources()
   prebuilt_ui_path <- Sys.getenv("ENA3D_PREBUILT_UI_PATH", unset = "")
   if (nzchar(prebuilt_ui_path) && file.exists(prebuilt_ui_path)) {
@@ -890,3 +901,5 @@ if (inline_assets) {
 } else {
   shinyApp(app_ui(), app_server)
 }
+
+ena3d_enable_site_routes(ena3d_app)

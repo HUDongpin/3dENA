@@ -206,6 +206,7 @@ test("home foregrounds trajectory analysis in a compact responsive hero", async 
     "aria-selected",
     "true"
   );
+  await expect(page).toHaveURL((url) => url.pathname === "/app");
   await expect(
     page.locator('#workspace_sections a[data-value="Model"]')
   ).toHaveAttribute("aria-selected", "true");
@@ -232,6 +233,7 @@ test("papers page exposes three verified copy-ready APA citations", async ({
   }
   await papersTab.click();
   await expect(papersTab).toHaveAttribute("aria-selected", "true");
+  await expect(page).toHaveURL((url) => url.pathname === "/papers");
   await expect(
     page.getByRole("heading", { name: "Cite the work behind 3D ENA." })
   ).toBeVisible();

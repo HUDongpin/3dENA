@@ -1,5 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "fluid": true,
-  "regions": ["hkg1"]
+  "regions": ["hkg1"],
+  "rewrites": [
+    { "source": "/app", "destination": "/" },
+    { "source": "/papers", "destination": "/" },
+    { "source": "/team", "destination": "/" },
+    { "source": "/about", "destination": "/" }
+  ]
 }
