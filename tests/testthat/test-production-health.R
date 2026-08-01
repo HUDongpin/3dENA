@@ -96,6 +96,7 @@ test_that("the cold Vercel shell serves Papers before loading analysis", {
   on.exit(unlink(prebuilt), add = TRUE)
 
   port <- httpuv::randomPort()
+  child_libraries <- paste(.libPaths(), collapse = .Platform$path.sep)
   expression <- sprintf(
     paste0(
       "source('R/app.R'); ",
@@ -111,6 +112,8 @@ test_that("the cold Vercel shell serves Papers before loading analysis", {
     c("--vanilla", "-e", expression),
     wd = .health_test_root,
     env = c(
+      R_LIBS = child_libraries,
+      R_LIBS_USER = child_libraries,
       VERCEL = "1",
       VERCEL_GIT_COMMIT_SHA = build,
       ENA3D_BUILD_ID = "stale-cold-shell",
