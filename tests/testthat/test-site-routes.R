@@ -120,7 +120,7 @@ test_that("the bounded Vercel preview listens on the platform container port", {
   expect_false(grepl("PORT=3838", dockerfile, fixed = TRUE))
 })
 
-test_that("the Vercel preview binds platform Git provenance into the image", {
+test_that("the Vercel preview resolves platform Git provenance at runtime", {
   dockerfile <- paste(
     readLines(
       file.path(.site_route_root, "Dockerfile.vercel"),
@@ -133,11 +133,16 @@ test_that("the Vercel preview binds platform Git provenance into the image", {
     collapse = "\n"
   )
 
-  expect_match(dockerfile, "ARG VERCEL_GIT_COMMIT_SHA=", fixed = TRUE)
   expect_match(dockerfile, "VERCEL=1", fixed = TRUE)
+  expect_false(grepl("ARG VERCEL_GIT_COMMIT_SHA=", dockerfile, fixed = TRUE))
+  expect_false(grepl(
+    "VERCEL_GIT_COMMIT_SHA=${VERCEL_GIT_COMMIT_SHA}",
+    dockerfile,
+    fixed = TRUE
+  ))
   expect_match(
     dockerfile,
-    "VERCEL_GIT_COMMIT_SHA=${VERCEL_GIT_COMMIT_SHA}",
+    "RUN VERCEL= VERCEL_GIT_COMMIT_SHA= ENA3D_BUILD_ID=__ENA3D_BUILD_ID__",
     fixed = TRUE
   )
   expect_match(app_source, "config$build_id = ena3d_resolve_build_id()",
