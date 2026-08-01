@@ -894,6 +894,7 @@ options(
 
 inline_assets <- tolower(Sys.getenv("ENA3D_INLINE_ASSETS", unset = "false")) %in%
   c("1", "true", "yes", "on")
+.ena3d_static_plotly_registered <- FALSE
 
 ena3d_app <- if (inline_assets) {
   prebuilt_ui_path <- Sys.getenv("ENA3D_PREBUILT_UI_PATH", unset = "")
@@ -909,6 +910,8 @@ ena3d_app <- if (inline_assets) {
       app_ui_html,
       fixed = TRUE
     )
+    .ena3d_static_plotly_registered <-
+      ena3d_register_prebuilt_plotly_resources(app_ui_html)
   } else {
     ena3d_load_analysis_runtime()
     app_ui_html <- ena3d_render_inline_ui(
@@ -942,7 +945,8 @@ ena3d_security_log(
       "%.3f",
       unname(proc.time()[["elapsed"]]) - .ena3d_source_started_at
     ),
-    analysis_runtime_loaded = .ena3d_analysis_runtime_loaded
+    analysis_runtime_loaded = .ena3d_analysis_runtime_loaded,
+    static_plotly_registered = .ena3d_static_plotly_registered
   )
 )
 ena3d_app

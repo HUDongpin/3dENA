@@ -235,3 +235,45 @@ ena3d_register_plotly_resources <- function() {
   )
   invisible(shiny:::createWebDependency(dependency))
 }
+
+ena3d_register_prebuilt_plotly_resources <- function(html) {
+  if (!is.character(html) || length(html) != 1L || is.na(html)) {
+    stop("Prebuilt UI HTML must be one string.", call. = FALSE)
+  }
+
+  references <- regmatches(
+    html,
+    gregexpr(
+      '(?:src|href)="/?plotly-main-[^"/]+/',
+      html,
+      perl = TRUE
+    )
+  )[[1L]]
+  if (!length(references)) return(invisible(FALSE))
+
+  prefixes <- unique(sub(
+    '^(?:src|href)="/?([^/]+)/$',
+    "\\1",
+    references,
+    perl = TRUE
+  ))
+  package_dir <- find.package("plotly", quiet = TRUE)
+  if (!nzchar(package_dir)) {
+    stop("Could not locate the installed Plotly package.", call. = FALSE)
+  }
+  resource_dir <- file.path(
+    package_dir,
+    "htmlwidgets",
+    "lib",
+    "plotlyjs"
+  )
+  if (!dir.exists(resource_dir) ||
+      !file.exists(file.path(resource_dir, "plotly-latest.min.js"))) {
+    stop("Could not locate Plotly's prebuilt browser resources.", call. = FALSE)
+  }
+
+  for (prefix in prefixes) {
+    shiny::addResourcePath(prefix, resource_dir)
+  }
+  invisible(TRUE)
+}

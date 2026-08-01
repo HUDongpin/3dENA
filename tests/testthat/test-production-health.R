@@ -85,7 +85,9 @@ test_that("the cold Vercel shell serves Papers before loading analysis", {
   writeChar(
     paste0(
       "<!doctype html><html><head><title>Papers | 3D ENA</title></head>",
-      "<body data-build=\"__ENA3D_BUILD_ID__\">Cold shell</body></html>"
+      "<body data-build=\"__ENA3D_BUILD_ID__\">Cold shell</body>",
+      "<script src=\"plotly-main-2.11.1/plotly-latest.min.js\"></script>",
+      "</html>"
     ),
     prebuilt,
     eos = NULL,
@@ -154,6 +156,13 @@ test_that("the cold Vercel shell serves Papers before loading analysis", {
   expect_false(grepl("(?im)^location:", rawToChar(response$headers), perl = TRUE))
   expect_match(rawToChar(response$content), build, fixed = TRUE)
   expect_lt(as.numeric(difftime(Sys.time(), started, units = "secs")), 8)
+
+  plotly_response <- curl::curl_fetch_memory(sprintf(
+    "http://127.0.0.1:%d/plotly-main-2.11.1/plotly-latest.min.js",
+    port
+  ))
+  expect_identical(plotly_response$status_code, 200L)
+  expect_gt(length(plotly_response$content), 1024^2)
 })
 
 
