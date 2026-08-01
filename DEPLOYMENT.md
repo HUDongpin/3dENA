@@ -27,6 +27,16 @@ that setting separate from the persistent Shiny Server image, which exposes
 the immutable preview URL and confirm an HTTP response before treating the
 preview as usable.
 
+Vercel preview build provenance comes from the platform-owned
+`VERCEL_GIT_COMMIT_SHA` system variable, which is available at build time and
+runtime when automatic system variables are exposed. The application gives
+that full Git SHA precedence over the portable `ENA3D_BUILD_ID` fallback and
+refuses to start a Vercel deployment when the system SHA is unavailable. Do
+not configure `ENA3D_BUILD_ID` as a Vercel project environment variable: it can
+outlive the deployment that introduced it and make the health endpoint report
+stale provenance. Remove legacy Vercel entries and create a new deployment so
+the environment change is included.
+
 Shiny Server's robust transport has a bounded 15-second opportunity to
 reattach the browser to the **existing** R session. The app explicitly disables
 Shiny's separate new-session reconnect fallback because replaying browser

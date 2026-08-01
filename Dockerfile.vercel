@@ -2,11 +2,15 @@ FROM rocker/r-ver:4.4.1
 
 ARG ENA3D_BUILD_ID=development
 ARG ENA3D_APP_VERSION=0.2.0-dev
+ARG VERCEL_GIT_COMMIT_SHA=
 ARG RENV_REPOSITORY=https://packagemanager.posit.co/cran/__linux__/jammy/latest
 ENV DEBIAN_FRONTEND=noninteractive \
     PORT=80 \
     ENA3D_BUILD_ID=${ENA3D_BUILD_ID} \
+    ENA3D_GIT_COMMIT=${VERCEL_GIT_COMMIT_SHA} \
     ENA3D_APP_VERSION=${ENA3D_APP_VERSION} \
+    VERCEL=1 \
+    VERCEL_GIT_COMMIT_SHA=${VERCEL_GIT_COMMIT_SHA} \
     ENA3D_PROJECT_ROOT=/opt/ena3d \
     ENA3D_RUNTIME_PROFILE=ephemeral-preview \
     ENA3D_ANALYTICS_PROVIDER=vercel \

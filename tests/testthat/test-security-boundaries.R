@@ -26,6 +26,54 @@ source(file.path(.security_test_root, "R", "app_ui_data_upload_tab.R"), local = 
 }
 
 
+test_that("Vercel system provenance overrides a stale configured build ID", {
+  commit <- "0123456789abcdef0123456789abcdef01234567"
+
+  expect_identical(
+    ena3d_resolve_build_id(
+      configured = "stale-project-value",
+      vercel_commit = toupper(commit),
+      vercel_marker = "1"
+    ),
+    commit
+  )
+  expect_identical(
+    ena3d_resolve_build_id(
+      configured = "persistent-image-id",
+      vercel_commit = commit,
+      vercel_marker = ""
+    ),
+    "persistent-image-id"
+  )
+  expect_identical(
+    ena3d_resolve_build_id(
+      configured = "",
+      vercel_commit = "",
+      vercel_marker = ""
+    ),
+    "development"
+  )
+  expect_error(
+    ena3d_resolve_build_id(
+      configured = "stale-project-value",
+      vercel_commit = "not-a-full-sha",
+      vercel_marker = "1"
+    ),
+    "full 40-character Git SHA",
+    fixed = TRUE
+  )
+  expect_error(
+    ena3d_resolve_build_id(
+      configured = "stale-project-value",
+      vercel_commit = "",
+      vercel_marker = "1"
+    ),
+    "required for a Vercel deployment",
+    fixed = TRUE
+  )
+})
+
+
 test_that("browser-originated R serialization is denied before deserialization", {
   old_option <- getOption("ena3d.active_binding_executed")
   on.exit(options(ena3d.active_binding_executed = old_option), add = TRUE)

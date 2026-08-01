@@ -8,7 +8,7 @@ if (is.na(.health_test_root)) stop("Could not locate the project root.")
 .health_test_root <- normalizePath(.health_test_root, mustWork = TRUE)
 
 
-test_that("the versioned JSON health endpoint is reachable over HTTP", {
+test_that("the JSON health endpoint reports authoritative Vercel provenance", {
   skip_if_not_installed("processx")
   skip_if_not_installed("curl")
   skip_if_not_installed("httpuv")
@@ -25,8 +25,11 @@ test_that("the versioned JSON health endpoint is reachable over HTTP", {
     c("-e", expression),
     wd = .health_test_root,
     env = c(
-      ENA3D_BUILD_ID = "health-smoke",
-      ENA3D_APP_VERSION = "0.2.0-test"
+      ENA3D_BUILD_ID = "stale-health-smoke",
+      ENA3D_APP_VERSION = "0.2.0-test",
+      VERCEL = "1",
+      VERCEL_GIT_COMMIT_SHA =
+        "0123456789abcdef0123456789abcdef01234567"
     ),
     stdout = "|",
     stderr = "|",
@@ -64,7 +67,10 @@ test_that("the versioned JSON health endpoint is reachable over HTTP", {
   expect_identical(health$status, "ok")
   expect_identical(health$app, "3D ENA")
   expect_identical(health$version, "0.2.0-test")
-  expect_identical(health$build, "health-smoke")
+  expect_identical(
+    health$build,
+    "0123456789abcdef0123456789abcdef01234567"
+  )
   expect_gte(health$trusted_samples, 1L)
 })
 

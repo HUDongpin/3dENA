@@ -276,7 +276,8 @@ test("trusted sample traverses every model view and trajectory controls", async 
     timeout: 10_000,
   });
   expect(health.ok()).toBeTruthy();
-  expect(await health.json()).toMatchObject({
+  const healthJson = await health.json();
+  expect(healthJson).toMatchObject({
     status: "ok",
     app: "3D ENA",
     ai_enabled: false,
@@ -288,6 +289,9 @@ test("trusted sample traverses every model view and trajectory controls", async 
     .getByRole("button", { name: "Open the 3D ENA research workspace" })
     .click();
   await expect(page.getByRole("heading", { name: "3D ENA", exact: true })).toBeVisible();
+  await expect(page.locator(".ena3d-build-id")).toContainText(
+    `Build ${healthJson.build}`
+  );
   const typography = await page.evaluate(() => {
     const fontSize = (selector) =>
       Number.parseFloat(getComputedStyle(document.querySelector(selector)).fontSize);

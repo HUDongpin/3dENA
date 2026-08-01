@@ -60,7 +60,13 @@ config$sample_data_path = normalizePath(
   mustWork = TRUE
 )
 config$data_limits = ena3d_data_limits()
-config$build_id = Sys.getenv("ENA3D_BUILD_ID", unset = "development")
+config$build_id = ena3d_resolve_build_id()
+# Keep module exports and structured logs aligned with the authoritative
+# deployment provenance selected above.
+Sys.setenv(ENA3D_BUILD_ID = config$build_id)
+if (identical(Sys.getenv("VERCEL", unset = ""), "1")) {
+  Sys.setenv(ENA3D_GIT_COMMIT = config$build_id)
+}
 config$app_version = Sys.getenv(
   "ENA3D_APP_VERSION",
   unset = trimws(readLines(

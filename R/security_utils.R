@@ -24,6 +24,42 @@ ena3d_env_number <- function(name, default, minimum = 1, maximum = Inf) {
 }
 
 
+ena3d_resolve_build_id <- function(
+    configured = Sys.getenv("ENA3D_BUILD_ID", unset = "development"),
+    vercel_commit = Sys.getenv("VERCEL_GIT_COMMIT_SHA", unset = ""),
+    vercel_marker = Sys.getenv("VERCEL", unset = "")) {
+  scalar_text <- function(value, name) {
+    value <- as.character(value)
+    if (length(value) != 1L || is.na(value)) {
+      stop(sprintf("%s must be one string.", name), call. = FALSE)
+    }
+    trimws(value)
+  }
+
+  configured <- scalar_text(configured, "ENA3D_BUILD_ID")
+  vercel_commit <- scalar_text(vercel_commit, "VERCEL_GIT_COMMIT_SHA")
+  vercel_marker <- scalar_text(vercel_marker, "VERCEL")
+
+  if (identical(vercel_marker, "1")) {
+    if (!nzchar(vercel_commit)) {
+      stop(
+        "VERCEL_GIT_COMMIT_SHA is required for a Vercel deployment.",
+        call. = FALSE
+      )
+    }
+    if (!grepl("^[0-9A-Fa-f]{40}$", vercel_commit)) {
+      stop(
+        "VERCEL_GIT_COMMIT_SHA must be a full 40-character Git SHA.",
+        call. = FALSE
+      )
+    }
+    return(tolower(vercel_commit))
+  }
+
+  if (nzchar(configured)) configured else "development"
+}
+
+
 ena3d_data_limits <- function() {
   list(
     # Public exchange files are plain JSON, but still receive a hard
@@ -192,7 +228,7 @@ ena3d_security_log <- function(event, level = "INFO", fields = list()) {
     timestamp = format(Sys.time(), "%Y-%m-%dT%H:%M:%OS3Z", tz = "UTC"),
     level = toupper(level),
     event = event,
-    build = Sys.getenv("ENA3D_BUILD_ID", unset = "development"),
+    build = ena3d_resolve_build_id(),
     vapply(fields, ena3d_normalize_log_value, character(1))
   )
   line <- paste(
