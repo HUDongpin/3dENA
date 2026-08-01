@@ -17,7 +17,11 @@ required_packages <- c(
 )
 
 missing_packages <- required_packages[
-  !vapply(required_packages, requireNamespace, logical(1), quietly = TRUE)
+  !vapply(
+    required_packages,
+    function(package) nzchar(find.package(package, quiet = TRUE)),
+    logical(1)
+  )
 ]
 
 if (length(missing_packages) > 0L) {

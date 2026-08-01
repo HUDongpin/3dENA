@@ -64,14 +64,14 @@ COPY .Rprofile ./.Rprofile
 COPY renv/bootstrap.R ./renv/bootstrap.R
 COPY renv/activate.R ./renv/activate.R
 RUN Rscript renv/bootstrap.R
-RUN Rscript -e 'stopifnot(normalizePath("/opt/renv/library") %in% .libPaths()); stopifnot(requireNamespace("shiny", quietly=TRUE), requireNamespace("rENA", quietly=TRUE), requireNamespace("jsonlite", quietly=TRUE), requireNamespace("readxl", quietly=TRUE), requireNamespace("curl", quietly=TRUE), requireNamespace("callr", quietly=TRUE), requireNamespace("later", quietly=TRUE), requireNamespace("promises", quietly=TRUE))'
+RUN Rscript --vanilla -e 'stopifnot(normalizePath("/opt/renv/library") %in% .libPaths()); required <- c("shiny", "plotly", "data.table", "R6", "rENA", "bslib", "scales", "digest", "jsonlite", "curl", "readxl", "zip", "callr", "later", "promises"); stopifnot(all(vapply(required, requireNamespace, logical(1), quietly=TRUE)))'
 
 COPY R ./R
 COPY images ./images
 COPY sample_data ./sample_data
 COPY README.md TRAJECTORY_ANALYSIS.md LICENSE VERSION ./
 
-RUN VERCEL= VERCEL_GIT_COMMIT_SHA= ENA3D_BUILD_ID=__ENA3D_BUILD_ID__ ENA3D_PREBUILT_UI_PATH= Rscript -e 'source("/opt/ena3d/R/app.R"); bytes <- nchar(app_ui_html, type="bytes"); stopifnot(bytes < 4 * 1024^2); writeChar(app_ui_html, "/opt/ena3d/inline-ui.html", eos=NULL, useBytes=TRUE); message("Prebuilt inline UI: ", bytes, " bytes")'
+RUN VERCEL= VERCEL_GIT_COMMIT_SHA= ENA3D_BUILD_ID=__ENA3D_BUILD_ID__ ENA3D_PREBUILT_UI_PATH= Rscript --vanilla -e 'source("/opt/ena3d/R/app.R"); bytes <- nchar(app_ui_html, type="bytes"); stopifnot(bytes < 4 * 1024^2); writeChar(app_ui_html, "/opt/ena3d/inline-ui.html", eos=NULL, useBytes=TRUE); message("Prebuilt inline UI: ", bytes, " bytes")'
 
 RUN groupadd --system --gid 10001 ena3d \
     && useradd --system --uid 10001 --gid ena3d --home /home/ena3d ena3d \
@@ -85,4 +85,4 @@ EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD curl --fail --silent --show-error "http://127.0.0.1:${PORT:-80}/ena3d-health/healthz.json" >/dev/null || exit 1
 
-CMD ["R", "-e", "port <- suppressWarnings(as.integer(Sys.getenv('PORT', unset='80'))); stopifnot(length(port) == 1L, !is.na(port), port >= 1L, port <= 65535L); shiny::runApp('/opt/ena3d/R', host='0.0.0.0', port=port, launch.browser=FALSE)"]
+CMD ["Rscript", "--vanilla", "-e", "port <- suppressWarnings(as.integer(Sys.getenv('PORT', unset='80'))); stopifnot(length(port) == 1L, !is.na(port), port >= 1L, port <= 65535L); shiny::runApp('/opt/ena3d/R', host='0.0.0.0', port=port, launch.browser=FALSE)"]

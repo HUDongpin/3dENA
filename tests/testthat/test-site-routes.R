@@ -118,6 +118,16 @@ test_that("the bounded Vercel preview listens on the platform container port", {
   expect_match(dockerfile, "EXPOSE 80", fixed = TRUE)
   expect_match(dockerfile, "${PORT:-80}", fixed = TRUE)
   expect_false(grepl("PORT=3838", dockerfile, fixed = TRUE))
+  expect_match(
+    dockerfile,
+    'CMD ["Rscript", "--vanilla", "-e"',
+    fixed = TRUE
+  )
+  expect_match(
+    dockerfile,
+    'required <- c("shiny", "plotly", "data.table", "R6", "rENA"',
+    fixed = TRUE
+  )
 })
 
 test_that("the Vercel preview resolves platform Git provenance at runtime", {

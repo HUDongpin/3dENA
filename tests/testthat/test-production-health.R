@@ -75,6 +75,88 @@ test_that("the JSON health endpoint reports authoritative Vercel provenance", {
 })
 
 
+test_that("the cold Vercel shell serves Papers before loading analysis", {
+  skip_if_not_installed("processx")
+  skip_if_not_installed("curl")
+  skip_if_not_installed("httpuv")
+
+  build <- "89abcdef0123456789abcdef0123456789abcdef"
+  prebuilt <- tempfile("ena3d-cold-shell-", fileext = ".html")
+  writeChar(
+    paste0(
+      "<!doctype html><html><head><title>Papers | 3D ENA</title></head>",
+      "<body data-build=\"__ENA3D_BUILD_ID__\">Cold shell</body></html>"
+    ),
+    prebuilt,
+    eos = NULL,
+    useBytes = TRUE
+  )
+  on.exit(unlink(prebuilt), add = TRUE)
+
+  port <- httpuv::randomPort()
+  expression <- sprintf(
+    paste0(
+      "source('R/app.R'); ",
+      "stopifnot(!isTRUE(.ena3d_analysis_runtime_loaded)); ",
+      "stopifnot(!('plotly' %%in%% loadedNamespaces())); ",
+      "shiny::runApp(ena3d_app, host='127.0.0.1', port=%dL, ",
+      "launch.browser=FALSE)"
+    ),
+    port
+  )
+  process <- processx::process$new(
+    file.path(R.home("bin"), "Rscript"),
+    c("--vanilla", "-e", expression),
+    wd = .health_test_root,
+    env = c(
+      VERCEL = "1",
+      VERCEL_GIT_COMMIT_SHA = build,
+      ENA3D_BUILD_ID = "stale-cold-shell",
+      ENA3D_APP_VERSION = "0.2.0-test",
+      ENA3D_INLINE_ASSETS = "true",
+      ENA3D_PREBUILT_UI_PATH = prebuilt,
+      ENA3D_RUNTIME_PROFILE = "ephemeral-preview"
+    ),
+    stdout = "|",
+    stderr = "|",
+    cleanup_tree = TRUE
+  )
+  on.exit({
+    if (process$is_alive()) process$kill()
+  }, add = TRUE)
+
+  started <- Sys.time()
+  url <- sprintf("http://127.0.0.1:%d/papers?cold_probe=test", port)
+  response <- NULL
+  deadline <- started + 8
+  repeat {
+    response <- tryCatch(
+      curl::curl_fetch_memory(
+        url,
+        handle = curl::new_handle(timeout = 1, followlocation = FALSE)
+      ),
+      error = function(error) NULL
+    )
+    if (!is.null(response)) break
+    if (!process$is_alive()) {
+      stop(
+        "Shiny exited before the cold Papers request was accepted:\n",
+        paste(process$read_all_error(), collapse = "\n")
+      )
+    }
+    if (Sys.time() >= deadline) {
+      stop("Cold shell did not accept the first direct Papers request in 8s.")
+    }
+    Sys.sleep(0.05)
+  }
+
+  expect_identical(response$status_code, 200L)
+  expect_false(grepl("(?im)^location:", rawToChar(response$headers), perl = TRUE))
+  expect_match(rawToChar(response$content), build, fixed = TRUE)
+  expect_lt(as.numeric(difftime(Sys.time(), started, units = "secs")), 8)
+})
+
+
 test_that("invalid optional AI budgets fail closed without stopping ENA", {
   skip_if_not_installed("processx")
 

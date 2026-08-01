@@ -1,3 +1,5 @@
+.ena3d_source_started_at <- unname(proc.time()[["elapsed"]])
+
 .ena3d_candidate_files <- sub(
   "^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE)
 )
@@ -28,13 +30,11 @@ if (is.na(.ena3d_app_dir)) {
   source(file.path(.ena3d_app_dir, file), chdir = TRUE, local = FALSE)
 }
 
-.ena3d_source('install_dependencies.R')
+if (!identical(Sys.getenv("VERCEL", unset = ""), "1")) {
+  .ena3d_source('install_dependencies.R')
+}
 
-library(plotly)
-library(data.table)
 library(shiny)
-library(R6)
-library(rENA)
 .ena3d_source('inline_ui.R')
 .ena3d_source('security_utils.R')
 .ena3d_source('app_connection.R')
@@ -51,7 +51,24 @@ library(rENA)
 .ena3d_source('app_ui_stats.R')
 .ena3d_source('app_ui_ai_interpretation.R')
 .ena3d_source('app_ui_site.R')
-.ena3d_source('app_server.R')
+
+# Vercel must see the container port before its cold-start deadline. The
+# prebuilt public shell needs Shiny only, so defer the analysis namespaces and
+# server modules until the first Shiny session is established.
+.ena3d_analysis_runtime_loaded <- FALSE
+ena3d_load_analysis_runtime <- function() {
+  if (isTRUE(.ena3d_analysis_runtime_loaded)) return(invisible(FALSE))
+
+  for (package in c("plotly", "data.table", "rENA")) {
+    suppressPackageStartupMessages(
+      library(package, character.only = TRUE)
+    )
+  }
+  ena3d_register_plotly_resources()
+  .ena3d_source('app_server.R')
+  .ena3d_analysis_runtime_loaded <<- TRUE
+  invisible(TRUE)
+}
 
 
 config = list()
@@ -184,7 +201,7 @@ ena3d_security_log(
 R6 class.
 It is an object used to communicate data between modules.
 "
-ENA_3D_Server <- R6Class("ENA_3D_Server",
+ENA_3D_Server <- R6::R6Class("ENA_3D_Server",
                          public = list(
                            active_tab = NULL,
                            render_comparison = FALSE,
@@ -809,6 +826,7 @@ app_ui <- function(){
  Server wrapper, used to passing variables (state) between UI and the
 "
 app_server <- function(input, output, session) {
+  ena3d_load_analysis_runtime()
   ena3d_disable_new_session_reconnect(session)
   ena3d_register_connection_proof(input, session)
 
@@ -878,7 +896,6 @@ inline_assets <- tolower(Sys.getenv("ENA3D_INLINE_ASSETS", unset = "false")) %in
   c("1", "true", "yes", "on")
 
 ena3d_app <- if (inline_assets) {
-  ena3d_register_plotly_resources()
   prebuilt_ui_path <- Sys.getenv("ENA3D_PREBUILT_UI_PATH", unset = "")
   if (nzchar(prebuilt_ui_path) && file.exists(prebuilt_ui_path)) {
     app_ui_html <- readChar(
@@ -893,6 +910,7 @@ ena3d_app <- if (inline_assets) {
       fixed = TRUE
     )
   } else {
+    ena3d_load_analysis_runtime()
     app_ui_html <- ena3d_render_inline_ui(
       app_ui(),
       file.path(.ena3d_app_dir, "www")
@@ -912,7 +930,19 @@ ena3d_app <- if (inline_assets) {
   attr(app_ui_handler, "http_methods_supported") <- "GET"
   shinyApp(app_ui_handler, app_server)
 } else {
+  ena3d_load_analysis_runtime()
   shinyApp(app_ui(), app_server)
 }
 
-ena3d_enable_site_routes(ena3d_app)
+ena3d_app <- ena3d_enable_site_routes(ena3d_app)
+ena3d_security_log(
+  "app_ready",
+  fields = list(
+    startup_seconds = sprintf(
+      "%.3f",
+      unname(proc.time()[["elapsed"]]) - .ena3d_source_started_at
+    ),
+    analysis_runtime_loaded = .ena3d_analysis_runtime_loaded
+  )
+)
+ena3d_app

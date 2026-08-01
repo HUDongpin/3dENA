@@ -262,6 +262,13 @@ and concrete log retention period before launch.
 7. Keep the preceding digest available and document the rollback command.
 8. Confirm the visible build ID, health metadata, and startup log match the
    deployed digest.
+   For a Vercel container preview, wait for deployment metadata to report
+   `READY` without requesting an application URL, allow the preview to remain
+   idle for at least 30 seconds, and make the first HTTP request directly to
+   `/papers` with redirects and client retries disabled. Require the first
+   response to be 200, then verify the Shiny connection and one server-side
+   round trip. Record the runtime `function_start_type` when Vercel exposes it;
+   a cache `MISS` is not evidence of a cold instance.
 9. Change DNS only after the new host passes TLS, health, six-minute
    connection, and short-interruption checks. Keep the previous deployment
    available until the same checks pass through the public production domain.
