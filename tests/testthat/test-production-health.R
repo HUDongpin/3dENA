@@ -12,6 +12,7 @@ test_that("plain runApp fails the persistent Shiny Server adapter guard", {
   skip_if_not_installed("processx")
 
   app_dir <- normalizePath(file.path(.health_test_root, "R"), mustWork = TRUE)
+  child_libraries <- paste(.libPaths(), collapse = .Platform$path.sep)
   expression <- sprintf(
     "shiny::runApp(%s, host='127.0.0.1', port=43991L, launch.browser=FALSE)",
     encodeString(app_dir, quote = '"')
@@ -21,6 +22,8 @@ test_that("plain runApp fails the persistent Shiny Server adapter guard", {
     c("--vanilla", "-e", expression),
     wd = .health_test_root,
     env = c(
+      R_LIBS = child_libraries,
+      R_LIBS_USER = child_libraries,
       ENA3D_APP_VERSION = "0.2.0-test",
       ENA3D_RUNTIME_PROFILE = "persistent",
       SHINY_SERVER_VERSION = "1.5.23.1030",
