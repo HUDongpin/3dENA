@@ -178,8 +178,11 @@ trajectory_controls_ui <- function(id) {
       ),
       shiny::conditionalPanel(
         condition = sprintf(
-          "input['%s'] === true || input['%s'] === true",
-          ns("show_uncertainty"), ns("run_comparison")
+          paste0(
+            "input['%s'] === true || ",
+            "(input['%s'] !== '' && input['%s'] === true)"
+          ),
+          ns("show_uncertainty"), ns("group_var"), ns("run_comparison")
         ),
         shiny::fluidRow(
           shiny::column(

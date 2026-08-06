@@ -360,8 +360,11 @@ ena_app_server <- function(id, state, config, page_active, workspace_section) {
           if (is.null(value) || !nzchar(value)) next
           group_name <- selectors[[i]][["group_name"]]
           index <- which(colors[, "group"] == group_name)
+          if (!length(index)) next
+          current_color <- as.character(colors[index[[1L]], "color"])
+          value <- ena3d_normalize_plot_color(value, fallback = current_color)
           if (length(index) &&
-              !identical(as.character(colors[index[[1L]], "color"]), value)) {
+              !identical(current_color, value)) {
             colors[index[[1L]], "color"] <- value
             changed <- TRUE
           }

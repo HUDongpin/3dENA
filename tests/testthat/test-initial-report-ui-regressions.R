@@ -116,6 +116,40 @@ test_that("Overall uses named data.table columns and aligned secondary hover val
 })
 
 
+test_that("Overall keeps adjacent numeric groups independently selectable", {
+  adjacent <- c(1, 1 + .Machine$double.eps)
+  points <- data.frame(
+    group = rep(adjacent, each = 2L),
+    unit = c("a", "b", "c", "d"),
+    SVD1 = c(0, 2, 10, 12),
+    stringsAsFactors = FALSE
+  )
+  labels <- ena3d_group_value_labels(points$group)
+
+  expect_identical(
+    unique(sprintf("%a", points$group)),
+    c("0x1p+0", "0x1.0000000000001p+0")
+  )
+  expect_length(unique(labels), 2L)
+
+  first <- ena3d_prepare_overall_points(
+    points, "group", labels[[1L]], "unit"
+  )
+  second <- ena3d_prepare_overall_points(
+    points, "group", labels[[3L]], "unit"
+  )
+
+  expect_identical(first$unit, c("a", "b"))
+  expect_identical(second$unit, c("c", "d"))
+  expect_identical(mean(first$SVD1), 1)
+  expect_identical(mean(second$SVD1), 11)
+  expect_identical(intersect(first$unit, second$unit), character())
+
+  repeated <- ena3d_group_value_labels(c(1, 1))
+  expect_identical(repeated[[1L]], repeated[[2L]])
+})
+
+
 test_that("Overall honors configured group colors and fills missing groups", {
   configured <- cbind(
     color = c("#123456", "#abcdef"),
@@ -429,6 +463,9 @@ test_that("one fullscreen control targets the visible Plotly widget", {
     fixed = TRUE
   )
   expect_match(app_text, "requestFullscreen", fixed = TRUE)
+  expect_match(app_text, "enterFallbackFullscreen", fixed = TRUE)
+  expect_match(app_text, "ena3d-fullscreen-fallback", fixed = TRUE)
+  expect_match(app_text, "Exit fullscreen plot", fixed = TRUE)
   expect_match(app_text, "getBoundingClientRect", fixed = TRUE)
   expect_false(grepl("fullscreen_this", plot_ui_text, fixed = TRUE))
   expect_false(grepl("fullscreen_btn_", plot_ui_text, fixed = TRUE))
@@ -444,6 +481,217 @@ test_that("sidebar toggle uses supported DOM text APIs and guarded elements", {
   expect_false(grepl("getInnerHTML", app_text, fixed = TRUE))
   expect_false(grepl("setHTML", app_text, fixed = TRUE))
   expect_match(app_text, "toggleButton.textContent", fixed = TRUE)
-  expect_match(app_text, "if (sidebar && toggleButton && plotContainer", fixed = TRUE)
+  expect_match(
+    app_text,
+    "sidebar && toggleButton && plotContainer && mainLayout",
+    fixed = TRUE
+  )
   expect_match(app_text, "window.dispatchEvent(new Event('resize'))", fixed = TRUE)
+})
+
+
+test_that("sidebar toggle stages its motion before hiding controls", {
+  app_text <- paste(
+    readLines(file.path(.ui_regression_root, "R", "app.R"), warn = FALSE),
+    collapse = "\n"
+  )
+  shell_css <- paste(
+    readLines(
+      file.path(.ui_regression_root, "R", "www", "app_shell.css"),
+      warn = FALSE
+    ),
+    collapse = "\n"
+  )
+  style_text <- paste(app_text, shell_css, sep = "\n")
+
+  css_blocks <- regmatches(
+    style_text,
+    gregexpr("[^{}]+\\{[^{}]*\\}", style_text, perl = TRUE)
+  )[[1L]]
+  transition_block_for <- function(selector) {
+    blocks <- css_blocks[
+      grepl(selector, css_blocks, fixed = TRUE) &
+        grepl("transition", css_blocks, fixed = TRUE)
+    ]
+    expect_gte(length(blocks), 1L)
+    if (!length(blocks)) return(NA_character_)
+    paste(blocks, collapse = "\n")
+  }
+
+  sidebar_transition <- transition_block_for(".ena3d-sidebar-column")
+  plot_transition <- transition_block_for(".plot-container")
+  details_transition <- transition_block_for(".mysidebar .right-side")
+
+  expect_match(style_text, "220ms", fixed = TRUE)
+  expect_match(style_text, "ease-out", fixed = TRUE)
+  if (!is.na(sidebar_transition)) {
+    expect_match(sidebar_transition, "width", fixed = TRUE)
+  }
+  if (!is.na(plot_transition)) {
+    expect_match(plot_transition, "width", fixed = TRUE)
+  }
+  if (!is.na(details_transition)) {
+    expect_match(details_transition, "opacity", fixed = TRUE)
+    expect_match(details_transition, "transform", fixed = TRUE)
+  }
+
+  control_start <- regexpr(
+    "const setSidebarControlState",
+    app_text,
+    fixed = TRUE
+  )[[1L]]
+  finalize_start <- regexpr(
+    "const finalizeSidebarTransition",
+    app_text,
+    fixed = TRUE
+  )[[1L]]
+  begin_start <- regexpr(
+    "const beginSidebarTransition",
+    app_text,
+    fixed = TRUE
+  )[[1L]]
+  listener_start <- regexpr(
+    "if (sidebarColumn)",
+    substr(app_text, begin_start, nchar(app_text)),
+    fixed = TRUE
+  )[[1L]]
+  expect_gt(control_start, 0L)
+  expect_gt(finalize_start, control_start)
+  expect_gt(begin_start, finalize_start)
+  expect_gt(listener_start, 0L)
+
+  if (control_start > 0L && finalize_start > control_start) {
+    control_handler <- substr(app_text, control_start, finalize_start - 1L)
+    expect_match(control_handler, "aria-expanded", fixed = TRUE)
+    expect_match(control_handler, "aria-label", fixed = TRUE)
+  }
+  if (begin_start > 0L && listener_start > 0L) {
+    begin_end <- begin_start + listener_start - 2L
+    begin_handler <- substr(app_text, begin_start, begin_end)
+
+    expect_match(begin_handler, "setSidebarControlState", fixed = TRUE)
+    expect_match(begin_handler, "is-transitioning", fixed = TRUE)
+    expect_match(begin_handler, "requestAnimationFrame", fixed = TRUE)
+    expect_false(grepl("classList.toggle('hide'", begin_handler, fixed = TRUE))
+    expect_false(grepl("classList.add('hide'", begin_handler, fixed = TRUE))
+    expect_false(grepl("window.dispatchEvent(new Event('resize'))", begin_handler,
+      fixed = TRUE
+    ))
+  }
+
+  click_start <- regexpr(
+    "toggleButton.addEventListener('click'",
+    app_text,
+    fixed = TRUE
+  )[[1L]]
+  expect_gt(click_start, begin_start)
+  if (click_start > 0L) {
+    click_handler <- substr(app_text, click_start, click_start + 400L)
+    expect_match(click_handler, "beginSidebarTransition", fixed = TRUE)
+  }
+})
+
+
+test_that("sidebar toggle finalizes on transition end with reduced-motion fallback", {
+  app_text <- paste(
+    readLines(file.path(.ui_regression_root, "R", "app.R"), warn = FALSE),
+    collapse = "\n"
+  )
+
+  expect_match(app_text, "transitionend", fixed = TRUE)
+  expect_match(app_text, "propertyName", fixed = TRUE)
+  expect_match(app_text, "prefers-reduced-motion: reduce", fixed = TRUE)
+
+  finalize_start <- regexpr(
+    "const finalizeSidebarTransition",
+    app_text,
+    fixed = TRUE
+  )[[1L]]
+  transition_start <- regexpr(
+    "const beginSidebarTransition",
+    app_text,
+    fixed = TRUE
+  )[[1L]]
+  expect_gt(finalize_start, 0L)
+  expect_gt(transition_start, finalize_start)
+  if (finalize_start > 0L && transition_start > finalize_start) {
+    finalize_handler <- substr(app_text, finalize_start, transition_start - 1L)
+
+    expect_match(finalize_handler, "classList.toggle('hide'", fixed = TRUE)
+    expect_match(
+      finalize_handler,
+      "classList.remove('is-transitioning'",
+      fixed = TRUE
+    )
+    expect_match(finalize_handler, "dispatchFinalPlotResize", fixed = TRUE)
+  }
+
+  dispatch_start <- regexpr(
+    "const dispatchFinalPlotResize",
+    app_text,
+    fixed = TRUE
+  )[[1L]]
+  control_start <- regexpr(
+    "const setSidebarControlState",
+    app_text,
+    fixed = TRUE
+  )[[1L]]
+  expect_gt(dispatch_start, 0L)
+  expect_gt(control_start, dispatch_start)
+  if (dispatch_start > 0L && control_start > dispatch_start) {
+    dispatch_handler <- substr(app_text, dispatch_start, control_start - 1L)
+    expect_match(
+      dispatch_handler,
+      "window.dispatchEvent(new Event('resize'))",
+      fixed = TRUE
+    )
+    expect_match(dispatch_handler, "requestAnimationFrame", fixed = TRUE)
+  }
+
+  transition_end_start <- regexpr(
+    "addEventListener('transitionend'",
+    app_text,
+    fixed = TRUE
+  )[[1L]]
+  expect_gt(transition_end_start, transition_start)
+  if (transition_end_start > 0L && transition_end_start > transition_start) {
+    transition_end_handler <- substr(
+      app_text,
+      transition_end_start,
+      transition_end_start + 900L
+    )
+    expect_match(
+      transition_end_handler,
+      "finalizeSidebarTransition",
+      fixed = TRUE
+    )
+    expect_match(transition_end_handler, "event.target", fixed = TRUE)
+    expect_match(transition_end_handler, "event.propertyName", fixed = TRUE)
+  }
+
+  listener_start <- regexpr(
+    "if (sidebarColumn)",
+    substr(app_text, transition_start, nchar(app_text)),
+    fixed = TRUE
+  )[[1L]]
+  expect_gt(listener_start, 0L)
+  if (transition_start > 0L && listener_start > 0L) {
+    transition_handler <- substr(
+      app_text,
+      transition_start,
+      transition_start + listener_start - 2L
+    )
+    expect_match(transition_handler, "!motionPreference.matches", fixed = TRUE)
+    expect_match(transition_handler, "if (!shouldAnimate)", fixed = TRUE)
+    expect_match(transition_handler, "finalizeSidebarTransition", fixed = TRUE)
+    expect_match(transition_handler, "SIDEBAR_MOTION_FALLBACK_MS", fixed = TRUE)
+    expect_match(transition_handler, "transitionGeneration", fixed = TRUE)
+  }
+
+  expect_match(
+    app_text,
+    "@media (max-width: 991.98px), (prefers-reduced-motion: reduce)",
+    fixed = TRUE
+  )
+  expect_match(app_text, "transition:none !important", fixed = TRUE)
 })

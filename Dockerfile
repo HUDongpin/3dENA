@@ -174,7 +174,7 @@ RUN groupadd --system --gid 10001 ena3d \
     && chmod -R a-w /opt/ena3d/R /opt/ena3d/images /opt/ena3d/sample_data
 
 USER ena3d:ena3d
-RUN Rscript -e 'required <- c("shiny", "plotly", "data.table", "R6", "rENA", "bslib", "scales", "digest", "jsonlite", "zip", "readxl", "curl", "callr", "later", "promises"); stopifnot(normalizePath("/opt/renv/library") %in% .libPaths()); stopifnot(all(vapply(required, requireNamespace, logical(1L), quietly=TRUE))); package_paths <- vapply(required, function(package) normalizePath(find.package(package), mustWork=TRUE), character(1L)); stopifnot(all(startsWith(package_paths, "/opt/renv/library/")))'
+RUN Rscript -e 'required <- c("shiny", "plotly", "data.table", "R6", "rENA", "bslib", "scales", "digest", "jsonlite", "zip", "readxl", "curl", "callr", "later", "promises", "bit", "bit64"); stopifnot(normalizePath("/opt/renv/library") %in% .libPaths()); stopifnot(all(vapply(required, requireNamespace, logical(1L), quietly=TRUE))); package_paths <- vapply(required, function(package) normalizePath(find.package(package), mustWork=TRUE), character(1L)); stopifnot(all(startsWith(package_paths, "/opt/renv/library/")))'
 
 EXPOSE 3838
 

@@ -69,6 +69,17 @@
     }
   }
 
+  function isUnmodifiedPrimaryClick(event) {
+    return (
+      event.button === 0 &&
+      !event.defaultPrevented &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.shiftKey &&
+      !event.altKey
+    );
+  }
+
   function writeRoute(page) {
     const target = routeForPage[page];
     if (!target) return;
@@ -81,6 +92,38 @@
       return;
     }
     window.history.pushState({ ena3dPage: page }, "", targetUrl);
+  }
+
+  function navigateToPage(page) {
+    if (!Object.prototype.hasOwnProperty.call(routeForPage, page)) return;
+    selectPage(page);
+    writeRoute(page);
+  }
+
+  function handleSitePageLink(event) {
+    if (!isUnmodifiedPrimaryClick(event) || !(event.target instanceof Element)) {
+      return;
+    }
+
+    const link = event.target.closest("a[data-site-page]");
+    if (!link || (link.target && link.target !== "_self") || link.hasAttribute("download")) {
+      return;
+    }
+
+    const page = link.dataset.sitePage;
+    const target = routeForPage[page];
+    if (!target) return;
+
+    const linkUrl = new URL(link.href, window.location.href);
+    if (
+      linkUrl.origin !== window.location.origin ||
+      normalizePath(linkUrl.pathname) !== target
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    navigateToPage(page);
   }
 
   function syncFromLocation() {
@@ -102,6 +145,7 @@
     if (!nav) return;
 
     prepareRouteLinks(nav);
+    document.addEventListener("click", handleSitePageLink);
     nav.addEventListener("click", (event) => {
       const link = event.target.closest('a[data-value]');
       if (!link || !nav.contains(link)) return;

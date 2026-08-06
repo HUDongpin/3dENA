@@ -64,3 +64,21 @@ test_that("typed identity keys canonicalize missing and non-finite values", {
     ena3d_value_identity_keys(c(NA_character_, "<NA>"))[[2L]]
   ))
 })
+
+
+test_that("plot colors reject invalid free text without breaking a plot", {
+  expect_identical(ena3d_normalize_plot_color(" #A1b2C3 "), "#A1b2C3")
+  expect_identical(ena3d_normalize_plot_color("steelblue"), "steelblue")
+  expect_identical(
+    ena3d_normalize_plot_color("not a colour", fallback = "#123456"),
+    "#123456"
+  )
+  expect_identical(
+    ena3d_normalize_plot_color("not a colour", fallback = "also invalid"),
+    "#808080"
+  )
+
+  colors <- cbind(color = c("not a colour", "#654321"), group = c("A", "B"))
+  expect_identical(get_group_color(colors, "group", "A"), "#808080")
+  expect_identical(get_group_color(colors, "group", "B"), "#654321")
+})

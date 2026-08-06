@@ -1,15 +1,15 @@
 ena3d_brand_ui <- function() {
-  actionLink(
-    "home_brand",
-    label = tagList(
-      tags$span(class = "ena3d-brand-mark", `aria-hidden` = "true", "3D"),
-      tags$span(
-        class = "ena3d-brand-copy",
-        tags$strong("ENA"),
-        tags$small("Epistemic Network Analysis")
-      )
-    ),
+  tags$a(
+    id = "home_brand",
     class = "ena3d-brand",
+    href = "/",
+    `data-site-page` = "home",
+    tags$span(class = "ena3d-brand-mark", `aria-hidden` = "true", "3D"),
+    tags$span(
+      class = "ena3d-brand-copy",
+      tags$strong("ENA"),
+      tags$small("Epistemic Network Analysis")
+    ),
     `aria-label` = "Return to the 3D ENA home page"
   )
 }
@@ -217,7 +217,6 @@ ena3d_papers_ui <- function() {
       class = "ena3d-papers-hero",
       tags$div(
         class = "ena3d-papers-hero-copy",
-        tags$p(class = "ena3d-kicker", "PAPERS & CITATION"),
         tags$h1("Cite the work behind 3D ENA."),
         tags$p(
           class = "ena3d-papers-lede",
@@ -355,17 +354,19 @@ ena3d_team_member_ui <- function(
   member_class = NULL,
   profile_url = NULL,
   profile_label = "View profile",
-  action_id = NULL
+  site_link_id = NULL,
+  site_page = NULL,
+  site_path = NULL
 ) {
   profile_link <- NULL
-  if (!is.null(action_id)) {
-    profile_link <- actionLink(
-      action_id,
-      label = tagList(
-        profile_label,
-        tags$span(`aria-hidden` = "true", "\u2192")
-      ),
-      class = "ena3d-team-profile-link"
+  if (!is.null(site_page) && !is.null(site_path)) {
+    profile_link <- tags$a(
+      id = site_link_id,
+      class = "ena3d-team-profile-link",
+      href = site_path,
+      `data-site-page` = site_page,
+      profile_label,
+      tags$span(`aria-hidden` = "true", "\u2192")
     )
   } else if (!is.null(profile_url)) {
     profile_link <- tags$a(
@@ -424,49 +425,13 @@ ena3d_team_ui <- function() {
   tags$main(
     class = "site-page ena3d-team-page",
     tags$section(
-      class = "ena3d-team-hero",
-      tags$div(
-        class = "ena3d-team-hero-copy",
-        tags$p(class = "ena3d-kicker", "TEAM"),
-        tags$h1("Meet the 3D ENA Research Team"),
-        tags$p(
-          class = "ena3d-team-lede",
-          paste(
-            "Nine scholars connect educational technology, learning analytics,",
-            "learning sciences, artificial intelligence, mathematics and",
-            "language education, pedagogy, and policy to make educational",
-            "evidence more useful."
-          )
-        )
-      ),
-      tags$aside(
-        class = "ena3d-team-spectrum",
-        `aria-label` = "Team research spectrum",
-        tags$p(class = "ena3d-card-label", "RESEARCH SPECTRUM"),
-        tags$dl(
-          tags$div(
-            tags$dt("09"),
-            tags$dd("Scholars")
-          ),
-          tags$div(
-            tags$dt("AI + ENA"),
-            tags$dd("Learning evidence")
-          ),
-          tags$div(
-            tags$dt("K\u201312 + HE"),
-            tags$dd("Educational contexts")
-          )
-        )
-      )
-    ),
-    tags$section(
       class = "ena3d-team-roster",
       `aria-labelledby` = "ena3d-team-roster-title",
       tags$header(
         class = "ena3d-team-roster-heading",
         tags$div(
           tags$p(class = "ena3d-kicker", "SCHOLARS"),
-          tags$h2(id = "ena3d-team-roster-title", "Meet the team.")
+          tags$h1(id = "ena3d-team-roster-title", "Meet the team.")
         ),
         tags$p(
           paste(
@@ -482,7 +447,7 @@ ena3d_team_ui <- function() {
         ena3d_team_member_ui(
           number = "01",
           name = "Prof. Gwo-Jen Hwang",
-          role = "Chair Professor",
+          role = "Chair Professor \u00b7 Educational Technology",
           affiliation = "National Taichung University of Education",
           portrait = "team-gwo-jen-hwang.jpg",
           portrait_width = 875,
@@ -499,7 +464,7 @@ ena3d_team_ui <- function() {
             "Game-based learning",
             "Flipped learning"
           ),
-          variant = "featured",
+          variant = "lead",
           member_class = "ena3d-team-member--hwang",
           profile_url = paste0(
             "https://ibp.ntcu.edu.tw/front/teacher_profile/teacher/member.php",
@@ -510,8 +475,8 @@ ena3d_team_ui <- function() {
         ena3d_team_member_ui(
           number = "02",
           name = "Dr. Yun-Fang Tu",
-          role = "National Taiwan University of Science and Technology",
-          affiliation = NULL,
+          role = "Assistant Professor \u00b7 Educational Technology",
+          affiliation = "National Taiwan University of Science and Technology",
           portrait = "team-yun-fang-tu.jpg",
           portrait_width = 1000,
           portrait_height = 1000,
@@ -554,7 +519,9 @@ ena3d_team_ui <- function() {
           ),
           variant = "lead",
           member_class = "ena3d-team-member--peter",
-          action_id = "meet_developer",
+          site_link_id = "meet_developer",
+          site_page = "about",
+          site_path = "/about",
           profile_label = "More on About"
         ),
         ena3d_team_member_ui(
@@ -738,8 +705,9 @@ ena3d_about_ui <- function() {
         tags$div(
           class = "ena3d-about-summary",
           tags$p(
-            "Dr. Peter Hu develops theory-informed, evidence-based learning environments ",
-            "and analytical tools that connect educational research with practical technology."
+            "Dr. Peter Hu develops theory-informed, evidence-based digital learning environments ",
+            "and learning analytical tools that connect educational research with artificial ",
+            "intelligence technology."
           ),
           tags$p(
             "His work asks how learning technology can improve outcomes and how evidence ",
@@ -821,7 +789,7 @@ ena3d_about_ui <- function() {
     tags$p(
       class = "ena3d-profile-source",
       paste(
-        "The 3D ENA Version 2.0 project is inspired by the previous 3D ENA",
+        "The 3D ENA Version 2.0 project is built on the previous 3D ENA",
         "Version 1.0. Dr. Peter Hu is charge of revolutionizing the 3D ENA",
         "tool since 2026 July 17. Welcome research collaboration worldwide."
       )

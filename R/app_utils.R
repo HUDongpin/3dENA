@@ -155,13 +155,44 @@ ena3d_value_identity_keys <- function(values) {
 
 
 # Values emitted by Shiny selectors are strings, while ENA metadata may retain
-# richer R classes. POSIXct needs special handling because two different
-# instants in a daylight-saving fold can share the same wall-clock text. Keep
-# ordinary labels unchanged, add the UTC offset only for ambiguous wall times,
-# and retain an exact epoch fallback for sub-second collisions.
+# richer R classes. Keep ordinary labels unchanged, but disambiguate exact
+# numeric values whose default text collides. POSIXct needs special handling
+# because two different instants in a daylight-saving fold can share the same
+# wall-clock text; add the UTC offset only for ambiguous wall times and retain
+# an exact epoch fallback for sub-second collisions.
 ena3d_group_value_labels <- function(values) {
   labels <- as.character(values)
-  if (!inherits(values, "POSIXt") || !length(values)) return(labels)
+  if (!length(values)) return(labels)
+
+  if (!inherits(values, "POSIXt")) {
+    is_exact_numeric <- is.double(values) &&
+      !inherits(values, "integer64")
+    if (!is_exact_numeric) return(labels)
+
+    exact_values <- if (inherits(values, "difftime")) {
+      as.numeric(values, units = "secs")
+    } else {
+      as.numeric(values)
+    }
+    usable <- !is.na(values) & is.finite(exact_values) & !is.na(labels)
+    rows <- which(usable)
+    if (!length(rows)) return(labels)
+
+    exact_labels <- sprintf("%a", exact_values)
+    exact_labels[usable & exact_values == 0] <- "0x0p+0"
+    distinct <- tapply(
+      exact_labels[rows],
+      labels[rows],
+      function(keys) length(unique(keys)),
+      simplify = TRUE
+    )
+    ambiguous <- names(distinct)[distinct > 1L]
+    collision <- usable & labels %in% ambiguous
+    labels[collision] <- paste0(
+      labels[collision], " [exact=", exact_labels[collision], "]"
+    )
+    return(labels)
+  }
 
   instants <- as.numeric(values)
   usable <- !is.na(values) & is.finite(instants) & !is.na(labels)
@@ -510,15 +541,33 @@ set_default_axis_range <- function(plot){
   return(plot)
 }
 
+ena3d_normalize_plot_color <- function(color, fallback = "#808080") {
+  valid_color <- function(value) {
+    is.character(value) && length(value) == 1L && !is.na(value) &&
+      nzchar(trimws(value)) &&
+      !inherits(try(grDevices::col2rgb(trimws(value), alpha = TRUE), silent = TRUE),
+                "try-error")
+  }
+
+  fallback <- as.character(fallback)[1L]
+  if (!valid_color(fallback)) fallback <- "#808080"
+  color <- as.character(color)[1L]
+  if (!valid_color(color)) return(fallback)
+  trimws(color)
+}
+
+
 get_group_color<-function(group_colors,group_col,group_name){
   matches <- which(
     as.character(group_colors[, group_col]) %in% as.character(group_name)
   )
   if (length(matches) == 0L) return("#808080")
   if (is.matrix(group_colors) && "color" %in% colnames(group_colors)) {
-    return(unname(group_colors[matches[1L], "color"]))
+    return(ena3d_normalize_plot_color(
+      unname(group_colors[matches[1L], "color"])
+    ))
   }
-  unname(group_colors[matches[1L], 1L])
+  ena3d_normalize_plot_color(unname(group_colors[matches[1L], 1L]))
 }
 
 ena3d_palette <- function(n) {

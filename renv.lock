@@ -241,6 +241,16 @@
       "NeedsCompilation": "yes",
       "Repository": "CRAN"
     },
+    "bit": {
+      "Package": "bit",
+      "Version": "4.6.0",
+      "Source": "Repository"
+    },
+    "bit64": {
+      "Package": "bit64",
+      "Version": "4.8.2",
+      "Source": "Repository"
+    },
     "brio": {
       "Package": "brio",
       "Version": "1.1.5",

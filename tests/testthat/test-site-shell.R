@@ -27,17 +27,19 @@ sys.source(
 )
 
 
-test_that("Brand is an accessible action that returns to Home", {
+test_that("Brand is an accessible real route link that returns to Home", {
   brand <- htmltools::renderTags(.site_shell_env$ena3d_brand_ui())$html
 
   expect_match(brand, 'id="home_brand"', fixed = TRUE)
-  expect_match(brand, 'class="action-button ena3d-brand"', fixed = TRUE)
+  expect_match(brand, 'class="ena3d-brand"', fixed = TRUE)
   expect_match(
     brand,
     'aria-label="Return to the 3D ENA home page"',
     fixed = TRUE
   )
-  expect_match(brand, 'href="#"', fixed = TRUE)
+  expect_match(brand, 'href="/"', fixed = TRUE)
+  expect_match(brand, 'data-site-page="home"', fixed = TRUE)
+  expect_false(grepl('href="#"', brand, fixed = TRUE))
 })
 
 
@@ -107,7 +109,7 @@ test_that("Home hero uses the compact colorful trajectory layout", {
   expect_match(css, "max-width: 19ch;", fixed = TRUE)
   expect_match(
     css,
-    "font-size: clamp(2.9rem, 4.15vw, 4.5rem);",
+    "font-size: var(--ena-type-display);",
     fixed = TRUE
   )
   expect_match(css, ".ena3d-trajectory-showcase", fixed = TRUE)
@@ -129,8 +131,58 @@ test_that("Home hero uses the compact colorful trajectory layout", {
 })
 
 
+test_that("Primary site titles share one responsive display scale", {
+  css <- paste(
+    readLines(
+      file.path(.site_shell_root, "R", "www", "app_shell.css"),
+      warn = FALSE
+    ),
+    collapse = "\n"
+  )
+
+  expect_match(
+    css,
+    "--ena-type-display: clamp(2.9rem, 4.15vw, 4.5rem);",
+    fixed = TRUE
+  )
+  expect_match(
+    css,
+    "--ena-type-display: clamp(2.35rem, 10.8vw, 3.2rem);",
+    fixed = TRUE
+  )
+  expect_match(
+    css,
+    "(?s)\\.ena3d-hero h1\\s*\\{[^}]*font-size: var\\(--ena-type-display\\);",
+    perl = TRUE
+  )
+  expect_match(
+    css,
+    "(?s)\\.ena3d-papers-hero h1\\s*\\{[^}]*font-size: var\\(--ena-type-display\\);",
+    perl = TRUE
+  )
+  expect_match(
+    css,
+    "(?s)\\.ena3d-team-roster-heading h1\\s*\\{[^}]*font-size: var\\(--ena-type-display\\);",
+    perl = TRUE
+  )
+  expect_match(
+    css,
+    "(?s)\\.ena3d-about-heading h1\\s*\\{[^}]*font-size: var\\(--ena-type-display\\);",
+    perl = TRUE
+  )
+  expect_equal(
+    lengths(regmatches(
+      css,
+      gregexpr("font-size: var(--ena-type-display);", css, fixed = TRUE)
+    )),
+    4L
+  )
+})
+
+
 test_that("About presents the verified public developer profile", {
   about <- htmltools::renderTags(.site_shell_env$ena3d_about_ui())$html
+  about_text <- trimws(gsub("\\s+", " ", about))
 
   expect_match(about, "Dr. Peter Hu Dongpin", fixed = TRUE)
   expect_match(about, "Developer of 3D ENA Version 2.0", fixed = TRUE)
@@ -153,8 +205,17 @@ test_that("About presents the verified public developer profile", {
   expect_match(about, "https://www.hudongpin.com/", fixed = TRUE)
   expect_match(about, "rel=\"noopener noreferrer\"", fixed = TRUE)
   expect_match(
+    about_text,
+    paste(
+      "Dr. Peter Hu develops theory-informed, evidence-based digital learning",
+      "environments and learning analytical tools that connect educational",
+      "research with artificial intelligence technology."
+    ),
+    fixed = TRUE
+  )
+  expect_match(
     about,
-    "The 3D ENA Version 2.0 project is inspired by the previous 3D ENA Version 1.0.",
+    "The 3D ENA Version 2.0 project is built on the previous 3D ENA Version 1.0.",
     fixed = TRUE
   )
   expect_match(
@@ -170,6 +231,7 @@ test_that("About presents the verified public developer profile", {
 test_that("Papers provides three verified, copy-ready APA references", {
   papers <- htmltools::renderTags(.site_shell_env$ena3d_papers_ui())$html
 
+  expect_false(grepl("PAPERS &amp; CITATION", papers, fixed = TRUE))
   expect_match(papers, "Cite the work behind 3D ENA.", fixed = TRUE)
   expect_match(papers, "Start with the method paper.", fixed = TRUE)
   expect_match(
@@ -225,32 +287,64 @@ test_that("Team presents nine research profiles in the requested order", {
     integer(1)
   )
 
+  expect_false(grepl("ena3d-team-hero", team, fixed = TRUE))
+  expect_false(grepl("ena3d-team-lede", team, fixed = TRUE))
+  expect_false(grepl("ena3d-team-spectrum", team, fixed = TRUE))
+  expect_false(grepl("RESEARCH SPECTRUM", team, fixed = TRUE))
+  expect_false(grepl("Meet the 3D ENA Research Team", team, fixed = TRUE))
+  expect_match(team, ">SCHOLARS<", fixed = TRUE)
   expect_match(
     team,
-    "Meet the 3D ENA Research Team",
+    '<h1 id="ena3d-team-roster-title">Meet the team.</h1>',
     fixed = TRUE
   )
-  expect_match(
-    team,
-    paste(
-      "Nine scholars connect educational technology, learning analytics,",
-      "learning sciences, artificial intelligence, mathematics and language",
-      "education, pedagogy, and policy to make educational evidence more useful."
-    ),
-    fixed = TRUE
-  )
+  expect_false(grepl("Nine scholars connect", team, fixed = TRUE))
   expect_true(all(name_positions > 0L))
   expect_true(all(diff(name_positions) > 0L))
   expect_equal(
     lengths(regmatches(team, gregexpr('role="listitem"', team, fixed = TRUE))),
     9L
   )
-  expect_match(team, "Chair Professor", fixed = TRUE)
+  expect_match(
+    team,
+    paste0(
+      '<p class="ena3d-team-role">',
+      "Chair Professor \u00b7 Educational Technology</p>"
+    ),
+    fixed = TRUE
+  )
   expect_match(team, "National Taichung University of Education", fixed = TRUE)
   expect_match(
     team,
-    "National Taiwan University of Science and Technology",
+    paste0(
+      '<p class="ena3d-team-role">',
+      "Assistant Professor \u00b7 Educational Technology</p>"
+    ),
     fixed = TRUE
+  )
+  expect_match(
+    team,
+    paste0(
+      '<p class="ena3d-team-affiliation">',
+      "National Taiwan University of Science and Technology</p>"
+    ),
+    fixed = TRUE
+  )
+  expect_lt(
+    regexpr(
+      "Assistant Professor \u00b7 Educational Technology",
+      team,
+      fixed = TRUE
+    )[[1L]],
+    regexpr("<h2>Dr. Yun-Fang Tu</h2>", team, fixed = TRUE)[[1L]]
+  )
+  expect_lt(
+    regexpr("<h2>Dr. Yun-Fang Tu</h2>", team, fixed = TRUE)[[1L]],
+    regexpr(
+      "National Taiwan University of Science and Technology",
+      team,
+      fixed = TRUE
+    )[[1L]]
   )
   expect_false(grepl("Soochow University", team, fixed = TRUE))
   expect_match(team, "10.1016/j.compedu.2025.105397", fixed = TRUE)
@@ -290,6 +384,15 @@ test_that("Team presents nine research profiles in the requested order", {
   )
   expect_match(team, 'src="ena3d-assets/team-gwo-jen-hwang.jpg"', fixed = TRUE)
   expect_match(team, 'src="ena3d-assets/team-yun-fang-tu.jpg"', fixed = TRUE)
+  expect_match(
+    team,
+    paste0(
+      'class="ena3d-team-member ena3d-team-member--lead ',
+      'ena3d-team-member--hwang"'
+    ),
+    fixed = TRUE
+  )
+  expect_false(grepl("ena3d-team-member--featured", team, fixed = TRUE))
   expect_match(team, 'src="ena3d-assets/peter-hu-portrait-web.jpg"', fixed = TRUE)
   expect_match(team, 'src="ena3d-assets/team-huang-lingyun.jpg"', fixed = TRUE)
   expect_match(team, 'src="ena3d-assets/team-phoebe-kang-xia.jpg"', fixed = TRUE)
@@ -302,10 +405,17 @@ test_that("Team presents nine research profiles in the requested order", {
       team,
       gregexpr("ena3d-team-portrait--balanced", team, fixed = TRUE)
     )),
-    8L
+    9L
   )
   expect_false(grepl("<figcaption", team, fixed = TRUE))
-  expect_match(team, 'id="meet_developer"', fixed = TRUE)
+  developer_link <- regmatches(
+    team,
+    regexpr('<a[^>]*id="meet_developer"[^>]*>', team, perl = TRUE)
+  )
+  expect_length(developer_link, 1L)
+  expect_match(developer_link, 'href="/about"', fixed = TRUE)
+  expect_match(developer_link, 'data-site-page="about"', fixed = TRUE)
+  expect_false(grepl('href="#"', developer_link, fixed = TRUE))
   expect_match(team, "More on About", fixed = TRUE)
   expect_match(team, 'rel="noopener noreferrer"', fixed = TRUE)
   expect_false(grepl("PedaNova", team, fixed = TRUE))
@@ -325,7 +435,8 @@ test_that("Team layout has dedicated responsive and accessible styling", {
 
   expect_match(css, ".ena3d-team-page", fixed = TRUE)
   expect_match(css, ".ena3d-team-list", fixed = TRUE)
-  expect_false(grepl(".ena3d-team-hero::after", css, fixed = TRUE))
+  expect_false(grepl(".ena3d-team-hero", css, fixed = TRUE))
+  expect_false(grepl(".ena3d-team-spectrum", css, fixed = TRUE))
   expect_match(css, "grid-template-columns: repeat(12, minmax(0, 1fr));", fixed = TRUE)
   expect_match(css, ".ena3d-team-member--featured", fixed = TRUE)
   expect_match(css, ".ena3d-team-member--closing", fixed = TRUE)
@@ -338,6 +449,15 @@ test_that("Team layout has dedicated responsive and accessible styling", {
   expect_match(
     css,
     "--ena3d-team-portrait-y:",
+    fixed = TRUE
+  )
+  expect_match(
+    css,
+    paste(
+      ".ena3d-team-member--hwang .ena3d-team-portrait img {",
+      "  object-position: 50% 10%;",
+      sep = "\n"
+    ),
     fixed = TRUE
   )
   expect_false(grepl("--ena3d-team-portrait-scale", css, fixed = TRUE))
@@ -374,8 +494,8 @@ test_that("The application shell declares exactly the requested site tabs", {
     perl = TRUE
   )
   expect_match(app_source, 'id = "workspace_sections"', fixed = TRUE)
-  expect_match(app_source, "input$home_brand", fixed = TRUE)
-  expect_match(app_source, 'open_site_page("home")', fixed = TRUE)
+  expect_false(grepl("input$home_brand", app_source, fixed = TRUE))
+  expect_false(grepl("input$meet_developer", app_source, fixed = TRUE))
   expect_match(app_source, "input$explore_trajectory", fixed = TRUE)
   expect_match(app_source, 'selected = "trajectory"', fixed = TRUE)
 })

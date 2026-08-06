@@ -131,6 +131,17 @@ ena3d_add_overall_points_trace <- function(plot, points, group_var,
   plot
 }
 
+ena3d_apply_overall_layout <- function(plot, camera, camera_position) {
+  plotly::layout(
+    plot,
+    title = "Overall ENA model",
+    scene = list(
+      camera = camera,
+      uirevision = paste0("overall-camera-", camera_position)
+    )
+  )
+}
+
 
 source('./app_utils.R')
 ena_overall_plot_output <-  function(input, output, session,
@@ -284,23 +295,29 @@ ena_overall_plot_output <-  function(input, output, session,
                           zaxis = ena3d_plotly_axis_layout(input$z, input$show_grid, input$show_zeroline)
                         ),
                         showlegend = TRUE)
-    if(length(selected_groups) == 0){
-      return(main_plot)
+    if (length(selected_groups) > 0L) {
+      # Generate Edges only when at least one group is selected. The plot's
+      # contextual layout is applied below for both populated and empty-group
+      # states so camera controls remain deterministic.
+      mean_in_groups <- get_mean_group_lineweights_in_groups(
+        state$ena_obj, data$ena_groupVar[1], selected_groups
+      )
+      network <- build_network(
+        scaled_nodes(),
+        network = mean_in_groups,
+        adjacency.key = state$ena_obj$rotation$adjacency.key
+      )
+
+      main_plot <- plot_network(
+        main_plot,
+        network,
+        legend.include.edges = FALSE,
+        x_axis = input$x,
+        y_axis = input$y,
+        z_axis = input$z,
+        line_width = input$line_width
+      )
     }
-    # browser()
-    # Generate Edges
-    mean_in_groups<-get_mean_group_lineweights_in_groups(state$ena_obj,data$ena_groupVar[1],selected_groups)
-    network <- build_network(scaled_nodes(),
-                             network=mean_in_groups,
-                             adjacency.key=state$ena_obj$rotation$adjacency.key)
-    
-    main_plot <- plot_network(main_plot,
-                              network,
-                              legend.include.edges = F,
-                              x_axis=input$x,
-                              y_axis=input$y,
-                              z_axis=input$z,
-                              line_width = input$line_width)
     
     # if(!is.null(camera)){
     #   print('set cam')
@@ -309,13 +326,10 @@ ena_overall_plot_output <-  function(input, output, session,
     # camera = list(
     #   eye=list(x=0., y=0., z=2.5)
     # )
-    main_plot <- layout(
+    main_plot <- ena3d_apply_overall_layout(
       main_plot,
-      title = "Overall ENA model",
-      scene = list(
-        camera = camera(),
-        uirevision = paste0("overall-camera-", input$camera_position)
-      )
+      camera = camera(),
+      camera_position = input$camera_position
     )
     main_plot
   })

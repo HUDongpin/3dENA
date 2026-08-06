@@ -44,15 +44,63 @@ test_that("runtime and connection policy fail closed", {
     "reload-required"
   )
   expect_error(
-    .connection_test_env$ena3d_validate_runtime_host("persistent", ""),
-    "requires Posit Shiny Server"
+    .connection_test_env$ena3d_validate_runtime_host(
+      "persistent",
+      "1.5.23.1030",
+      server_info = list(shinyServer = FALSE, version = "1.5.23.1030")
+    ),
+    "requires an actual Posit Shiny Server host"
+  )
+  expect_error(
+    .connection_test_env$ena3d_validate_runtime_host(
+      "persistent",
+      "1.5.23.1030",
+      server_info = list(shinyServer = TRUE)
+    ),
+    "requires version metadata from shiny::serverInfo"
+  )
+  expect_error(
+    .connection_test_env$ena3d_validate_runtime_host(
+      "persistent",
+      "",
+      server_info = list(shinyServer = TRUE, version = "1.5.23.1030")
+    ),
+    "requires Shiny Server version metadata"
+  )
+  expect_error(
+    .connection_test_env$ena3d_validate_runtime_host(
+      "persistent",
+      "1.5.23.1030",
+      server_info = list(shinyServer = TRUE, version = "9.9.9-forged")
+    ),
+    "host version metadata is inconsistent"
   )
   expect_identical(
     .connection_test_env$ena3d_validate_runtime_host(
       "persistent",
-      "1.5.23.1030"
+      "1.5.23.1030",
+      server_info = list(shinyServer = TRUE, version = "1.5.23.1030")
     ),
     "1.5.23.1030"
+  )
+})
+
+
+test_that("environment metadata alone cannot satisfy the adapter guard", {
+  previous_version <- Sys.getenv("SHINY_SERVER_VERSION", unset = NA_character_)
+  on.exit({
+    if (is.na(previous_version)) {
+      Sys.unsetenv("SHINY_SERVER_VERSION")
+    } else {
+      Sys.setenv(SHINY_SERVER_VERSION = previous_version)
+    }
+  }, add = TRUE)
+  Sys.setenv(SHINY_SERVER_VERSION = "1.5.23.1030")
+
+  expect_false(isTRUE(shiny::serverInfo()$shinyServer))
+  expect_error(
+    .connection_test_env$ena3d_validate_runtime_host("persistent"),
+    "requires an actual Posit Shiny Server host"
   )
 })
 

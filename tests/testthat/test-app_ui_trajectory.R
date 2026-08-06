@@ -35,6 +35,11 @@ test_that("trajectory UI exposes resource, selector, overlay, and Plot Tools gui
   expect_match(html, "positive-axis arrows from the origin", fixed = TRUE)
   expect_match(html, "legacy axis-arrow controls", fixed = TRUE)
   expect_match(html, "trajectory-test-show_direction", fixed = TRUE)
+  expect_match(
+    html,
+    "input[&#39;trajectory-test-group_var&#39;] !== &#39;&#39;",
+    fixed = TRUE
+  )
   expect_match(html, "Show direction arrows on path segments", fixed = TRUE)
   expect_match(
     html,

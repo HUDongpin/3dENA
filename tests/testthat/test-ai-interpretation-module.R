@@ -151,6 +151,42 @@ test_that("research context is normalized, optional, and hard bounded", {
 })
 
 
+test_that("AI UI state and result metadata helpers preserve precedence", {
+  expect_identical(.ena3d_ai_ui_state_name(FALSE), "disabled")
+  expect_identical(
+    .ena3d_ai_ui_state_name(
+      TRUE, active_job = list(), error = "error", interpretation = list()
+    ),
+    "loading"
+  )
+  expect_identical(
+    .ena3d_ai_ui_state_name(TRUE, error = "error", interpretation = list()),
+    "error"
+  )
+  expect_identical(
+    .ena3d_ai_ui_state_name(TRUE, interpretation = list()),
+    "ready"
+  )
+  expect_identical(.ena3d_ai_ui_state_name(TRUE), "idle")
+
+  expect_identical(.ena3d_ai_result_meta_text(NULL), "")
+  expect_identical(
+    .ena3d_ai_result_meta_text(list(
+      model = "qwen-test", latency_ms = 42,
+      usage = list(total_tokens = 15L)
+    )),
+    "Model qwen-test · 42 ms · 15 tokens"
+  )
+  expect_identical(
+    .ena3d_ai_result_meta_text(list(
+      model = "qwen-test", latency_ms = 42,
+      usage = list(total_tokens = NA_integer_)
+    )),
+    "Model qwen-test · 42 ms"
+  )
+})
+
+
 test_that("disabled integration never invokes the Qwen job starter", {
   calls <- new.env(parent = emptyenv())
   calls$count <- 0L
@@ -620,6 +656,66 @@ test_that("analytical source changes cancel a pending job and ignore late result
       .ai_module_wait_for(session, function() TRUE, timeout = 0.05)
       expect_null(session$returned$interpretation())
       expect_match(output$status_summary, "changed before interpretation completed")
+    }
+  )
+})
+
+
+test_that("the user cancel control stops a pending request and ignores late results", {
+  control <- new.env(parent = emptyenv())
+  control$cancel_reasons <- character()
+  control$resolve <- NULL
+  control$evidence_id <- NULL
+
+  pending_starter <- function(evidence, ...) {
+    control$evidence_id <- .ai_module_first_substantive_id(evidence)
+    pending <- promises::promise(function(resolve, reject) {
+      control$resolve <- resolve
+    })
+    list(
+      promise = pending,
+      cancel = function(reason) {
+        control$cancel_reasons <- c(control$cancel_reasons, reason)
+        invisible(TRUE)
+      }
+    )
+  }
+
+  testServer(
+    ai_interpretation_server,
+    args = list(
+      enabled = TRUE,
+      page_active = TRUE,
+      workspace_section = "Model",
+      model_tab = "overall_model",
+      ena_obj = .ai_module_fixture(),
+      settings = .ai_module_settings(),
+      job_starter = pending_starter
+    ),
+    {
+      session$setInputs(consent = FALSE, mode = "quick", language = "en")
+      session$flushReact()
+      session$setInputs(preview_toggle = 1L)
+      session$flushReact()
+      session$setInputs(consent = TRUE)
+      session$flushReact()
+      session$setInputs(interpret = 1L)
+      session$flushReact()
+
+      expect_true(is.function(control$resolve))
+      expect_match(output$status_summary, "Qwen is interpreting")
+      session$setInputs(cancel = 1L)
+      session$flushReact()
+
+      expect_length(control$cancel_reasons, 1L)
+      expect_match(control$cancel_reasons[[1L]], "cancelled by the user")
+      expect_match(output$status_summary, "AI request cancelled")
+      expect_null(session$returned$interpretation())
+
+      control$resolve(.ai_module_result(control$evidence_id))
+      .ai_module_wait_for(session, function() TRUE, timeout = 0.05)
+      expect_null(session$returned$interpretation())
+      expect_match(output$status_summary, "AI request cancelled")
     }
   )
 })

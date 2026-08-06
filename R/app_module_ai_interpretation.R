@@ -342,6 +342,35 @@ ena3d_ai_start_qwen_job <- function(
 }
 
 
+.ena3d_ai_ui_state_name <- function(enabled, active_job = NULL,
+                                    error = NULL, interpretation = NULL) {
+  if (!isTRUE(enabled)) return("disabled")
+  if (!is.null(active_job)) return("loading")
+  if (!is.null(error)) return("error")
+  if (!is.null(interpretation)) return("ready")
+  "idle"
+}
+
+
+.ena3d_ai_result_meta_text <- function(meta) {
+  if (is.null(meta)) return("")
+  usage <- meta$usage
+  token_text <- if (is.list(usage) &&
+                    is.numeric(usage$total_tokens) &&
+                    length(usage$total_tokens) == 1L &&
+                    is.finite(usage$total_tokens)) {
+    paste0(" · ", usage$total_tokens, " tokens")
+  } else {
+    ""
+  }
+  paste0(
+    "Model ", meta$model,
+    " · ", meta$latency_ms, " ms",
+    token_text
+  )
+}
+
+
 # `settings` is a reactive list assembled by the parent ENA module.  Keeping
 # that assembly outside this module prevents the AI layer from reaching into
 # unrelated Shiny inputs and makes the outbound contract testable.
@@ -464,17 +493,12 @@ ai_interpretation_server <- function(
     }
 
     send_ui_state <- function(open = NULL) {
-      state_name <- if (!is_enabled()) {
-        "disabled"
-      } else if (!is.null(state$active_job)) {
-        "loading"
-      } else if (!is.null(state$error)) {
-        "error"
-      } else if (!is.null(state$interpretation)) {
-        "ready"
-      } else {
-        "idle"
-      }
+      state_name <- .ena3d_ai_ui_state_name(
+        enabled = is_enabled(),
+        active_job = state$active_job,
+        error = state$error,
+        interpretation = state$interpretation
+      )
       message <- list(
         id = session$ns("root"),
         state = state_name,
@@ -842,21 +866,7 @@ ai_interpretation_server <- function(
       )
     })
     output$result_meta <- shiny::renderText({
-      if (is.null(state$meta)) return("")
-      usage <- state$meta$usage
-      token_text <- if (is.list(usage) &&
-                        is.numeric(usage$total_tokens) &&
-                        length(usage$total_tokens) == 1L &&
-                        is.finite(usage$total_tokens)) {
-        paste0(" · ", usage$total_tokens, " tokens")
-      } else {
-        ""
-      }
-      paste0(
-        "Model ", state$meta$model,
-        " · ", state$meta$latency_ms, " ms",
-        token_text
-      )
+      .ena3d_ai_result_meta_text(state$meta)
     })
     output$result_headline <- shiny::renderText({
       if (is.null(state$interpretation)) "" else state$interpretation$headline

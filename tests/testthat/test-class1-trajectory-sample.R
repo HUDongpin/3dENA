@@ -61,16 +61,30 @@ test_that("Class 1 trusted sample is pseudonymous and trajectory-ready", {
 
 test_that("Class 1 G1 centroids retain the reviewed shared-space values", {
   ena <- ena3d_read_ena_object(.class1_fixture, source_kind = "bundled")
-  path <- compute_centroid_path(
-    points = as.data.frame(ena$points),
-    time_var = "Period",
-    id_var = "Speaker",
-    group_vars = "Group",
-    dimensions = c("SVD1", "SVD2", "SVD3"),
-    order = c("TP1", "TP2", "TP3"),
-    cohort_policy = "available",
-    na_policy = "error",
-    distance_space = "selected"
+  path <- expect_warning(
+    compute_centroid_path(
+      points = as.data.frame(ena$points),
+      time_var = "Period",
+      id_var = "Speaker",
+      group_vars = "Group",
+      dimensions = c("SVD1", "SVD2", "SVD3"),
+      order = c("TP1", "TP2", "TP3"),
+      cohort_policy = "available",
+      na_policy = "error",
+      distance_space = "selected"
+    ),
+    regexp = paste0(
+      "^Trajectory diagnostics: changing_cohort\\. ",
+      "Inspect attr\\(result, \"trajectory_warnings\"\\) for details\\.$"
+    )
+  )
+  diagnostics <- attr(path, "trajectory_warnings", exact = TRUE)
+  expect_s3_class(diagnostics, "data.frame")
+  expect_identical(unique(diagnostics$code), "changing_cohort")
+  expect_identical(unique(diagnostics$severity), "warning")
+  expect_setequal(
+    diagnostics$group,
+    c("Group=G1", "Group=G3", "Group=G6", "Group=G7")
   )
   group1 <- path[path$Group == "G1", , drop = FALSE]
   group1 <- group1[order(group1$time_order), , drop = FALSE]

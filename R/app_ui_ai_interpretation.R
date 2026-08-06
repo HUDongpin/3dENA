@@ -241,11 +241,20 @@ ai_interpretation_ui <- function(
 
       const setOpen = function (open) {
         if (!drawer || !toggle || !backdrop) return;
+        const wasOpen = drawer.classList.contains('is-open');
         drawer.classList.toggle('is-open', open);
         backdrop.classList.toggle('is-open', open);
         drawer.setAttribute('aria-hidden', open ? 'false' : 'true');
         toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
         document.body.classList.toggle('ena-ai-drawer-open', open);
+
+        // Shiny suspends outputs while they are hidden. This drawer is not a
+        // Bootstrap modal, so explicitly emit the generic visibility events
+        // Shiny listens for; otherwise the exact-envelope <pre> can remain
+        // permanently suspended after the drawer is opened.
+        if (wasOpen !== open && window.jQuery) {
+          window.jQuery(drawer).trigger(open ? 'shown' : 'hidden');
+        }
 
         if (open) {
           restoreFocus = document.activeElement;
@@ -273,6 +282,9 @@ ai_interpretation_ui <- function(
           const willOpen = previewPanel.hidden;
           previewPanel.hidden = !willOpen;
           previewToggle.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+          if (window.jQuery) {
+            window.jQuery(previewPanel).trigger(willOpen ? 'shown' : 'hidden');
+          }
         });
       }
 
@@ -369,9 +381,13 @@ ai_interpretation_ui <- function(
               );
             }
             if (target.dataset.previewReady !== 'true' && targetPreviewPanel) {
+              const wasPreviewVisible = !targetPreviewPanel.hidden;
               targetPreviewPanel.hidden = true;
               if (targetPreviewToggle) {
                 targetPreviewToggle.setAttribute('aria-expanded', 'false');
+              }
+              if (wasPreviewVisible && window.jQuery) {
+                window.jQuery(targetPreviewPanel).trigger('hidden');
               }
             }
           }

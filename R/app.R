@@ -300,18 +300,84 @@ app_ui <- function(){
                    .mysidebar .right-side {
                         overflow: scroll;
                         height: 100%;
+                        opacity:1;
+                        transform:translateX(0);
+                        transition:opacity 220ms ease-out, transform 220ms ease-out;
                    }
                    .hide {
                         display:none !important;
+                   }
+                   .ena3d-main-layout.is-collapsed .mysidebar .right-side {
+                        opacity:0;
+                        transform:translateX(-0.5rem);
+                        pointer-events:none;
                    }
                    .toggle-sidebar-btn{
                         position:absolute;
                         transform:translate(5px,-100px);
                         width:auto;
-                        min-width:45px;
+                        min-width:5.75rem;
                         max-width:100%;
-                        white-space:normal;
+                        display:inline-flex;
+                        align-items:center;
+                        justify-content:center;
+                        gap:0.35rem;
+                        white-space:nowrap;
                         --bs-btn-padding-x:0.1rem;
+                   }
+                   .toggle-sidebar-btn::before{
+                        content:'\\2039';
+                        display:inline-block;
+                        font-size:1.35em;
+                        line-height:0.75;
+                        transform:rotate(0deg);
+                        transition:transform 220ms ease-out;
+                   }
+                   .ena3d-main-layout.is-collapsed .toggle-sidebar-btn::before{
+                        transform:rotate(180deg);
+                   }
+                   @media (min-width: 992px) {
+                     .ena3d-main-layout .ena3d-sidebar-column,
+                     .ena3d-main-layout .plot-container{
+                       min-width:0;
+                       transition:width 220ms ease-out;
+                     }
+                     .ena3d-main-layout.is-transitioning .ena3d-sidebar-column,
+                     .ena3d-main-layout.is-transitioning .plot-container{
+                       will-change:width;
+                     }
+                     .ena3d-main-layout.is-collapsed .ena3d-sidebar-column{
+                       width:8.33333333%;
+                     }
+                     .ena3d-main-layout.is-collapsed .plot-container{
+                       width:91.66666667%;
+                     }
+                     .ena3d-main-layout.is-transitioning .mysidebar{
+                       position:relative;
+                       overflow-x:hidden;
+                     }
+                     .ena3d-main-layout.is-transitioning .mysidebar .left-side{
+                       transition:width 220ms ease-out;
+                       will-change:width;
+                     }
+                     .ena3d-main-layout.is-transitioning .mysidebar .right-side{
+                       position:absolute;
+                       top:0;
+                       right:auto;
+                       bottom:0;
+                       width:75%;
+                       max-width:none;
+                       will-change:opacity, transform;
+                     }
+                   }
+                   @media (max-width: 991.98px), (prefers-reduced-motion: reduce) {
+                     .ena3d-main-layout .ena3d-sidebar-column,
+                     .ena3d-main-layout .plot-container,
+                     .ena3d-main-layout .mysidebar .left-side,
+                     .ena3d-main-layout .mysidebar .right-side,
+                     .ena3d-main-layout .toggle-sidebar-btn::before{
+                       transition:none !important;
+                     }
                    }
                    .camera-position-panel .form-group{
                         display:flex;
@@ -542,14 +608,7 @@ app_ui <- function(){
       
       column(5,
         fluidRow(
-          h2('3D ENA',id='ena_3d_h2'),
-          tags$small(
-            class = "text-muted ena3d-build-id",
-            paste0(
-              "Version ", config$app_version,
-              " · Build ", config$build_id
-            )
-          ),
+          h2('3D ENA',id='ena_3d_h2')
         ),
         
         navlistPanel(
@@ -653,11 +712,26 @@ app_ui <- function(){
         const toggleButton = document.querySelector('.toggle-sidebar-btn');
         const plotContainer = document.querySelector('.plot-container');
         const heading = document.getElementById('ena_3d_h2');
+        const mainLayout = document.querySelector('.ena3d-main-layout');
 
-        if (sidebar && toggleButton && plotContainer && sidebar.children.length >= 2) {
+        if (
+          sidebar && toggleButton && plotContainer && mainLayout &&
+          sidebar.children.length >= 2
+        ) {
           const leftSide = sidebar.children[0];
           const rightSide = sidebar.children[1];
-          const sidebarColumn = sidebar.closest('.col-sm-5, .col-sm-1');
+          const sidebarColumn = sidebar.closest('.ena3d-sidebar-column');
+          const motionPreference = window.matchMedia(
+            '(prefers-reduced-motion: reduce)'
+          );
+          const desktopLayout = window.matchMedia('(min-width: 992px)');
+          const SIDEBAR_MOTION_MS = 220;
+          const SIDEBAR_MOTION_FALLBACK_MS = SIDEBAR_MOTION_MS + 80;
+          let transitionGeneration = 0;
+          let transitionFrame = 0;
+          let transitionTimer = 0;
+          let resizeFrame = 0;
+          let activeTransition = null;
 
           leftSide.classList.add('left-side');
           rightSide.classList.add('right-side', 'well');
@@ -673,43 +747,259 @@ app_ui <- function(){
             toggleButton.style.transform = `translate(${translateX}px,-100px)`;
           };
 
-          toggleButton.addEventListener('click', function () {
-            const collapsed = !rightSide.classList.contains('hide');
-            rightSide.classList.toggle('hide', collapsed);
-            leftSide.classList.toggle('col-sm-12', collapsed);
-            leftSide.classList.toggle('col-sm-3', !collapsed);
-
-            if (sidebarColumn) {
-              sidebarColumn.classList.toggle('col-sm-1', collapsed);
-              sidebarColumn.classList.toggle('col-sm-5', !collapsed);
+          const clearSidebarTransitionCallbacks = function () {
+            if (transitionFrame) {
+              window.cancelAnimationFrame(transitionFrame);
+              transitionFrame = 0;
             }
-            plotContainer.classList.toggle('col-sm-11', collapsed);
-            plotContainer.classList.toggle('col-sm-7', !collapsed);
+            if (transitionTimer) {
+              window.clearTimeout(transitionTimer);
+              transitionTimer = 0;
+            }
+          };
 
+          const dispatchFinalPlotResize = function () {
+            if (resizeFrame) window.cancelAnimationFrame(resizeFrame);
+            resizeFrame = window.requestAnimationFrame(function () {
+              resizeFrame = 0;
+              window.dispatchEvent(new Event('resize'));
+            });
+          };
+
+          const setSidebarControlState = function (collapsed) {
             toggleButton.textContent = collapsed ? 'Show' : 'Hide';
             toggleButton.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
             toggleButton.setAttribute(
               'aria-label', collapsed ? 'Show ENA controls' : 'Hide ENA controls'
             );
             if (heading) heading.textContent = collapsed ? 'ENA' : '3D ENA';
+          };
+
+          const setSidebarDetailsInteractive = function (interactive) {
+            rightSide.toggleAttribute('inert', !interactive);
+            if (interactive) {
+              rightSide.removeAttribute('aria-hidden');
+            } else {
+              rightSide.setAttribute('aria-hidden', 'true');
+            }
+          };
+
+          const finalizeSidebarTransition = function (collapsed, generation) {
+            if (
+              !activeTransition ||
+              generation !== activeTransition.generation ||
+              collapsed !== activeTransition.collapsed
+            ) return;
+
+            clearSidebarTransitionCallbacks();
+            activeTransition = null;
+            mainLayout.classList.toggle('is-collapsed', collapsed);
+            mainLayout.classList.remove('is-transitioning');
+            rightSide.classList.toggle('hide', collapsed);
+            setSidebarDetailsInteractive(!collapsed);
+            leftSide.classList.toggle('col-sm-12', collapsed);
+            leftSide.classList.toggle('col-sm-3', !collapsed);
+            leftSide.style.removeProperty('width');
+            leftSide.style.removeProperty('transition');
+            rightSide.style.removeProperty('left');
+            rightSide.style.removeProperty('width');
             positionToggle();
-            window.dispatchEvent(new Event('resize'));
+            dispatchFinalPlotResize();
+          };
+
+          const beginSidebarTransition = function (collapsed) {
+            transitionGeneration += 1;
+            const generation = transitionGeneration;
+            clearSidebarTransitionCallbacks();
+            if (resizeFrame) {
+              window.cancelAnimationFrame(resizeFrame);
+              resizeFrame = 0;
+            }
+
+            activeTransition = {generation: generation, collapsed: collapsed};
+            setSidebarControlState(collapsed);
+
+            if (collapsed && rightSide.contains(document.activeElement)) {
+              toggleButton.focus({preventScroll: true});
+            }
+            setSidebarDetailsInteractive(!collapsed);
+            if (!collapsed) rightSide.classList.remove('hide');
+
+            const currentRailWidth = leftSide.getBoundingClientRect().width;
+            const inlineDetailsWidth = Number.parseFloat(rightSide.style.width);
+            const currentDetailsWidth = Number.isFinite(inlineDetailsWidth)
+              ? inlineDetailsWidth
+              : rightSide.getBoundingClientRect().width;
+            const currentSidebarWidth = sidebarColumn
+              ? sidebarColumn.getBoundingClientRect().width
+              : 0;
+            const currentPlotWidth = plotContainer.getBoundingClientRect().width;
+            const availableWidth = currentSidebarWidth + currentPlotWidth;
+            const targetSidebarWidth = availableWidth * (collapsed ? 1 : 5) / 12;
+            const targetRailWidth = collapsed
+              ? targetSidebarWidth
+              : targetSidebarWidth / 4;
+            const targetDetailsWidth = targetSidebarWidth * 3 / 4;
+            const stagedDetailsWidth = collapsed && currentDetailsWidth > 0
+              ? currentDetailsWidth
+              : targetDetailsWidth;
+            const stagedDetailsLeft = collapsed
+              ? currentRailWidth
+              : targetRailWidth;
+            const hasWidthMotion = Math.abs(
+              currentSidebarWidth - targetSidebarWidth
+            ) > 0.5;
+
+            leftSide.style.setProperty('transition', 'none', 'important');
+            leftSide.style.width = `${currentRailWidth}px`;
+            leftSide.classList.toggle('col-sm-12', collapsed);
+            leftSide.classList.toggle('col-sm-3', !collapsed);
+            rightSide.style.left = `${stagedDetailsLeft}px`;
+            rightSide.style.width = `${stagedDetailsWidth}px`;
+            mainLayout.classList.add('is-transitioning');
+            void leftSide.offsetWidth;
+            leftSide.style.removeProperty('transition');
+
+            const shouldAnimate = Boolean(
+              sidebarColumn && desktopLayout.matches &&
+              !motionPreference.matches && hasWidthMotion
+            );
+
+            if (!shouldAnimate) {
+              mainLayout.classList.toggle('is-collapsed', collapsed);
+              finalizeSidebarTransition(collapsed, generation);
+              return;
+            }
+
+            void mainLayout.offsetWidth;
+            transitionFrame = window.requestAnimationFrame(function () {
+              transitionFrame = 0;
+              if (
+                !activeTransition ||
+                generation !== activeTransition.generation
+              ) return;
+
+              mainLayout.classList.toggle('is-collapsed', collapsed);
+              leftSide.style.width = `${targetRailWidth}px`;
+              transitionTimer = window.setTimeout(function () {
+                finalizeSidebarTransition(collapsed, generation);
+              }, SIDEBAR_MOTION_FALLBACK_MS);
+            });
+          };
+
+          if (sidebarColumn) {
+            sidebarColumn.addEventListener('transitionend', function (event) {
+              if (
+                event.target !== sidebarColumn ||
+                event.propertyName !== 'width' ||
+                !activeTransition
+              ) return;
+              finalizeSidebarTransition(
+                activeTransition.collapsed,
+                activeTransition.generation
+              );
+            });
+          }
+
+          toggleButton.addEventListener('click', function () {
+            const collapsed = toggleButton.getAttribute('aria-expanded') === 'true';
+            beginSidebarTransition(collapsed);
           });
 
           positionToggle();
           window.addEventListener('resize', positionToggle);
+          window.addEventListener('resize', function () {
+            if (
+              activeTransition &&
+              (!desktopLayout.matches || motionPreference.matches)
+            ) {
+              finalizeSidebarTransition(
+                activeTransition.collapsed,
+                activeTransition.generation
+              );
+            }
+          });
+          if (typeof ResizeObserver === 'function') {
+            const railObserver = new ResizeObserver(positionToggle);
+            railObserver.observe(leftSide);
+          }
+          if (typeof motionPreference.addEventListener === 'function') {
+            motionPreference.addEventListener('change', function () {
+              if (activeTransition && motionPreference.matches) {
+                finalizeSidebarTransition(
+                  activeTransition.collapsed,
+                  activeTransition.generation
+                );
+              }
+            });
+          }
         }
 
         const fullscreenButton = document.getElementById('main_app-fullscreen_btn');
         const fullscreenStatus = document.getElementById('ena3d-fullscreen-status');
+        let fallbackFullscreenPlot = null;
+        let fullscreenExitButton = null;
         const setFullscreenStatus = function (message, isError) {
           if (!fullscreenStatus) return;
           fullscreenStatus.textContent = message;
           fullscreenStatus.classList.toggle('text-danger', Boolean(isError));
           fullscreenStatus.classList.toggle('text-muted', !isError);
         };
+        const resizeVisiblePlot = function () {
+          window.setTimeout(function () {
+            window.dispatchEvent(new Event('resize'));
+          }, 50);
+        };
+        const removeFullscreenExitButton = function () {
+          if (fullscreenExitButton) fullscreenExitButton.remove();
+          fullscreenExitButton = null;
+        };
+        const exitFallbackFullscreen = function () {
+          if (!fallbackFullscreenPlot) return;
+          fallbackFullscreenPlot.classList.remove('ena3d-fullscreen-fallback');
+          fallbackFullscreenPlot = null;
+          removeFullscreenExitButton();
+          setFullscreenStatus('Fullscreen closed.', false);
+          resizeVisiblePlot();
+        };
+        const exitFullscreen = function () {
+          if (fallbackFullscreenPlot) {
+            exitFallbackFullscreen();
+            return;
+          }
+          const exit = document.exitFullscreen || document.webkitExitFullscreen;
+          if (!exit) return;
+          const result = exit.call(document);
+          if (result && typeof result.catch === 'function') {
+            result.catch(function () {
+              setFullscreenStatus('Could not close fullscreen mode.', true);
+            });
+          }
+        };
+        const installFullscreenExitButton = function (visiblePlot) {
+          removeFullscreenExitButton();
+          fullscreenExitButton = document.createElement('button');
+          fullscreenExitButton.type = 'button';
+          fullscreenExitButton.className = 'btn btn-default ena3d-fullscreen-exit';
+          fullscreenExitButton.textContent = 'Exit full screen';
+          fullscreenExitButton.setAttribute('aria-label', 'Exit fullscreen plot');
+          fullscreenExitButton.addEventListener('click', exitFullscreen);
+          visiblePlot.appendChild(fullscreenExitButton);
+        };
+        const enterFallbackFullscreen = function (visiblePlot) {
+          fallbackFullscreenPlot = visiblePlot;
+          visiblePlot.classList.add('ena3d-fullscreen-fallback');
+          installFullscreenExitButton(visiblePlot);
+          setFullscreenStatus('Fullscreen fallback active.', false);
+          resizeVisiblePlot();
+        };
         if (fullscreenButton) {
           fullscreenButton.addEventListener('click', function () {
+            if (fallbackFullscreenPlot || document.fullscreenElement ||
+                document.webkitFullscreenElement) {
+              exitFullscreen();
+              return;
+            }
             const plots = Array.from(
               document.querySelectorAll('.plot-container .plotly.html-widget')
             );
@@ -728,33 +1018,58 @@ app_ui <- function(){
             const requestFullscreen = visiblePlot.requestFullscreen ||
               visiblePlot.webkitRequestFullscreen;
             if (!requestFullscreen) {
-              setFullscreenStatus('Fullscreen is not supported by this browser.', true);
+              enterFallbackFullscreen(visiblePlot);
               return;
             }
             if (visiblePlot.id) {
               fullscreenButton.setAttribute('aria-controls', visiblePlot.id);
             }
             setFullscreenStatus('Requesting fullscreen ...', false);
-            const result = requestFullscreen.call(visiblePlot);
-            if (result && typeof result.catch === 'function') {
-              result.catch(function (error) {
-                console.warn('Could not enter fullscreen mode.', error);
-                setFullscreenStatus('Could not enter fullscreen mode.', true);
-              });
+            installFullscreenExitButton(visiblePlot);
+            try {
+              const result = requestFullscreen.call(visiblePlot);
+              if (result && typeof result.catch === 'function') {
+                result.catch(function (error) {
+                  console.warn(
+                    'Native fullscreen was unavailable; using the page fallback.',
+                    error
+                  );
+                  enterFallbackFullscreen(visiblePlot);
+                });
+              }
+            } catch (error) {
+              console.warn(
+                'Native fullscreen was unavailable; using the page fallback.',
+                error
+              );
+              enterFallbackFullscreen(visiblePlot);
             }
           });
           document.addEventListener('fullscreenchange', function () {
-            setFullscreenStatus(
-              document.fullscreenElement ? 'Fullscreen active.' : 'Fullscreen closed.',
-              false
-            );
+            if (document.fullscreenElement) {
+              setFullscreenStatus('Fullscreen active.', false);
+            } else if (!fallbackFullscreenPlot) {
+              removeFullscreenExitButton();
+              setFullscreenStatus('Fullscreen closed.', false);
+            }
             // Plotly widgets retain the width measured in the split workspace
             // until their htmlwidget resize handler runs. Re-measure after the
             // fullscreen element has acquired its viewport-sized box so the
             // WebGL canvas fills the screen instead of leaving a black gutter.
-            window.setTimeout(function () {
-              window.dispatchEvent(new Event('resize'));
-            }, 50);
+            resizeVisiblePlot();
+          });
+          document.addEventListener('webkitfullscreenchange', function () {
+            if (!document.webkitFullscreenElement && !fallbackFullscreenPlot) {
+              removeFullscreenExitButton();
+              setFullscreenStatus('Fullscreen closed.', false);
+            }
+            resizeVisiblePlot();
+          });
+          document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape' && fallbackFullscreenPlot) {
+              event.preventDefault();
+              exitFallbackFullscreen();
+            }
           });
         }
 
@@ -856,7 +1171,6 @@ app_server <- function(input, output, session) {
   open_site_page <- function(page) {
     updateNavbarPage(session, "site_nav", selected = page)
   }
-  observeEvent(input$home_brand, open_site_page("home"))
   observeEvent(input$launch_ena, open_site_page("tool"))
   observeEvent(input$launch_ena_note, open_site_page("tool"))
   observeEvent(input$launch_ena_about, open_site_page("tool"))
@@ -873,7 +1187,6 @@ app_server <- function(input, output, session) {
       selected = "trajectory"
     )
   })
-  observeEvent(input$meet_developer, open_site_page("about"))
   
   ena_app_server(
     id = "main_app",

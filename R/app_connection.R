@@ -28,20 +28,67 @@ ena3d_connection_policy <- function(profile) {
 
 ena3d_validate_runtime_host <- function(
     profile,
-    shiny_server_version = Sys.getenv("SHINY_SERVER_VERSION", unset = "")) {
+    shiny_server_version = Sys.getenv("SHINY_SERVER_VERSION", unset = ""),
+    server_info = shiny::serverInfo()) {
   profile <- ena3d_runtime_profile(profile)
-  server_version <- trimws(as.character(shiny_server_version)[[1L]])
-  if (identical(profile, "persistent") && !nzchar(server_version)) {
-    stop(
-      paste(
-        "The persistent runtime profile requires Posit Shiny Server.",
-        "A plain shiny::runApp process cannot preserve an existing session",
-        "across a transport interruption."
-      ),
-      call. = FALSE
-    )
+  adapter_version <- trimws(as.character(shiny_server_version)[[1L]])
+  # Posit Shiny Server's SockJS adapter sets both serverInfo() and the worker
+  # version environment value before app.R is loaded. Under the application's
+  # trusted-code boundary, require both adapter signals and exact agreement as
+  # a fail-closed deployment-mode guard against an accidental plain runApp
+  # launch or adapter drift. This is not cryptographic host attestation: code
+  # already executing in this R worker could replace these in-process signals.
+  hosted_by_shiny_server <- is.list(server_info) &&
+    isTRUE(server_info$shinyServer)
+  server_info_version <- if (
+      hosted_by_shiny_server &&
+      length(server_info$version) == 1L &&
+      is.character(server_info$version) &&
+      !is.na(server_info$version)) {
+    trimws(server_info$version[[1L]])
+  } else {
+    ""
   }
-  invisible(server_version)
+  if (identical(profile, "persistent")) {
+    if (!hosted_by_shiny_server) {
+      stop(
+        paste(
+          "The persistent runtime profile requires an actual Posit",
+          "Shiny Server host. A plain shiny::runApp process cannot preserve",
+          "an existing session across a transport interruption."
+        ),
+        call. = FALSE
+      )
+    }
+    if (!nzchar(server_info_version)) {
+      stop(
+        paste(
+          "The persistent runtime profile requires version metadata from",
+          "shiny::serverInfo()."
+        ),
+        call. = FALSE
+      )
+    }
+    if (!nzchar(adapter_version)) {
+      stop(
+        paste(
+          "The persistent runtime profile requires Shiny Server version",
+          "metadata from the host adapter."
+        ),
+        call. = FALSE
+      )
+    }
+    if (!identical(server_info_version, adapter_version)) {
+      stop(
+        paste(
+          "Shiny Server host version metadata is inconsistent; refusing",
+          "to advertise persistent session recovery."
+        ),
+        call. = FALSE
+      )
+    }
+  }
+  invisible(if (hosted_by_shiny_server) server_info_version else "")
 }
 
 

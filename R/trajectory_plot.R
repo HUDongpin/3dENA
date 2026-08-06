@@ -215,6 +215,88 @@
   dimensions
 }
 
+.trajectory_plot_canonical_zero <- function(value) {
+  value <- as.numeric(value)
+  finite_zero <- is.finite(value) & value == 0
+  value[finite_zero] <- 0
+  value
+}
+
+.trajectory_plot_group_value_label <- function(value) {
+  core_label <- get0(
+    ".trajectory_group_value_label", mode = "function", inherits = TRUE,
+    ifnotfound = NULL
+  )
+  if (is.function(core_label)) return(core_label(value))
+
+  if (!length(value) || is.na(value[1L]) ||
+      ((is.numeric(value) || inherits(value, c("Date", "POSIXt", "difftime"))) &&
+       !is.finite(as.numeric(value[1L])))) {
+    return("NA")
+  }
+  value <- value[1L]
+  if (inherits(value, "Date")) return(format(value, "%Y-%m-%d"))
+  if (inherits(value, "POSIXt")) {
+    epoch <- .trajectory_plot_canonical_zero(value)
+    return(paste0(
+      as.character(value), " [epoch=", sprintf("%a", epoch), "]"
+    ))
+  }
+  if (inherits(value, "difftime")) {
+    seconds <- .trajectory_plot_canonical_zero(
+      as.numeric(value, units = "secs")
+    )
+    return(paste0(
+      as.character(value), " [seconds=",
+      sprintf("%a", seconds), "]"
+    ))
+  }
+  if (is.numeric(value)) {
+    exact <- .trajectory_plot_canonical_zero(value)
+    return(paste0(
+      as.character(exact), " [exact=", sprintf("%a", exact), "]"
+    ))
+  }
+  as.character(value)
+}
+
+.trajectory_plot_group_scope_label <- function(path, group_cols, row) {
+  if (!length(group_cols)) return("all")
+  encode_component <- function(value) {
+    value <- as.character(value)
+    needs_quotes <- grepl('[\\\\,="]', value, perl = TRUE) |
+      grepl("[[:cntrl:]]", value)
+    if (needs_quotes) encodeString(value, quote = '"') else value
+  }
+  paste(vapply(group_cols, function(column) {
+    column_label <- encode_component(column)
+    value_label <- encode_component(
+      .trajectory_plot_group_value_label(path[[column]][row])
+    )
+    paste0(column_label, "=", value_label)
+  }, character(1L)), collapse = ", ")
+}
+
+.trajectory_plot_group_display_values <- function(value) {
+  display <- as.character(value)
+  display[is.na(display)] <- "<NA>"
+  keys <- .trajectory_plot_value_key(value)
+
+  keys_by_label <- split(keys, display, drop = TRUE)
+  ambiguous_labels <- names(keys_by_label)[vapply(
+    keys_by_label, function(items) length(unique(items)) > 1L, logical(1L)
+  )]
+  ambiguous <- display %in% ambiguous_labels
+  if (any(ambiguous)) {
+    display[ambiguous] <- vapply(
+      which(ambiguous),
+      function(index) .trajectory_plot_group_value_label(value[index]),
+      character(1L)
+    )
+  }
+  display
+}
+
 .trajectory_group_info <- function(path, group_cols) {
   n <- nrow(path)
   if (length(group_cols) == 0L) {
@@ -225,16 +307,20 @@
     ))
   }
 
-  values <- lapply(group_cols, function(column) {
-    value <- as.character(path[[column]])
-    value[is.na(value)] <- "<NA>"
-    value
-  })
-  names(values) <- group_cols
+  display_values <- lapply(
+    group_cols,
+    function(column) .trajectory_plot_group_display_values(path[[column]])
+  )
+  names(display_values) <- group_cols
+  identity_values <- lapply(
+    group_cols,
+    function(column) .trajectory_plot_value_key(path[[column]])
+  )
+  names(identity_values) <- group_cols
 
   key <- vapply(seq_len(n), function(i) {
     pieces <- vapply(group_cols, function(column) {
-      value <- values[[column]][i]
+      value <- identity_values[[column]][i]
       paste0(nchar(column, type = "bytes"), ":", column, "=",
              nchar(value, type = "bytes"), ":", value)
     }, character(1))
@@ -242,12 +328,12 @@
   }, character(1))
 
   if (length(group_cols) == 1L) {
-    label <- values[[1L]]
+    label <- display_values[[1L]]
   } else {
     label <- vapply(seq_len(n), function(i) {
       paste(
         vapply(group_cols, function(column) {
-          paste0(column, "=", values[[column]][i])
+          paste0(column, "=", display_values[[column]][i])
         }, character(1)),
         collapse = " · "
       )
@@ -496,6 +582,26 @@ trajectory_node_legend_data <- function(path) {
   data.frame(message = as.character(diagnostics), stringsAsFactors = FALSE)
 }
 
+.trajectory_diagnostic_reserved_columns <- function() {
+  c("code", "severity", "group", "time_order", "time_value", "message", "count")
+}
+
+.trajectory_diagnostic_scope_flags <- function(diagnostics, group_cols) {
+  scoped <- rep(FALSE, nrow(diagnostics))
+  direct_groups <- setdiff(
+    intersect(group_cols, names(diagnostics)),
+    .trajectory_diagnostic_reserved_columns()
+  )
+  for (column in direct_groups) {
+    scoped <- scoped | !is.na(diagnostics[[column]])
+  }
+  for (column in intersect(c("group", "time_order", "time_value"),
+                           names(diagnostics))) {
+    scoped <- scoped | !is.na(diagnostics[[column]])
+  }
+  scoped
+}
+
 .trajectory_append_warning <- function(parts, rows, message) {
   rows <- which(rows %in% TRUE)
   if (length(rows) == 0L || !nzchar(message)) return(parts)
@@ -542,11 +648,16 @@ trajectory_node_legend_data <- function(path) {
       matches <- rep(TRUE, nrow(trace_data))
       scoped <- FALSE
 
-      common_groups <- intersect(group_cols, names(diagnostics))
+      common_groups <- setdiff(
+        intersect(group_cols, names(diagnostics)),
+        .trajectory_diagnostic_reserved_columns()
+      )
       for (column in common_groups) {
         diagnostic_value <- diagnostics[[column]][i]
         if (!is.na(diagnostic_value)) {
-          matches <- matches & as.character(trace_data[[column]]) == as.character(diagnostic_value)
+          matches <- matches &
+            .trajectory_plot_value_key(trace_data[[column]]) ==
+              .trajectory_plot_value_key(diagnostic_value)
           scoped <- TRUE
         }
       }
@@ -559,23 +670,16 @@ trajectory_node_legend_data <- function(path) {
           # compute_centroid_path() describes scoped diagnostics as
           # "group=value" (and "group=value, group2=value2").  Plot legends
           # stay concise, but hover matching understands that canonical form.
-          core_group_label <- if (length(group_cols) == 0L) {
-            rep("all", nrow(trace_data))
-          } else {
-            vapply(seq_len(nrow(trace_data)), function(row) {
-              paste(vapply(group_cols, function(column) {
-                group_value <- trace_data[[column]][row]
-                if (is.na(group_value)) group_value <- "NA"
-                paste0(column, "=", as.character(group_value))
-              }, character(1)), collapse = ", ")
-            }, character(1))
-          }
+          core_group_label <- vapply(
+            seq_len(nrow(trace_data)),
+            function(row) {
+              .trajectory_plot_group_scope_label(trace_data, group_cols, row)
+            },
+            character(1L)
+          )
           group_match <- trace_data$.trajectory_label == value |
             trace_data$.trajectory_key == value |
             core_group_label == value
-          if (length(group_cols) == 1L) {
-            group_match <- group_match | as.character(trace_data[[group_cols]]) == value
-          }
         }
         matches <- matches & group_match
         scoped <- TRUE
@@ -585,7 +689,9 @@ trajectory_node_legend_data <- function(path) {
         scoped <- TRUE
       }
       if ("time_value" %in% names(diagnostics) && !is.na(diagnostics$time_value[i])) {
-        matches <- matches & as.character(trace_data$time_value) == as.character(diagnostics$time_value[i])
+        matches <- matches &
+          .trajectory_plot_value_key(trace_data$time_value) ==
+            .trajectory_plot_value_key(diagnostics$time_value[i])
         scoped <- TRUE
       }
 
@@ -935,7 +1041,14 @@ trajectory_trace_data <- function(path, dimensions = NULL, group_cols = NULL, co
 
 .trajectory_warning_messages <- function(path, trace_data) {
   diagnostics <- .trajectory_diagnostics(path)
-  messages <- if (nrow(diagnostics) > 0L) as.character(diagnostics$message) else character()
+  group_cols <- attr(trace_data, "trajectory_group_cols", exact = TRUE)
+  if (is.null(group_cols)) group_cols <- character(0)
+  messages <- if (nrow(diagnostics) > 0L) {
+    scoped <- .trajectory_diagnostic_scope_flags(diagnostics, group_cols)
+    as.character(diagnostics$message[!scoped])
+  } else {
+    character()
+  }
   row_messages <- trace_data$.trajectory_warning
   row_messages <- row_messages[!is.na(row_messages) & row_messages != "None"]
   # Row-level hover warnings prefix structured diagnostics with their severity.
@@ -961,22 +1074,54 @@ trajectory_trace_data <- function(path, dimensions = NULL, group_cols = NULL, co
 
   # Keep the standalone plotting helper class-aware even when the analytical
   # core has not been sourced (for example, in a lightweight package test).
+  family <- if (is.factor(value) || is.character(value)) {
+    "text"
+  } else if (inherits(value, "Date")) {
+    "date"
+  } else if (inherits(value, "POSIXt")) {
+    "datetime"
+  } else if (inherits(value, "difftime")) {
+    "duration_seconds"
+  } else if (is.numeric(value)) {
+    "numeric"
+  } else if (is.logical(value)) {
+    "logical"
+  } else {
+    paste0("class:", paste(class(value), collapse = "/"))
+  }
   if (is.factor(value)) value <- as.character(value)
   if (inherits(value, "Date")) {
     key <- format(value, "%Y-%m-%d")
-  } else if (inherits(value, "POSIXt") || inherits(value, "difftime") ||
-             is.numeric(value)) {
-    key <- format(
-      as.numeric(value), digits = 17L, scientific = TRUE, trim = TRUE
+  } else if (inherits(value, "POSIXt")) {
+    key <- sprintf("%a", .trajectory_plot_canonical_zero(value))
+  } else if (inherits(value, "difftime")) {
+    key <- sprintf(
+      "%a",
+      .trajectory_plot_canonical_zero(as.numeric(value, units = "secs"))
     )
+  } else if (is.numeric(value)) {
+    key <- sprintf("%a", .trajectory_plot_canonical_zero(value))
   } else {
     key <- as.character(value)
   }
-  key[is.na(key)] <- "<NA>"
-  vapply(
+  missing <- is.na(value)
+  if (is.numeric(value) || inherits(value, c("Date", "POSIXt", "difftime"))) {
+    missing <- missing | !is.finite(as.numeric(value))
+  }
+  encoded <- vapply(
     key, encodeString, character(1L), quote = '"', na.encode = TRUE,
     USE.NAMES = FALSE
   )
+  family_prefix <- paste0(
+    "trajectory-key:v2:", nchar(family, type = "bytes"), ":", family, ":"
+  )
+  vapply(seq_along(encoded), function(index) {
+    if (missing[[index]]) return(paste0(family_prefix, "missing"))
+    paste0(
+      family_prefix, "value:", nchar(encoded[[index]], type = "bytes"), ":",
+      encoded[[index]]
+    )
+  }, character(1L), USE.NAMES = FALSE)
 }
 
 .trajectory_epoch_suffix <- function(value) {
@@ -1852,6 +1997,63 @@ trajectory_trace_data <- function(path, dimensions = NULL, group_cols = NULL, co
   do.call(plotly::add_trace, arguments)
 }
 
+.trajectory_validate_plot_controls <- function(
+    display_scale, marker_size, line_width, show_direction,
+    show_origin_axes, arrow_size, cone_size, axis_cone_size) {
+  if (length(display_scale) != 1L || !is.numeric(display_scale) ||
+      !is.finite(display_scale) || display_scale <= 0) {
+    stop("`display_scale` must be one positive finite number.", call. = FALSE)
+  }
+  if (length(marker_size) != 1L || !is.numeric(marker_size) ||
+      !is.finite(marker_size) || marker_size <= 0) {
+    stop("`marker_size` must be one positive finite number.", call. = FALSE)
+  }
+  if (length(line_width) != 1L || !is.numeric(line_width) ||
+      !is.finite(line_width) || line_width <= 0) {
+    stop("`line_width` must be one positive finite number.", call. = FALSE)
+  }
+  if (length(show_direction) != 1L || !is.logical(show_direction) ||
+      is.na(show_direction)) {
+    stop("`show_direction` must be TRUE or FALSE.", call. = FALSE)
+  }
+  if (length(show_origin_axes) != 1L || !is.logical(show_origin_axes) ||
+      is.na(show_origin_axes)) {
+    stop("`show_origin_axes` must be TRUE or FALSE.", call. = FALSE)
+  }
+  if (length(arrow_size) != 1L || !is.numeric(arrow_size) ||
+      !is.finite(arrow_size) || arrow_size <= 0 || arrow_size > 0.2) {
+    stop(
+      paste0(
+        "`arrow_size` must be one finite number greater than 0 and ",
+        "no more than 0.2."
+      ),
+      call. = FALSE
+    )
+  }
+  if (length(cone_size) != 1L || !is.numeric(cone_size) ||
+      !is.finite(cone_size) || cone_size <= 0 || cone_size > 1) {
+    stop(
+      paste0(
+        "`cone_size` must be one finite number greater than 0 and ",
+        "no more than 1."
+      ),
+      call. = FALSE
+    )
+  }
+  if (length(axis_cone_size) != 1L || !is.numeric(axis_cone_size) ||
+      !is.finite(axis_cone_size) || axis_cone_size <= 0 ||
+      axis_cone_size > 1) {
+    stop(
+      paste0(
+        "`axis_cone_size` must be one finite number greater than 0 and ",
+        "no more than 1."
+      ),
+      call. = FALSE
+    )
+  }
+  invisible(TRUE)
+}
+
 #' Plot a centroid path as either a three-dimensional path or a 2D projection.
 #'
 #' `display_scale` scales marker and line styling only.  `camera` is applied only
@@ -1886,38 +2088,16 @@ plot_centroid_trajectory <- function(
   required_dimensions <- if (view == "3d") 3L else 2L
   dimensions <- .trajectory_dimension_columns(path, dimensions, required = required_dimensions)
 
-  if (length(display_scale) != 1L || !is.numeric(display_scale) ||
-      !is.finite(display_scale) || display_scale <= 0) {
-    stop("`display_scale` must be one positive finite number.", call. = FALSE)
-  }
-  if (length(marker_size) != 1L || !is.numeric(marker_size) ||
-      !is.finite(marker_size) || marker_size <= 0) {
-    stop("`marker_size` must be one positive finite number.", call. = FALSE)
-  }
-  if (length(line_width) != 1L || !is.numeric(line_width) ||
-      !is.finite(line_width) || line_width <= 0) {
-    stop("`line_width` must be one positive finite number.", call. = FALSE)
-  }
-  if (length(show_direction) != 1L || !is.logical(show_direction) ||
-      is.na(show_direction)) {
-    stop("`show_direction` must be TRUE or FALSE.", call. = FALSE)
-  }
-  if (length(show_origin_axes) != 1L || !is.logical(show_origin_axes) ||
-      is.na(show_origin_axes)) {
-    stop("`show_origin_axes` must be TRUE or FALSE.", call. = FALSE)
-  }
-  if (length(arrow_size) != 1L || !is.numeric(arrow_size) ||
-      !is.finite(arrow_size) || arrow_size <= 0 || arrow_size > 0.2) {
-    stop("`arrow_size` must be one finite number greater than 0 and no more than 0.2.", call. = FALSE)
-  }
-  if (length(cone_size) != 1L || !is.numeric(cone_size) ||
-      !is.finite(cone_size) || cone_size <= 0 || cone_size > 1) {
-    stop("`cone_size` must be one finite number greater than 0 and no more than 1.", call. = FALSE)
-  }
-  if (length(axis_cone_size) != 1L || !is.numeric(axis_cone_size) ||
-      !is.finite(axis_cone_size) || axis_cone_size <= 0 || axis_cone_size > 1) {
-    stop("`axis_cone_size` must be one finite number greater than 0 and no more than 1.", call. = FALSE)
-  }
+  .trajectory_validate_plot_controls(
+    display_scale = display_scale,
+    marker_size = marker_size,
+    line_width = line_width,
+    show_direction = show_direction,
+    show_origin_axes = show_origin_axes,
+    arrow_size = arrow_size,
+    cone_size = cone_size,
+    axis_cone_size = axis_cone_size
+  )
 
   trace_data <- trajectory_trace_data(
     path,

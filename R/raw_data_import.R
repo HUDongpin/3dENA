@@ -187,9 +187,13 @@ ena3d_read_raw_table <- function(path, client_name = basename(path), sheet = NUL
         sep = separator,
         quote = "\"",
         comment.char = "",
+        colClasses = "character",
         stringsAsFactors = FALSE,
         check.names = FALSE,
-        na.strings = c("", "NA"),
+        # Preserve source lexemes until the user assigns semantic roles. In
+        # particular, an identifier literally named "NA" is not a missing
+        # value merely because it arrived through CSV.
+        na.strings = character(),
         fileEncoding = "UTF-8-BOM",
         strip.white = FALSE
       ),
@@ -238,6 +242,21 @@ ena3d_raw_nonblank <- function(values) {
 }
 
 
+ena3d_raw_nonfinite_typed <- function(values) {
+  typed_numeric <- is.numeric(values) ||
+    inherits(values, c("Date", "POSIXt", "difftime"))
+  if (!typed_numeric || !length(values)) {
+    return(rep(FALSE, length(values)))
+  }
+  numeric_values <- if (inherits(values, "difftime")) {
+    as.numeric(values, units = "secs")
+  } else {
+    suppressWarnings(as.numeric(values))
+  }
+  !is.na(values) & !is.finite(numeric_values)
+}
+
+
 ena3d_raw_is_binary_code <- function(values) {
   if (is.logical(values)) return(any(values, na.rm = TRUE))
   numeric_values <- suppressWarnings(as.numeric(as.character(values)))
@@ -277,7 +296,8 @@ ena3d_suggest_raw_mapping <- function(data, limits = ena3d_data_limits()) {
   )
   if (!length(group_candidates)) {
     categorical <- columns[vapply(data, function(values) {
-      count <- length(unique(as.character(values[ena3d_raw_nonblank(values)])))
+      observed <- values[ena3d_raw_nonblank(values)]
+      count <- length(unique(ena3d_value_identity_keys(observed)))
       count >= 2L && count <= min(10L, limits$max_group_levels)
     }, logical(1))]
     group_candidates <- categorical[!vapply(data[categorical],
@@ -295,16 +315,23 @@ ena3d_suggest_raw_mapping <- function(data, limits = ena3d_data_limits()) {
   }
 
   id_candidates <- match_names(
-    "(^|[_. -])(id|name|user|participant|student|case|person)([_. -]|$)"
+    paste0(
+      "(^|[_. -])(",
+      "id|name|",
+      "user(?:id|name)?|participant(?:id|name)?|",
+      "student(?:id|name)?|case(?:id|name)?|person(?:id|name)?",
+      ")([_. -]|$)"
+    )
   )
   id_candidates <- setdiff(id_candidates, conversation)
   units <- if (length(id_candidates)) id_candidates[[1L]] else group
 
   if (group %in% columns && !group %in% units) {
     id_key <- ena3d_unit_key(data, units)
+    group_keys <- ena3d_value_identity_keys(data[[group]])
     groups_per_id <- tapply(
-      as.character(data[[group]]), id_key,
-      function(values) length(unique(values[ena3d_raw_nonblank(values)]))
+      group_keys, id_key,
+      function(values) length(unique(values))
     )
     if (any(groups_per_id > 1L, na.rm = TRUE)) units <- c(group, units)
   }
@@ -386,6 +413,13 @@ ena3d_validate_raw_mapping <- function(data, mapping,
     stop(sprintf("Mapped columns are absent: %s.", paste(missing, collapse = ", ")),
          call. = FALSE)
   }
+  unit_conversation_overlap <- intersect(units, conversation)
+  if (length(unit_conversation_overlap)) {
+    stop(sprintf(
+      "Unit identifier columns cannot also be conversation fields: %s.",
+      paste(unit_conversation_overlap, collapse = ", ")
+    ), call. = FALSE)
+  }
   code_overlap <- intersect(codes, unique(c(units, conversation, metadata)))
   if (length(code_overlap)) {
     stop(sprintf("Code columns cannot also have another role: %s.",
@@ -409,6 +443,22 @@ ena3d_validate_raw_mapping <- function(data, mapping,
       call. = FALSE
     )
   }
+  identity_columns <- unique(c(units, conversation, group, metadata))
+  nonfinite_identity <- identity_columns[vapply(
+    data[identity_columns],
+    function(values) any(ena3d_raw_nonfinite_typed(values)),
+    logical(1L)
+  )]
+  if (length(nonfinite_identity)) {
+    stop(sprintf(
+      paste0(
+        "Mapped unit/conversation/group/metadata columns contain non-finite ",
+        "typed values: %s. Replace numeric or date/time Inf/-Inf values ",
+        "before construction."
+      ),
+      paste(nonfinite_identity, collapse = ", ")
+    ), call. = FALSE)
+  }
 
   required_complete <- unique(c(units, conversation, group))
   incomplete <- required_complete[vapply(data[required_complete], function(values) {
@@ -427,8 +477,9 @@ ena3d_validate_raw_mapping <- function(data, mapping,
   }
   ena3d_assert_within(unit_count, limits$max_units, "unique ENA unit count")
 
-  grouping_values <- as.character(data[[group]])
-  groups_per_unit <- tapply(grouping_values, unit_key, function(values) {
+  grouping_values <- data[[group]]
+  grouping_keys <- ena3d_value_identity_keys(grouping_values)
+  groups_per_unit <- tapply(grouping_keys, unit_key, function(values) {
     length(unique(values))
   })
   if (any(groups_per_unit != 1L)) {
@@ -444,8 +495,9 @@ ena3d_validate_raw_mapping <- function(data, mapping,
 
   if (length(metadata)) {
     inconsistent_metadata <- metadata[vapply(data[metadata], function(values) {
-      counts <- tapply(as.character(values), unit_key, function(unit_values) {
-        length(unique(unit_values[!is.na(unit_values)]))
+      value_keys <- ena3d_value_identity_keys(values)
+      counts <- tapply(value_keys, unit_key, function(unit_values) {
+        length(unique(unit_values))
       })
       any(counts > 1L, na.rm = TRUE)
     }, logical(1))]
@@ -457,7 +509,7 @@ ena3d_validate_raw_mapping <- function(data, mapping,
     }
   }
 
-  group_levels <- unique(grouping_values)
+  group_levels <- grouping_values[!duplicated(grouping_keys)]
   ena3d_assert_within(
     length(group_levels), limits$max_group_levels,
     sprintf("level count for grouping column `%s`", group)
@@ -602,24 +654,170 @@ ena3d_add_constructed_participant_id <- function(
 }
 
 
+ena3d_constructed_unit_key_column <- function(data,
+                                              stem = ".ENA3D_UNIT_KEY") {
+  column <- stem
+  suffix <- 2L
+  while (column %in% names(data)) {
+    column <- paste0(stem, "_", suffix)
+    suffix <- suffix + 1L
+  }
+  column
+}
+
+
+ena3d_restore_constructed_unit_metadata <- function(
+    ena_obj, prepared_data, specification, unit_key_column) {
+  tables <- c("meta.data", "points", "line.weights")
+  if (!is.character(unit_key_column) || length(unit_key_column) != 1L ||
+      !nzchar(unit_key_column) || !unit_key_column %in% names(prepared_data)) {
+    stop("The constructed ENA unit-key contract is invalid.", call. = FALSE)
+  }
+  if (any(!vapply(tables, function(name) {
+    is.data.frame(ena_obj[[name]]) && unit_key_column %in% names(ena_obj[[name]])
+  }, logical(1L)))) {
+    stop(
+      "ENA construction did not preserve the canonical unit key in every output table.",
+      call. = FALSE
+    )
+  }
+
+  source_keys <- as.character(prepared_data[[unit_key_column]])
+  unique_source_keys <- unique(source_keys)
+  lookup_rows <- match(unique_source_keys, source_keys)
+  restore_columns <- unique(c(
+    specification$units, specification$metadata, specification$group
+  ))
+  restore_columns <- restore_columns[
+    !is.na(restore_columns) & nzchar(restore_columns)
+  ]
+  reserved_collisions <- intersect(
+    restore_columns,
+    c("ENA_UNIT", unit_key_column)
+  )
+  if (length(reserved_collisions)) {
+    stop(sprintf(
+      "Raw unit/metadata columns use reserved constructed names: %s.",
+      paste(reserved_collisions, collapse = ", ")
+    ), call. = FALSE)
+  }
+  current_metadata <- names(ena_obj$meta.data)
+  generated_columns <- unique(c(
+    setdiff(names(ena_obj$points), current_metadata),
+    setdiff(names(ena_obj$line.weights), current_metadata)
+  ))
+  node_dimensions <- if (!is.null(ena_obj$rotation$nodes) &&
+                         is.data.frame(ena_obj$rotation$nodes)) {
+    setdiff(names(ena_obj$rotation$nodes), "code")
+  } else {
+    character()
+  }
+  adjacency <- ena_obj$rotation$adjacency.key
+  expected_edges <- if ((is.data.frame(adjacency) || is.matrix(adjacency)) &&
+                        nrow(adjacency) == 2L) {
+    paste(
+      as.character(unlist(adjacency[1L, , drop = FALSE], use.names = FALSE)),
+      as.character(unlist(adjacency[2L, , drop = FALSE], use.names = FALSE)),
+      sep = " & "
+    )
+  } else {
+    character()
+  }
+  # When raw metadata already owns a scientific output name, data.frame name
+  # repair can rename the generated coordinate/edge to `name.1`. Compare with
+  # the rotation/adjacency contracts as well as the repaired table names so the
+  # diagnostic reports the original collision instead of a later schema error.
+  generated_contract <- unique(c(
+    generated_columns, node_dimensions, expected_edges
+  ))
+  generated_collisions <- intersect(restore_columns, generated_contract)
+  if (length(generated_collisions)) {
+    stop(sprintf(
+      paste0(
+        "Raw unit/metadata columns conflict with rENA-generated dimensions ",
+        "or edges: %s. Rename the raw columns before construction."
+      ),
+      paste(generated_collisions, collapse = ", ")
+    ), call. = FALSE)
+  }
+
+  output_keys <- lapply(tables, function(name) {
+    as.character(ena_obj[[name]][[unit_key_column]])
+  })
+  names(output_keys) <- tables
+  if (!identical(output_keys$meta.data, output_keys$points) ||
+      !identical(output_keys$points, output_keys$line.weights)) {
+    stop(
+      "Constructed ENA tables are not row-aligned by canonical unit key.",
+      call. = FALSE
+    )
+  }
+  output_match <- match(output_keys$points, unique_source_keys)
+  if (anyNA(output_match) ||
+      !setequal(unique(output_keys$points), unique_source_keys)) {
+    stop(
+      "Constructed ENA units do not match the validated canonical unit keys.",
+      call. = FALSE
+    )
+  }
+
+  canonical_ids <- output_keys$points
+  canonical_metadata <- rENA::as.ena.metadata(canonical_ids)
+  for (name in tables) {
+    frame <- as.data.frame(
+      ena_obj[[name]], stringsAsFactors = FALSE, optional = TRUE
+    )
+    frame[["ENA_UNIT"]] <- canonical_metadata
+    frame[[unit_key_column]] <- NULL
+    for (column in restore_columns) {
+      values <- prepared_data[[column]][lookup_rows][output_match]
+      class(values) <- unique(c("ena.metadata", class(values)))
+      frame[[column]] <- values
+    }
+    ena_obj[[name]] <- data.table::as.data.table(frame)
+  }
+  class(ena_obj$points) <- unique(c(
+    "ena.points", "ena.matrix", class(ena_obj$points)
+  ))
+  class(ena_obj$line.weights) <- unique(c(
+    "ena.line.weights", "ena.matrix", class(ena_obj$line.weights)
+  ))
+
+  params <- ena_obj$`_function.params`
+  params$units <- specification$units
+  params$metadata <- specification$metadata
+  if (is.data.frame(params$data) && unit_key_column %in% names(params$data)) {
+    params$data[[unit_key_column]] <- NULL
+  }
+  params$ena3d.unit.key.version <- "ena3d:v1"
+  params$ena3d.unit.key.columns <- specification$units
+  ena_obj$`_function.params` <- params
+  ena_obj
+}
+
+
 ena3d_build_ena_from_raw <- function(data, mapping,
                                      limits = ena3d_data_limits()) {
   validated <- ena3d_validate_raw_mapping(data, mapping, limits = limits)
   prepared_data <- validated$data
   specification <- validated$mapping
   means_rotation <- identical(specification$rotation, "Means")
+  unit_key_column <- ena3d_constructed_unit_key_column(prepared_data)
+  prepared_data[[unit_key_column]] <- ena3d_unit_key(
+    prepared_data, specification$units
+  )
 
   ena_obj <- tryCatch(
     rENA::ena(
       data = prepared_data,
       codes = specification$codes,
-      units = specification$units,
+      # rENA concatenates multi-column unit values with a literal period. Keep
+      # the user-facing group available for grouping/Means rotation, while the
+      # final dot-free canonical key makes this temporary tuple injective. The
+      # constructed ENA_UNIT is replaced with the canonical key below.
+      units = unique(c(specification$group, unit_key_column)),
       conversation = specification$conversation,
-      metadata = if (length(specification$metadata)) {
-        specification$metadata
-      } else {
-        NULL
-      },
+      metadata = NULL,
       model = specification$model,
       weight.by = "binary",
       window = specification$window,
@@ -636,8 +834,25 @@ ena3d_build_ena_from_raw <- function(data, mapping,
     }
   )
   ena_obj <- ena3d_normalize_constructed_ena(ena_obj, specification$group)
+  ena_obj <- ena3d_restore_constructed_unit_metadata(
+    ena_obj, prepared_data, specification, unit_key_column
+  )
   participant_id <- ena3d_add_constructed_participant_id(ena_obj)
   ena_obj <- participant_id$ena_obj
+  constructed_ids <- as.character(
+    ena_obj$points[[participant_id$column]]
+  )
+  expected_ids <- unique(prepared_data[[unit_key_column]])
+  if (length(unique(constructed_ids)) != validated$unit_count ||
+      !setequal(unique(constructed_ids), expected_ids)) {
+    stop(sprintf(
+      paste0(
+        "ENA construction changed validated participant identity: expected ",
+        "%d canonical units but constructed %d."
+      ),
+      validated$unit_count, length(unique(constructed_ids))
+    ), call. = FALSE)
+  }
   ena_obj$`_function.params`$trajectory.time.by <-
     specification$conversation[[length(specification$conversation)]]
   ena_obj$`_function.params`$trajectory.id.by <- participant_id$column

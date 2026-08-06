@@ -69,6 +69,29 @@ test_that("CSV parsing preserves raw headers and detects common separators", {
 })
 
 
+test_that("CSV parsing preserves identifier lexemes before field mapping", {
+  path <- tempfile(fileext = ".csv")
+  on.exit(unlink(path), add = TRUE)
+  writeLines(c(
+    "StudentID,Wave,C1,C2,C3",
+    "001,T1,1,0,1",
+    "1,T1,0,1,0",
+    "9007199254740992,T2,1,1,0",
+    "9007199254740993,T2,0,1,1",
+    "NA,T3,1,0,0"
+  ), path, useBytes = TRUE)
+
+  parsed <- ena3d_read_raw_table(path, "identifiers.csv")$data
+
+  expect_true(all(vapply(parsed, is.character, logical(1L))))
+  expect_identical(
+    parsed$StudentID,
+    c("001", "1", "9007199254740992", "9007199254740993", "NA")
+  )
+  expect_length(unique(parsed$StudentID), 5L)
+})
+
+
 test_that("raw upload guard accepts only bounded spreadsheet files", {
   path <- tempfile(fileext = ".csv")
   on.exit(unlink(path), add = TRUE)
@@ -109,6 +132,129 @@ test_that("automatic mapping protects reused student labels across groups", {
     ena3d_validate_raw_mapping(.raw_fixture(), .raw_mapping(units = "Name")),
     "Add the grouping field to the unit identifier"
   )
+})
+
+
+test_that("automatic mapping recognizes common concatenated ID headers", {
+  for (id_column in c("StudentID", "ParticipantID", "UserID", "PersonName")) {
+    fixture <- expand.grid(
+      identity = paste0("P", 1:6),
+      Lesson = c("T1", "T2"),
+      KEEP.OUT.ATTRS = FALSE,
+      stringsAsFactors = FALSE
+    )
+    names(fixture)[[1L]] <- id_column
+    fixture$Group <- rep(c("A", "A", "A", "B", "B", "B"), times = 2L)
+    index <- seq_len(nrow(fixture))
+    fixture$C1 <- as.integer(index %% 2L == 0L)
+    fixture$C2 <- as.integer(index %% 3L == 0L)
+    fixture$C3 <- as.integer(index %% 4L == 0L)
+
+    mapping <- ena3d_suggest_raw_mapping(fixture)
+    expect_identical(mapping$units, id_column, info = id_column)
+    expect_identical(mapping$group, "Group", info = id_column)
+    expect_identical(
+      ena3d_validate_raw_mapping(fixture, mapping)$unit_count,
+      6L,
+      info = id_column
+    )
+  }
+})
+
+
+test_that("automatic group fallback preserves adjacent numeric levels", {
+  adjacent <- c(1, 1 + .Machine$double.eps)
+  fixture <- expand.grid(
+    StudentID = paste0("P", 1:6),
+    Wave = c("T1", "T2"),
+    KEEP.OUT.ATTRS = FALSE,
+    stringsAsFactors = FALSE
+  )
+  fixture$ArmValue <- rep(rep(adjacent, each = 3L), times = 2L)
+  fixture <- fixture[c("ArmValue", "StudentID", "Wave")]
+  index <- seq_len(nrow(fixture))
+  fixture$C1 <- as.integer(index %% 2L == 0L)
+  fixture$C2 <- as.integer(index %% 3L == 0L)
+  fixture$C3 <- as.integer(index %% 4L == 0L)
+
+  mapping <- ena3d_suggest_raw_mapping(fixture)
+  validated <- ena3d_validate_raw_mapping(fixture, mapping)
+
+  expect_identical(mapping$group, "ArmValue")
+  expect_identical(mapping$units, "StudentID")
+  expect_length(validated$group_levels, 2L)
+  expect_length(unique(ena3d_value_identity_keys(validated$group_levels)), 2L)
+})
+
+
+test_that("raw mapping rejects unit and conversation role overlap", {
+  mapping <- .raw_mapping(units = "Name")
+  mapping$conversation <- "Name"
+  expect_error(
+    ena3d_validate_raw_mapping(.raw_fixture(), mapping),
+    "Unit identifier columns cannot also be conversation fields"
+  )
+})
+
+
+test_that("raw mapping rejects non-finite typed Group values", {
+  fixture <- expand.grid(
+    StudentID = paste0("P", 1:3),
+    Wave = c("T1", "T2"),
+    KEEP.OUT.ATTRS = FALSE,
+    stringsAsFactors = FALSE
+  )
+  fixture$Group <- rep(c(Inf, Inf, Inf, -Inf, -Inf, -Inf))
+  index <- seq_len(nrow(fixture))
+  fixture$C1 <- as.integer(index %% 2L == 0L)
+  fixture$C2 <- as.integer(index %% 3L == 0L)
+  fixture$C3 <- as.integer(index %% 4L == 0L)
+  mapping <- list(
+    units = "StudentID",
+    conversation = "Wave",
+    codes = c("C1", "C2", "C3"),
+    metadata = character(),
+    group = "Group",
+    model = "AccumulatedTrajectory",
+    window = "MovingStanzaWindow",
+    window_size_back = 4L,
+    rotation = "SVD"
+  )
+
+  expect_error(
+    ena3d_validate_raw_mapping(fixture, mapping),
+    "non-finite typed values: Group"
+  )
+  expect_error(
+    ena3d_build_ena_from_raw(fixture, mapping),
+    "non-finite typed values: Group"
+  )
+})
+
+
+test_that("raw mapping rejects non-finite typed unit metadata", {
+  fixture <- .raw_fixture()
+  fixture$NumericMetadata <- ifelse(
+    fixture$Lesson == "Lesson 1", Inf, -Inf
+  )
+  mapping <- .raw_mapping()
+  mapping$metadata <- "NumericMetadata"
+
+  expect_error(
+    ena3d_validate_raw_mapping(fixture, mapping),
+    "non-finite typed values: NumericMetadata"
+  )
+  expect_false(any(ena3d_raw_nonfinite_typed(c("Inf", "-Inf"))))
+  typed_boundaries <- list(
+    as.Date(c(0, Inf), origin = "1970-01-01"),
+    as.POSIXct(c(0, Inf), origin = "1970-01-01", tz = "UTC"),
+    as.difftime(c(1, Inf), units = "days")
+  )
+  for (values in typed_boundaries) {
+    expect_identical(
+      ena3d_raw_nonfinite_typed(values), c(FALSE, TRUE)
+    )
+  }
 })
 
 
@@ -176,6 +322,98 @@ test_that("mapped raw rows construct a validator-compatible 3D ENA set", {
   expect_equal(
     length(unique(as.character(built$ena_obj$points$ENA_UNIT))),
     8L
+  )
+})
+
+
+test_that("constructed ENA uses canonical IDs and restores unit metadata", {
+  units <- data.frame(
+    Group = c("A", "A", "A", "B", "B", "B"),
+    UnitPart1 = c("A.B", "A", "D", "F", "H", "J"),
+    UnitPart2 = c("C", "B.C", "E", "G", "I", "K"),
+    CohortNote = c("alpha", "beta", "gamma", "delta", "epsilon", "zeta"),
+    stringsAsFactors = FALSE
+  )
+  fixture <- merge(
+    units,
+    data.frame(Lesson = c("T1", "T2"), stringsAsFactors = FALSE),
+    by = NULL
+  )
+  index <- seq_len(nrow(fixture))
+  fixture$C1 <- as.integer(index %% 2L == 0L | index %% 5L == 0L)
+  fixture$C2 <- as.integer(index %% 3L == 0L | index %% 4L == 0L)
+  fixture$C3 <- as.integer(index %% 4L %in% c(0L, 1L))
+  fixture$C4 <- as.integer(index %% 5L %in% c(0L, 1L, 2L))
+  mapping <- list(
+    units = c("UnitPart1", "UnitPart2"),
+    conversation = "Lesson",
+    codes = c("C1", "C2", "C3", "C4"),
+    metadata = "CohortNote",
+    group = "Group",
+    model = "AccumulatedTrajectory",
+    window = "MovingStanzaWindow",
+    window_size_back = 4L,
+    rotation = "SVD"
+  )
+
+  built <- ena3d_build_ena_from_raw(fixture, mapping)
+  points <- as.data.frame(built$ena_obj$points)
+  metadata_columns <- c(
+    "UnitPart1", "UnitPart2", "CohortNote", "Group"
+  )
+
+  expect_silent(ena3d_validate_ena_object(built$ena_obj))
+  expect_identical(built$units, 6L)
+  expect_length(unique(as.character(points$ENA_UNIT)), 6L)
+  expect_identical(
+    as.character(points$ENA_UNIT), as.character(points$ENA3D_UNIT_ID)
+  )
+  for (table_name in c("meta.data", "points", "line.weights")) {
+    table <- built$ena_obj[[table_name]]
+    expect_true(all(metadata_columns %in% names(table)), info = table_name)
+    expect_false(any(startsWith(names(table), ".ENA3D_UNIT_KEY")),
+                 info = table_name)
+  }
+  expect_true(all(vapply(metadata_columns, function(column) {
+    identical(built$ena_obj$meta.data[[column]],
+              built$ena_obj$points[[column]]) &&
+      identical(built$ena_obj$points[[column]],
+                built$ena_obj$line.weights[[column]])
+  }, logical(1L))))
+
+  identities <- unique(points[c("UnitPart1", "UnitPart2", "ENA_UNIT")])
+  first <- identities$UnitPart1 == "A.B" & identities$UnitPart2 == "C"
+  second <- identities$UnitPart1 == "A" & identities$UnitPart2 == "B.C"
+  expect_true(any(first) && any(second))
+  expect_false(identical(
+    as.character(identities$ENA_UNIT[first]),
+    as.character(identities$ENA_UNIT[second])
+  ))
+})
+
+
+test_that("restored metadata cannot overwrite generated ENA coordinates", {
+  fixture <- .raw_fixture()
+  fixture$SVD1 <- paste(fixture$Group, fixture$Name, sep = ":")
+  mapping <- .raw_mapping()
+  mapping$metadata <- "SVD1"
+
+  expect_error(
+    ena3d_build_ena_from_raw(fixture, mapping),
+    "conflict with rENA-generated dimensions or edges: SVD1"
+  )
+})
+
+
+test_that("group names cannot trigger repaired ENA coordinate collisions", {
+  fixture <- .raw_fixture()
+  names(fixture)[names(fixture) == "Group"] <- "SVD1"
+  mapping <- .raw_mapping(units = c("SVD1", "Name"))
+  mapping$group <- "SVD1"
+
+  expect_error(
+    ena3d_build_ena_from_raw(fixture, mapping),
+    "conflict with rENA-generated dimensions or edges: SVD1"
   )
 })
 

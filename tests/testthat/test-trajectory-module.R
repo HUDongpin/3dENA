@@ -151,6 +151,62 @@ test_that("trajectory condition tokens distinguish adjacent typed values", {
   expect_identical(first, c(TRUE, FALSE))
   expect_identical(second, c(FALSE, TRUE))
   expect_false(any(first & second))
+  expect_identical(
+    .trajectory_selection_filter_mask(points$condition, tokens),
+    c(TRUE, TRUE)
+  )
+  expect_identical(.trajectory_distinct_value_count(points$condition), 2L)
+
+  signed_zero <- data.frame(condition = c(-0, 0))
+  zero_choices <- .trajectory_condition_choices(signed_zero, "condition")
+  expect_length(zero_choices, 1L)
+  expect_identical(
+    .trajectory_selection_filter_mask(
+      signed_zero$condition, unname(zero_choices)
+    ),
+    c(TRUE, TRUE)
+  )
+  expect_identical(
+    .trajectory_distinct_value_count(signed_zero$condition), 1L
+  )
+
+  adjacent_groups <- data.frame(
+    condition = adjacent, person = rep("p1", 2L), wave = rep(1, 2L)
+  )
+  group_coverage <- .trajectory_id_coverage(
+    adjacent_groups, "wave", "person", "condition"
+  )
+  expect_identical(group_coverage$n_ids, 2L)
+  expect_identical(group_coverage$n_duplicate_id_time_rows, 0L)
+
+  adjacent_ids <- data.frame(
+    condition = rep("A", 2L), person = adjacent, wave = rep(1, 2L)
+  )
+  id_coverage <- .trajectory_id_coverage(
+    adjacent_ids, "wave", "person", "condition"
+  )
+  expect_identical(id_coverage$n_ids, 2L)
+  expect_identical(id_coverage$n_duplicate_id_time_rows, 0L)
+
+  adjacent_times <- data.frame(
+    condition = rep("A", 2L), person = rep("p1", 2L), wave = adjacent
+  )
+  time_coverage <- .trajectory_id_coverage(
+    adjacent_times, "wave", "person", "condition"
+  )
+  expect_identical(time_coverage$n_periods, 2L)
+  expect_identical(time_coverage$n_duplicate_id_time_rows, 0L)
+
+  nonfinite <- data.frame(
+    condition = c(1, Inf, 1, 1),
+    person = c(1, 2, Inf, 3),
+    wave = c(1, 1, 1, Inf)
+  )
+  finite_coverage <- .trajectory_id_coverage(
+    nonfinite, "wave", "person", "condition"
+  )
+  expect_identical(finite_coverage$n_valid_rows, 1L)
+  expect_identical(finite_coverage$n_ids, 1L)
 })
 
 
@@ -323,6 +379,112 @@ test_that("isolated bootstrap deadline leaves the event loop live and kills its 
   expect_false(job$process$is_alive())
   .trajectory_prune_bootstrap_processes()
   expect_length(ls(.trajectory_bootstrap_process_registry), 0L)
+})
+
+
+test_that("cancelled bootstrap keeps its process slot until the worker stops", {
+  skip_if_not_installed("callr")
+  skip_if_not_installed("later")
+  skip_if_not_installed("promises")
+
+  process_state <- new.env(parent = emptyenv())
+  process_state$alive <- TRUE
+  process_state$kill_requests <- 0L
+  process_state$pid <- 424242L
+  process <- new.env(parent = emptyenv())
+  process$get_pid <- function() process_state$pid
+  process$is_alive <- function() process_state$alive
+  process$kill_tree <- function(...) {
+    process_state$kill_requests <- process_state$kill_requests + 1L
+    invisible(process_state$pid)
+  }
+  process$get_result <- function() {
+    stop("The cancelled worker result must not be collected.")
+  }
+  local_mocked_bindings(
+    r_bg = function(...) process,
+    .package = "callr"
+  )
+
+  registry_key <- as.character(process_state$pid)
+  on.exit({
+    process_state$alive <- FALSE
+    .trajectory_prune_bootstrap_processes()
+    if (exists(
+      registry_key, envir = .trajectory_bootstrap_process_registry,
+      inherits = FALSE
+    )) {
+      rm(
+        list = registry_key,
+        envir = .trajectory_bootstrap_process_registry
+      )
+    }
+  }, add = TRUE)
+
+  job <- .trajectory_start_bootstrap_job(
+    uncertainty_arguments = list(),
+    timeout_seconds = 10,
+    analysis_file = file.path(
+      .trajectory_test_root, "R", "trajectory_analysis.R"
+    ),
+    poll_interval = 0.01
+  )
+  rejection <- NULL
+  promises::then(
+    job$promise,
+    onRejected = function(error) {
+      rejection <<- error
+      NULL
+    }
+  )
+  later::run_now(0.02)
+
+  expect_true(job$cancel("The test worker was cancelled."))
+  expect_true(process_state$alive)
+  expect_true(exists(
+    registry_key, envir = .trajectory_bootstrap_process_registry,
+    inherits = FALSE
+  ))
+  expect_null(rejection)
+  expect_false(job$cancel("A duplicate cancellation must be ignored."))
+  expect_gte(process_state$kill_requests, 1L)
+  later::run_now(0.03)
+  expect_null(rejection)
+  expect_gte(process_state$kill_requests, 2L)
+
+  old_process_cap <- Sys.getenv(
+    "ENA3D_MAX_BOOTSTRAP_PROCESSES", unset = NA_character_
+  )
+  on.exit({
+    if (is.na(old_process_cap)) {
+      Sys.unsetenv("ENA3D_MAX_BOOTSTRAP_PROCESSES")
+    } else {
+      Sys.setenv(ENA3D_MAX_BOOTSTRAP_PROCESSES = old_process_cap)
+    }
+  }, add = TRUE)
+  Sys.setenv(ENA3D_MAX_BOOTSTRAP_PROCESSES = "1")
+  expect_error(
+    .trajectory_start_bootstrap_job(
+      uncertainty_arguments = list(),
+      timeout_seconds = 10,
+      analysis_file = file.path(
+        .trajectory_test_root, "R", "trajectory_analysis.R"
+      ),
+      poll_interval = 0.01
+    ),
+    "maximum number of isolated bootstrap jobs"
+  )
+
+  process_state$alive <- FALSE
+  expect_true(.wait_for_trajectory_condition(
+    function() !is.null(rejection), timeout = 2
+  ))
+  expect_s3_class(rejection, "trajectory_bootstrap_cancelled")
+  expect_match(conditionMessage(rejection), "test worker was cancelled")
+  expect_false(exists(
+    registry_key, envir = .trajectory_bootstrap_process_registry,
+    inherits = FALSE
+  ))
 })
 
 
@@ -951,5 +1113,85 @@ test_that("changing the dataset invalidates every completed trajectory result", 
       expect_null(analysis_result())
       expect_match(status(), "dataset or rotation changed")
     }
+  )
+})
+
+
+test_that("trajectory display levels are populated and selected client-side", {
+  info <- list(
+    points = data.frame(
+      condition = c("A", "B", "A"),
+      stringsAsFactors = FALSE
+    )
+  )
+  input <- list(
+    group_var = "condition",
+    display_levels = character(0),
+    condition_a = NULL,
+    condition_b = NULL,
+    overlay_group = NULL
+  )
+  session <- shiny::MockShinySession$new()
+  messages <- list()
+  session$sendInputMessage <- function(input_id, message) {
+    messages[[input_id]] <<- message
+    invisible(NULL)
+  }
+
+  .trajectory_update_condition_inputs(info, input, session)
+
+  display_message <- messages$display_levels
+  expect_identical(display_message$value, c("A", "B"))
+  expect_match(display_message$options, '<option value="A" selected>A</option>')
+  expect_match(display_message$options, '<option value="B" selected>B</option>')
+  expect_null(display_message$url)
+})
+
+
+test_that("paired trajectory comparison requires two distinct levels", {
+  points <- expand.grid(
+    condition = c("A", "B"),
+    person = paste0("p", 1:3),
+    wave = 1:2,
+    KEEP.OUT.ATTRS = FALSE,
+    stringsAsFactors = FALSE
+  )
+  points$d1 <- seq_len(nrow(points))
+  points$d2 <- rev(points$d1)
+  points$d3 <- points$wave
+  info <- list(
+    object = points,
+    points = points,
+    dimensions = c("d1", "d2", "d3")
+  )
+  input <- list(
+    time_var = "wave",
+    id_var = "person",
+    group_var = "condition",
+    time_order = "1, 2",
+    view = "3d",
+    show_uncertainty = FALSE,
+    run_comparison = TRUE,
+    confirm_paired_ids = TRUE,
+    condition_a = "A",
+    condition_b = "A",
+    bootstrap_design = "auto",
+    bootstrap_reps = 200,
+    confidence = 0.95,
+    bootstrap_seed = 1,
+    distance_space = "selected",
+    cohort_policy = "available",
+    na_policy = "complete",
+    selected_time = "1"
+  )
+  overlap <- .trajectory_comparison_overlap(
+    points, "condition", "A", "A", "person", "wave"
+  )
+
+  expect_error(
+    .trajectory_validate_run_context(
+      input, info, c("d1", "d2", "d3"), overlap
+    ),
+    "two distinct levels"
   )
 })

@@ -76,19 +76,79 @@ ena3d_property_exchange_environment <- function(project_root) {
 }
 
 
+ena3d_property_bundled_fixtures <- function(project_root) {
+  file.path(
+    project_root,
+    "sample_data",
+    c(
+      "class1_timepoints_enaset.RData",
+      "sample_enaset.Rdata",
+      "newfrat_enaset.Rdata",
+      "student_enaset.RData"
+    )
+  )
+}
+
+
+ena3d_property_discover_bundled_fixtures <- function(project_root) {
+  sample_root <- normalizePath(
+    file.path(project_root, "sample_data"), mustWork = TRUE
+  )
+  candidates <- list.files(
+    sample_root,
+    pattern = "\\.[Rr][Dd]ata$",
+    full.names = TRUE,
+    recursive = FALSE
+  )
+  valid <- vapply(candidates, function(path) {
+    if (!file.exists(path) || isTRUE(file.info(path)$isdir)) return(FALSE)
+    identical(
+      dirname(normalizePath(path, mustWork = TRUE)),
+      sample_root
+    )
+  }, logical(1L))
+  sort(candidates[valid], method = "radix")
+}
+
+
+ena3d_property_bundled_inventory <- function(expected_fixtures,
+                                             processed_fixtures) {
+  expected <- sort(enc2utf8(basename(expected_fixtures)), method = "radix")
+  processed <- sort(enc2utf8(basename(processed_fixtures)), method = "radix")
+  list(
+    expected_dataset_count = length(expected),
+    processed_fixture_count = length(processed),
+    expected_inventory_nonempty = length(expected) > 0L,
+    processed_inventory_nonempty = length(processed) > 0L,
+    expected_inventory_unique = !anyDuplicated(expected),
+    processed_inventory_unique = !anyDuplicated(processed),
+    inventory_set_identity = identical(expected, processed)
+  )
+}
+
+
+ena3d_property_bundled_round_trip_passed <- function(result) {
+  isTRUE(result$expected_inventory_nonempty) &&
+    isTRUE(result$processed_inventory_nonempty) &&
+    isTRUE(result$expected_inventory_unique) &&
+    isTRUE(result$processed_inventory_unique) &&
+    isTRUE(result$inventory_set_identity) &&
+    identical(result$expected_dataset_count, result$processed_fixture_count) &&
+    identical(result$processed_fixture_count, result$dataset_count) &&
+    isTRUE(result$deterministic_sha) &&
+    isTRUE(result$deterministic_bytes) &&
+    isTRUE(result$native_payload_object_identity)
+}
+
+
 ena3d_property_bundled_round_trip <- function(project_root, seed, iterations) {
   id <- "ENA-FUZZ-001"
   captured <- ena3d_property_capture({
     exchange <- ena3d_property_exchange_environment(project_root)
-    fixtures <- file.path(
-      project_root,
-      "sample_data",
-      c(
-        "class1_timepoints_enaset.RData",
-        "sample_enaset.Rdata",
-        "newfrat_enaset.Rdata",
-        "student_enaset.RData"
-      )
+    expected_fixtures <- ena3d_property_discover_bundled_fixtures(project_root)
+    fixtures <- ena3d_property_bundled_fixtures(project_root)
+    inventory <- ena3d_property_bundled_inventory(
+      expected_fixtures, fixtures
     )
     rows <- lapply(fixtures, function(path) {
       native <- exchange$ena3d_read_ena_object(path, source_kind = "bundled")
@@ -109,7 +169,7 @@ ena3d_property_bundled_round_trip <- function(project_root, seed, iterations) {
         )
       )
     })
-    list(
+    c(inventory, list(
       dataset_count = length(rows),
       deterministic_sha = all(vapply(
         rows, `[[`, logical(1L), "deterministic_sha"
@@ -120,7 +180,7 @@ ena3d_property_bundled_round_trip <- function(project_root, seed, iterations) {
       native_payload_object_identity = all(vapply(
         rows, `[[`, logical(1L), "payload_identity"
       ))
-    )
+    ))
   }, project_root)
   if (!is.null(captured$error)) {
     return(ena3d_property_record(
@@ -130,9 +190,7 @@ ena3d_property_bundled_round_trip <- function(project_root, seed, iterations) {
     ))
   }
   result <- captured$value
-  passed <- identical(result$dataset_count, 3L) &&
-    isTRUE(result$deterministic_sha) &&
-    isTRUE(result$deterministic_bytes)
+  passed <- ena3d_property_bundled_round_trip_passed(result)
   ena3d_property_record(
     id, "Every bundled dataset has a deterministic exchange round trip",
     "exchange", if (passed) "passed" else "failed",

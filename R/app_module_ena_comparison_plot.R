@@ -7,6 +7,95 @@ ena3d_comparison_axis_layout <- function(title, showgrid = TRUE,
   )
 }
 
+ena3d_normalize_comparison_color <- function(value, fallback) {
+  normalize_one <- function(candidate) {
+    if (!is.character(candidate) || length(candidate) != 1L ||
+        is.na(candidate) || !nzchar(trimws(candidate))) {
+      return(NULL)
+    }
+    rgba <- tryCatch(
+      grDevices::col2rgb(trimws(candidate), alpha = TRUE)[, 1L],
+      error = function(...) NULL
+    )
+    if (is.null(rgba)) return(NULL)
+    if (rgba[[4L]] < 255L) {
+      return(grDevices::rgb(
+        rgba[[1L]], rgba[[2L]], rgba[[3L]], rgba[[4L]],
+        maxColorValue = 255
+      ))
+    }
+    grDevices::rgb(
+      rgba[[1L]], rgba[[2L]], rgba[[3L]], maxColorValue = 255
+    )
+  }
+
+  normalized <- normalize_one(value)
+  if (!is.null(normalized)) return(normalized)
+  normalized <- normalize_one(fallback)
+  if (!is.null(normalized)) return(normalized)
+  # The module passes compile-time defaults, but retain a final safe value if
+  # this helper is reused with a malformed fallback.
+  "#000000"
+}
+
+ena3d_comparison_selection_server <- function(input, session, groups) {
+  selection <- reactiveVal(list(
+    valid = FALSE,
+    group_1 = character(),
+    group_2 = character(),
+    choices_1 = character(),
+    choices_2 = character(),
+    message = "Comparison requires at least two distinct groups."
+  ))
+
+  synchronize <- function(prefer, use_user_selection = TRUE) {
+    resolved <- ena3d_comparison_selection(
+      groups = groups(),
+      group_1 = if (isTRUE(use_user_selection)) input$compare_group_1 else NULL,
+      group_2 = if (isTRUE(use_user_selection)) input$compare_group_2 else NULL,
+      prefer = prefer
+    )
+    selection(resolved)
+
+    updates <- list(
+      compare_group_1 = list(
+        choices = resolved$choices_1, selected = resolved$group_1
+      ),
+      compare_group_2 = list(
+        choices = resolved$choices_2, selected = resolved$group_2
+      )
+    )
+    for (input_id in names(updates)) {
+      selected <- updates[[input_id]]$selected
+      if (isTRUE(use_user_selection)) {
+        current <- input[[input_id]]
+        if (!identical(as.character(current), as.character(selected))) {
+          freezeReactiveValue(input, input_id)
+        }
+      }
+      updateSelectInput(
+        session,
+        input_id,
+        choices = updates[[input_id]]$choices,
+        selected = selected
+      )
+    }
+    invisible(resolved)
+  }
+
+  # Dataset replacement freezes both Selectize inputs. Resolve the new
+  # dataset's defaults without reading those frozen values, then let the two
+  # lower-priority observers handle subsequent user choices.
+  observeEvent(groups(), synchronize("group_1", use_user_selection = FALSE),
+               ignoreInit = FALSE, priority = 1100)
+  observeEvent(input$compare_group_1, synchronize("group_1"),
+               ignoreInit = TRUE, priority = 1000)
+  observeEvent(input$compare_group_2, synchronize("group_2"),
+               ignoreInit = TRUE, priority = 1000)
+
+  reactive(selection())
+}
+
 
 source('./app_utils.R')
 source('./plot_group.R')
@@ -60,6 +149,20 @@ ena_comparison_plot_output <-  function(input, output, session,
     get_groups = reactive({
       data$ena_groups
     })
+    comparison_selection <- ena3d_comparison_selection_server(
+      input, session, get_groups
+    )
+    comparison_colors <- reactive(c(
+      group_1 = ena3d_normalize_comparison_color(
+        input$comparison_group_1_color, "#BF382A"
+      ),
+      group_2 = ena3d_normalize_comparison_color(
+        input$comparison_group_2_color, "#0C4B8E"
+      )
+    ))
+    output$comparison_status <- renderText({
+      comparison_selection()$message
+    })
     add_3d_axis_based_on_user_selection = function(plot){
       if(input$show_x_axis_arrow){
         plot<-add_x_3d_axis(plot)
@@ -76,6 +179,8 @@ ena_comparison_plot_output <-  function(input, output, session,
     }
     
     add_mean_based_on_user_selection <- function(plot){
+      selection <- comparison_selection()
+      validate(need(selection$valid, selection$message))
       #browser()
       if(input$compare_group_1_show_confidence_interval){
         group_1_conf = 'box'
@@ -90,11 +195,12 @@ ena_comparison_plot_output <-  function(input, output, session,
       }
       
       if(input$compare_group_1_show_mean){
-        #plot <- ena_plot_group_3d(plot,points = get_group_1_points(),colors=input$comparison_group_1_color)
-        points <- get_points_with_group(scaled_points(),data$ena_groupVar[1],input$compare_group_1)
+        points <- get_points_with_group(
+          scaled_points(), data$ena_groupVar[1], selection$group_1
+        )
         points <-remove_meta_data(points)
         plot <- ena_plot_group_3d(plot,points = points,
-                                  colors=input$comparison_group_1_color,
+                                  colors=comparison_colors()[["group_1"]],
                                   confidence.interval=group_1_conf,
                                   x_axis = input$x,
                                   y_axis = input$y,
@@ -102,12 +208,13 @@ ena_comparison_plot_output <-  function(input, output, session,
         
       }
       if(input$compare_group_2_show_mean){
-        #plot <- ena_plot_group_3d(plot,points = get_group_2_points(),colors=input$comparison_group_2_color)
-        points = get_points_with_group(scaled_points(),data$ena_groupVar[1],input$compare_group_2)
+        points = get_points_with_group(
+          scaled_points(), data$ena_groupVar[1], selection$group_2
+        )
         points <-remove_meta_data(points)
         plot <- ena_plot_group_3d(plot,
                                   points = points,
-                                  colors=input$comparison_group_2_color,
+                                  colors=comparison_colors()[["group_2"]],
                                   confidence.interval=group_2_conf,
                                   x_axis = input$x,
                                   y_axis = input$y,
@@ -129,6 +236,8 @@ ena_comparison_plot_output <-  function(input, output, session,
         ena3d_axes_are_distinct(input$x, input$y, input$z),
         cancelOutput = TRUE
       )
+      selection <- comparison_selection()
+      validate(need(selection$valid, selection$message))
       if(state$render_comparison() == FALSE){
         return(NULL)
       }
@@ -203,16 +312,13 @@ ena_comparison_plot_output <-  function(input, output, session,
       # }
       # browser()
       
-      if(input$compare_group_1 == input$compare_group_2){
-        network <- get_mean_group_lineweights(state$ena_obj,data$ena_groupVar[1],input$compare_group_1)
-      }else{
-        g1.mean=get_mean_group_lineweights(state$ena_obj,data$ena_groupVar[1],input$compare_group_1)
-        g2.mean=get_mean_group_lineweights(state$ena_obj,data$ena_groupVar[1],input$compare_group_2)
-        
-        subtracted.network <- g1.mean - g2.mean
-        
-        network<- subtracted.network
-      }
+      g1.mean <- get_mean_group_lineweights(
+        state$ena_obj, data$ena_groupVar[1], selection$group_1
+      )
+      g2.mean <- get_mean_group_lineweights(
+        state$ena_obj, data$ena_groupVar[1], selection$group_2
+      )
+      network <- g1.mean - g2.mean
 
       
       # network <- build_network(scaled_nodes(),
@@ -228,14 +334,14 @@ ena_comparison_plot_output <-  function(input, output, session,
       #                           line_width = input$line_width)
       # main_plot
 
-      # colors = c(pos=input$comparison_group_1_color,
-      #            input$comparison_group_2_color)
       # Generate Edges
       network <- build_network(scaled_nodes(),
                                network=network,
                                adjacency.key=state$ena_obj$rotation$adjacency.key,
-                               colors=c(pos=input$comparison_group_1_color,
-                                        input$comparison_group_2_color))
+                               colors = c(
+                                 pos = comparison_colors()[["group_1"]],
+                                 neg = comparison_colors()[["group_2"]]
+                               ))
 
       main_plot <- plot_network(main_plot,
                                 network,
@@ -253,7 +359,7 @@ ena_comparison_plot_output <-  function(input, output, session,
       #   eye=list(x=0., y=0., z=2.5)
       # )
       comparison_title <- paste(
-        input$compare_group_1, "vs", input$compare_group_2
+        selection$group_1, "vs", selection$group_2
       )
       main_plot <- layout(
         main_plot,
@@ -273,6 +379,8 @@ ena_comparison_plot_output <-  function(input, output, session,
     #   plot_ly(data.frame(x=c(1,2,3),y=c(1,2,3)))
     # })
     output$ena_points_plot <- renderPlotly({
+      selection <- comparison_selection()
+      validate(need(selection$valid, selection$message))
       comparison_plot <- generate_plot()
 
       comparison_plot <- add_3d_axis_based_on_user_selection(comparison_plot)
@@ -293,7 +401,7 @@ ena_comparison_plot_output <-  function(input, output, session,
       # rather than the former fixed [-10, 10] window.
       comparison_plot <- layout(
         comparison_plot,
-        title = paste(input$compare_group_1, "vs", input$compare_group_2),
+        title = paste(selection$group_1, "vs", selection$group_2),
         scene = list(
           camera = camera(),
           uirevision = paste0("comparison-camera-", input$camera_position),

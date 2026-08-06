@@ -13,11 +13,12 @@ if (is.na(.production_test_root)) stop("Could not locate the project root.")
 }
 
 
-test_that("application shell exposes build provenance and accessible controls", {
+test_that("application shell retains build provenance without displaying it", {
   source <- .read_project_file("R", "app.R")
 
-  expect_match(source, "Version ", fixed = TRUE)
   expect_match(source, "config$build_id", fixed = TRUE)
+  expect_false(grepl("ena3d-build-id", source, fixed = TRUE))
+  expect_false(grepl('" · Build "', source, fixed = TRUE))
   expect_match(source, "aria-expanded", fixed = TRUE)
   expect_match(source, "aria-controls", fixed = TRUE)
   expect_match(source, "aria-label", fixed = TRUE)
@@ -84,6 +85,10 @@ test_that("production artifacts pin the runtime and 3dena.com proxy", {
   expect_identical(lock$Packages$zip$Version, "2.3.1")
   expect_identical(lock$Packages$readxl$Version, "1.4.3")
   expect_identical(lock$Packages$curl$Version, "6.0.0")
+  expect_identical(lock$Packages$bit$Version, "4.6.0")
+  expect_identical(lock$Packages$bit$Source, "Repository")
+  expect_identical(lock$Packages$bit64$Version, "4.8.2")
+  expect_identical(lock$Packages$bit64$Source, "Repository")
 
   dockerfile <- .read_project_file("Dockerfile")
   dockerignore <- .read_project_file(".dockerignore")
@@ -213,6 +218,7 @@ test_that("production artifacts pin the runtime and 3dena.com proxy", {
   expect_match(dockerfile, "/ena3d-health/healthz.json", fixed = TRUE)
   expect_match(dockerfile, "vapply(required, requireNamespace",
                fixed = TRUE)
+  expect_match(dockerfile, '"bit", "bit64"', fixed = TRUE)
   expect_match(compose, "read_only: true", fixed = TRUE)
   expect_match(compose, "platform: linux/amd64", fixed = TRUE)
   expect_match(compose, "stop_grace_period: 30s", fixed = TRUE)

@@ -1,0 +1,17 @@
+"Group","Lesson","Name","EC","ICT","MCO","ATT"
+"Experimental","Lesson 1","Student 1",0,0,1,1
+"Control","Lesson 1","Student 1",1,0,0,1
+"Experimental","Lesson 2","Student 1",0,1,0,0
+"Control","Lesson 2","Student 1",1,1,1,0
+"Experimental","Lesson 1","Student 2",1,0,1,1
+"Control","Lesson 1","Student 2",1,1,0,1
+"Experimental","Lesson 2","Student 2",0,0,0,1
+"Control","Lesson 2","Student 2",1,1,1,0
+"Experimental","Lesson 1","Student 3",0,1,1,0
+"Control","Lesson 1","Student 3",1,0,0,1
+"Experimental","Lesson 2","Student 3",0,0,0,1
+"Control","Lesson 2","Student 3",1,1,1,1
+"Experimental","Lesson 1","Student 4",0,0,1,0
+"Control","Lesson 1","Student 4",1,0,0,0
+"Experimental","Lesson 2","Student 4",1,1,0,1
+"Control","Lesson 2","Student 4",1,1,1,1

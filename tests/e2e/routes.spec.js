@@ -50,7 +50,7 @@ const publicRoutes = [
   {
     path: "/team",
     value: "team",
-    heading: { name: "Meet the 3D ENA Research Team", exact: true },
+    heading: { name: "Meet the team.", exact: true, level: 1 },
   },
   {
     path: "/about",
@@ -95,4 +95,92 @@ test("site navigation follows browser back and forward history", async ({ page }
   await expectSitePage(page, home);
   await page.goForward();
   await expectSitePage(page, team);
+});
+
+test("internal route links expose real hrefs and use client-side history", async ({
+  page,
+}) => {
+  const home = publicRoutes.find((route) => route.value === "home");
+  const team = publicRoutes.find((route) => route.value === "team");
+  const about = publicRoutes.find((route) => route.value === "about");
+
+  await page.goto("/team", { waitUntil: "domcontentloaded" });
+  await waitForShinyIdle(page);
+  await expectSitePage(page, team);
+
+  const brand = page.getByRole("link", {
+    name: "Return to the 3D ENA home page",
+  });
+  const aboutLink = page.getByRole("link", { name: "More on About" });
+  await expect(brand).toHaveAttribute("href", "/");
+  await expect(brand).toHaveAttribute("data-site-page", "home");
+  await expect(aboutLink).toHaveAttribute("href", "/about");
+  await expect(aboutLink).toHaveAttribute("data-site-page", "about");
+
+  await page.evaluate(() => {
+    window.__ena3dSpaRouteMarker = "retained";
+  });
+  await aboutLink.click();
+  await expectSitePage(page, about);
+  expect(await page.evaluate(() => window.__ena3dSpaRouteMarker)).toBe("retained");
+
+  await page.goBack();
+  await expectSitePage(page, team);
+  await brand.click();
+  await expectSitePage(page, home);
+  expect(await page.evaluate(() => window.__ena3dSpaRouteMarker)).toBe("retained");
+
+  await page.goBack();
+  await expectSitePage(page, team);
+});
+
+test("internal route links preserve native new-tab destinations", async ({
+  browserName,
+  context,
+  page,
+}, testInfo) => {
+  test.skip(
+    browserName !== "chromium" || testInfo.project.name !== "desktop-chromium",
+    "Native auxiliary-click behavior is covered once in desktop Chromium."
+  );
+
+  await page.goto("/team", { waitUntil: "domcontentloaded" });
+  await waitForShinyIdle(page);
+
+  const openWithNativeNewPage = async (link, expectedPath, clickOptions) => {
+    const [openedPage] = await Promise.all([
+      context.waitForEvent("page"),
+      link.click(clickOptions),
+    ]);
+    await openedPage.waitForLoadState("domcontentloaded");
+    await expect(openedPage).toHaveURL((url) => url.pathname === expectedPath);
+    await openedPage.close();
+  };
+
+  const aboutLink = page.getByRole("link", { name: "More on About" });
+  const brand = page.getByRole("link", {
+    name: "Return to the 3D ENA home page",
+  });
+
+  await openWithNativeNewPage(
+    aboutLink,
+    "/about",
+    { button: "middle" }
+  );
+  await expect(page).toHaveURL((url) => url.pathname === "/team");
+  await openWithNativeNewPage(
+    brand,
+    "/",
+    { modifiers: ["ControlOrMeta"] }
+  );
+  await expect(page).toHaveURL((url) => url.pathname === "/team");
+  await openWithNativeNewPage(
+    aboutLink,
+    "/about",
+    { modifiers: ["Shift"] }
+  );
+  await expect(page).toHaveURL((url) => url.pathname === "/team");
+
+  await brand.click({ button: "right" });
+  await expect(page).toHaveURL((url) => url.pathname === "/team");
 });

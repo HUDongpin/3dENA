@@ -94,11 +94,12 @@
     !is.na(group_var) && nzchar(group_var) && group_var %in% names(points)
   time_values <- points[[time_var]]
   id_values <- points[[id_var]]
-  valid <- !is.na(time_values) & !is.na(id_values) &
+  valid <- !.trajectory_is_missing(time_values) &
+    !.trajectory_is_missing(id_values) &
     nzchar(trimws(as.character(id_values)))
   if (grouped) {
     group_values <- points[[group_var]]
-    valid <- valid & !is.na(group_values) &
+    valid <- valid & !.trajectory_is_missing(group_values) &
       nzchar(trimws(as.character(group_values)))
   } else {
     group_values <- rep("__all__", nrow(points))
@@ -109,9 +110,9 @@
   }
 
   frame <- data.frame(
-    .group = as.character(group_values[valid]),
-    .id = as.character(id_values[valid]),
-    .time = .trajectory_order_labels(time_values[valid]),
+    .group = .trajectory_value_key(group_values[valid]),
+    .id = .trajectory_value_key(id_values[valid]),
+    .time = .trajectory_value_key(time_values[valid]),
     stringsAsFactors = FALSE
   )
   frame$.profile <- paste(
@@ -423,8 +424,7 @@
   )
 
   settled <- FALSE
-  timed_out <- FALSE
-  reject_callback <- NULL
+  termination_condition <- NULL
   release <- function() {
     if (exists(
       registry_key, envir = .trajectory_bootstrap_process_registry,
@@ -449,26 +449,12 @@
   }
 
   promise <- promises::promise(function(resolve, reject) {
-    reject_callback <<- reject
     poll <- NULL
     poll <- function() {
       if (settled) return(invisible(NULL))
       elapsed <- unname(proc.time()[["elapsed"]]) - started_at
-      if (!timed_out && elapsed >= timeout_seconds) {
-        timed_out <<- TRUE
-        terminate()
-      }
-      alive <- tryCatch(process$is_alive(), error = function(error) FALSE)
-      if (timed_out) {
-        if (alive) {
-          # Signal again in case the worker forked between the deadline check
-          # and the first process-tree traversal.  Keep polling rather than
-          # blocking the event loop while the operating system reaps it.
-          terminate()
-          later::later(poll, delay = poll_interval)
-          return(invisible(NULL))
-        }
-        settle(reject, .trajectory_bootstrap_condition(
+      if (is.null(termination_condition) && elapsed >= timeout_seconds) {
+        termination_condition <<- .trajectory_bootstrap_condition(
           sprintf(
             paste0(
               "The hosted bootstrap exceeded the executable %.1f-second ",
@@ -479,7 +465,21 @@
             timeout_seconds
           ),
           "trajectory_bootstrap_timeout"
-        ))
+        )
+        terminate()
+      }
+      alive <- tryCatch(process$is_alive(), error = function(error) FALSE)
+      if (!is.null(termination_condition)) {
+        if (alive) {
+          # Signal again in case the worker forked between the cancellation or
+          # deadline request and the first process-tree traversal. Keep its
+          # capacity slot while polling rather than blocking the event loop as
+          # the operating system reaps it.
+          terminate()
+          later::later(poll, delay = poll_interval)
+          return(invisible(NULL))
+        }
+        settle(reject, termination_condition)
         return(invisible(NULL))
       }
       if (!alive) {
@@ -504,17 +504,13 @@
   })
 
   cancel <- function(reason = "The isolated bootstrap job was cancelled.") {
-    if (settled) return(invisible(FALSE))
-    terminate()
-    condition <- .trajectory_bootstrap_condition(
+    if (settled || !is.null(termination_condition)) {
+      return(invisible(FALSE))
+    }
+    termination_condition <<- .trajectory_bootstrap_condition(
       reason, "trajectory_bootstrap_cancelled"
     )
-    if (is.function(reject_callback)) {
-      settle(reject_callback, condition)
-    } else {
-      settled <<- TRUE
-      release()
-    }
+    terminate()
     invisible(TRUE)
   }
 
@@ -908,6 +904,25 @@
 }
 
 
+.trajectory_selection_filter_mask <- function(values, selections) {
+  selections <- as.character(.trajectory_or(selections, character(0)))
+  selections <- unique(selections[!is.na(selections) & nzchar(selections)])
+  if (!length(selections)) return(rep(FALSE, length(values)))
+
+  masks <- lapply(selections, function(selection) {
+    .trajectory_time_filter_mask(values, selection)
+  })
+  Reduce(`|`, masks)
+}
+
+
+.trajectory_distinct_value_count <- function(values) {
+  valid <- !.trajectory_is_missing(values)
+  if (!any(valid)) return(0L)
+  length(unique(.trajectory_value_key(values[valid])))
+}
+
+
 .trajectory_condition_values <- function(points, group_var) {
   if (is.null(group_var) || !nzchar(group_var) || !group_var %in% names(points)) {
     return(character(0))
@@ -915,7 +930,7 @@
   values <- points[[group_var]]
   values <- values[!.trajectory_is_missing(values)]
   if (!length(values)) return(character(0))
-  values <- values[!duplicated(ena3d_value_identity_keys(values))]
+  values <- values[!duplicated(.trajectory_value_key(values))]
   .trajectory_order_labels(values)
 }
 
@@ -925,7 +940,7 @@
   if (!length(tokens)) return(character(0))
   values <- points[[group_var]]
   values <- values[!.trajectory_is_missing(values)]
-  values <- values[!duplicated(ena3d_value_identity_keys(values))]
+  values <- values[!duplicated(.trajectory_value_key(values))]
   labels <- ena3d_group_value_labels(values)
   collisions <- duplicated(labels) | duplicated(labels, fromLast = TRUE)
   labels[collisions] <- tokens[collisions]
@@ -1090,6 +1105,18 @@
     return(NULL)
   }
 
+  normalize_colors <- function(colors) {
+    color_names <- names(colors)
+    colors <- vapply(
+      as.character(colors),
+      ena3d_normalize_plot_color,
+      character(1),
+      fallback = "#808080"
+    )
+    names(colors) <- color_names
+    colors
+  }
+
   if (is.data.frame(group_colors) || is.matrix(group_colors)) {
     group_colors <- as.data.frame(group_colors, stringsAsFactors = FALSE)
     color_col <- intersect(c("color", "colour"), names(group_colors))
@@ -1097,12 +1124,12 @@
     if (length(color_col) && length(group_col)) {
       colors <- as.character(group_colors[[color_col[[1]]]])
       names(colors) <- as.character(group_colors[[group_col[[1]]]])
-      return(colors)
+      return(normalize_colors(colors))
     }
     if (ncol(group_colors) >= 2L) {
       colors <- as.character(group_colors[[1]])
       names(colors) <- as.character(group_colors[[2]])
-      return(colors)
+      return(normalize_colors(colors))
     }
   }
 
@@ -1110,7 +1137,7 @@
   color_names <- names(colors)
   colors <- as.character(colors)
   names(colors) <- color_names
-  colors
+  normalize_colors(colors)
 }
 
 
@@ -1690,1015 +1717,1361 @@
 }
 
 
+.trajectory_cancel_active_bootstrap <- function(bootstrap_state, reason) {
+  bootstrap_state$generation <- bootstrap_state$generation + 1L
+  job <- bootstrap_state$active
+  bootstrap_state$active <- NULL
+  if (is.null(job)) return(invisible(FALSE))
+  try(job$close_progress(), silent = TRUE)
+  try(job$worker$cancel(reason), silent = TRUE)
+  invisible(TRUE)
+}
+
+
+.trajectory_invalidate_analysis <- function(cancelled, analysis_result,
+                                            analysis_source, status, message) {
+  if (isTRUE(cancelled) || !is.null(analysis_result())) {
+    analysis_result(NULL)
+    analysis_source(NULL)
+    status(message)
+  }
+  invisible(NULL)
+}
+
+
+.trajectory_data_info_value <- function(object, raw_dimensions) {
+  if (is.null(object) ||
+      (!is.data.frame(object) &&
+       (is.null(object$points) || !is.data.frame(object$points)))) {
+    return(NULL)
+  }
+  points <- .trajectory_points(object)
+  dimensions <- .trajectory_dimensions(object, points, raw_dimensions)
+  metadata <- .trajectory_metadata_columns(object, points, dimensions)
+  list(
+    object = object,
+    points = points,
+    dimensions = dimensions,
+    metadata = metadata,
+    declared = .trajectory_declared_unit_vars(object),
+    declared_time = .trajectory_declared_default(object, "time"),
+    declared_id = .trajectory_declared_default(object, "id"),
+    declared_group = .trajectory_declared_default(object, "group")
+  )
+}
+
+
+.trajectory_analytical_settings_value <- function(input, selected_axes) {
+  list(
+    time_var = input$time_var,
+    id_var = input$id_var,
+    group_var = input$group_var,
+    condition_a = input$condition_a,
+    condition_b = input$condition_b,
+    run_comparison = input$run_comparison,
+    confirm_paired_ids = input$confirm_paired_ids,
+    time_order = input$time_order,
+    cohort_policy = input$cohort_policy,
+    na_policy = input$na_policy,
+    distance_space = input$distance_space,
+    show_uncertainty = input$show_uncertainty,
+    bootstrap_reps = input$bootstrap_reps,
+    confidence = input$confidence,
+    bootstrap_seed = input$bootstrap_seed,
+    bootstrap_design = input$bootstrap_design,
+    selected_axes = .trajectory_flatten_axes(selected_axes)
+  )
+}
+
+
+.trajectory_id_coverage_value <- function(info, input) {
+  if (is.null(info)) return(.trajectory_id_coverage(data.frame(), "", ""))
+  .trajectory_id_coverage(
+    info$points,
+    .trajectory_or(input$time_var, ""),
+    .trajectory_or(input$id_var, ""),
+    .trajectory_or(input$group_var, "")
+  )
+}
+
+
+.trajectory_comparison_overlap_value <- function(info, input) {
+  if (is.null(info)) {
+    return(.trajectory_comparison_overlap(data.frame(), "", "", "", "", ""))
+  }
+  .trajectory_comparison_overlap(
+    info$points,
+    .trajectory_or(input$group_var, ""),
+    .trajectory_or(input$condition_a, ""),
+    .trajectory_or(input$condition_b, ""),
+    .trajectory_or(input$id_var, ""),
+    .trajectory_or(input$time_var, "")
+  )
+}
+
+
+.trajectory_bootstrap_cost_value <- function(info, input, selected_axes) {
+  points <- if (is.null(info)) data.frame() else info$points
+  dimensions <- if (is.null(info)) {
+    character(0)
+  } else if (identical(.trajectory_or(input$distance_space, "selected"),
+                       "full")) {
+    info$dimensions
+  } else {
+    intersect(.trajectory_flatten_axes(selected_axes), info$dimensions)
+  }
+  .trajectory_bootstrap_cost(
+    points,
+    dimensions,
+    input$bootstrap_reps,
+    uncertainty = input$show_uncertainty,
+    comparison = isTRUE(input$run_comparison) &&
+      nzchar(.trajectory_or(input$group_var, ""))
+  )
+}
+
+
+.trajectory_setup_invalidation <- function(
+    session, source_signature, analytical_settings, cancel_active_bootstrap,
+    analysis_result, analysis_source, status
+) {
+  session$onSessionEnded(function() {
+    cancel_active_bootstrap(
+      "The isolated bootstrap job was cancelled because its Shiny session ended."
+    )
+  })
+
+  shiny::observeEvent(source_signature(), {
+    cancelled <- cancel_active_bootstrap(
+      "The isolated bootstrap job was cancelled because the dataset or rotation changed."
+    )
+    .trajectory_invalidate_analysis(
+      cancelled, analysis_result, analysis_source, status,
+      "The ENA dataset or rotation changed. Run the trajectory analysis again."
+    )
+  }, ignoreInit = TRUE, priority = 100)
+
+  shiny::observeEvent(analytical_settings(), {
+    cancelled <- cancel_active_bootstrap(
+      "The isolated bootstrap job was cancelled because trajectory settings changed."
+    )
+    .trajectory_invalidate_analysis(
+      cancelled, analysis_result, analysis_source, status,
+      "Trajectory settings changed. Select Run / recompute to update the analysis."
+    )
+  }, ignoreInit = TRUE, priority = 90)
+  invisible(NULL)
+}
+
+
+.trajectory_update_time_input <- function(info, input, session) {
+  shiny::req(!is.null(info))
+  metadata <- info$metadata
+  shiny::req(length(metadata) >= 2L)
+  old_time <- shiny::isolate(input$time_var)
+  time_default <- if (!is.null(old_time) && old_time %in% metadata) {
+    old_time
+  } else {
+    .trajectory_default_variable(
+      metadata, c(info$declared_time, info$declared), "time"
+    )
+  }
+  shiny::updateSelectInput(
+    session, "time_var", choices = metadata, selected = time_default
+  )
+  invisible(NULL)
+}
+
+
+.trajectory_update_id_input <- function(info, input, session) {
+  shiny::req(!is.null(info), length(info$metadata) >= 2L)
+  metadata <- info$metadata
+  time_var <- input$time_var
+  if (is.null(time_var) || !length(time_var) || !time_var %in% metadata) {
+    time_var <- .trajectory_default_variable(
+      metadata, c(info$declared_time, info$declared), "time"
+    )
+  }
+  id_choices <- setdiff(metadata, time_var)
+  old_id <- shiny::isolate(input$id_var)
+  id_default <- if (!is.null(old_id) && old_id %in% id_choices) {
+    old_id
+  } else {
+    .trajectory_default_variable(
+      metadata, c(info$declared, info$declared_id), "id", exclude = time_var
+    )
+  }
+  shiny::updateSelectInput(
+    session, "id_var",
+    choices = .trajectory_id_choices(info$points, id_choices, time_var),
+    selected = id_default
+  )
+  invisible(NULL)
+}
+
+
+.trajectory_update_group_input <- function(info, input, session) {
+  shiny::req(!is.null(info))
+  metadata <- info$metadata
+  time_var <- .trajectory_or(input$time_var, character(0))
+  id_var <- .trajectory_or(input$id_var, character(0))
+  group_choices <- setdiff(metadata, c(time_var, id_var))
+  old_group <- shiny::isolate(input$group_var)
+  group_default <- if (!is.null(old_group) && old_group %in% group_choices) {
+    old_group
+  } else if (length(info$declared_group) &&
+             info$declared_group[[1L]] %in% group_choices) {
+    info$declared_group[[1L]]
+  } else {
+    ""
+  }
+  shiny::updateSelectInput(
+    session, "group_var",
+    choices = c("None" = "", stats::setNames(group_choices, group_choices)),
+    selected = group_default
+  )
+  invisible(NULL)
+}
+
+
+.trajectory_update_axis_inputs <- function(info, input, session,
+                                           analysis_result, selected_axes) {
+  shiny::req(!is.null(info), length(info$dimensions) >= 2L)
+  completed <- analysis_result()
+  selected <- if (is.null(completed)) {
+    .trajectory_flatten_axes(selected_axes)
+  } else {
+    completed$settings$dimensions
+  }
+  selected <- intersect(selected, info$dimensions)
+  if (!length(selected)) selected <- head(info$dimensions, 3L)
+
+  old_x <- shiny::isolate(input$axis_x)
+  old_y <- shiny::isolate(input$axis_y)
+  new_x <- if (!is.null(old_x) && old_x %in% selected) old_x else selected[[1L]]
+  new_y <- if (!is.null(old_y) && old_y %in% selected && old_y != new_x) {
+    old_y
+  } else if (length(selected) >= 2L) {
+    selected[[2L]]
+  } else {
+    selected[[1L]]
+  }
+  shiny::updateSelectInput(session, "axis_x", choices = selected, selected = new_x)
+  shiny::updateSelectInput(session, "axis_y", choices = selected, selected = new_y)
+  invisible(NULL)
+}
+
+
+.trajectory_generate_order_inputs <- function(info, input, session) {
+  shiny::req(!is.null(info))
+  time_var <- input$time_var
+  shiny::req(!is.null(time_var), nzchar(time_var), time_var %in% names(info$points))
+  order <- .trajectory_default_order(info$points[[time_var]])
+  labels <- .trajectory_order_labels(order)
+  shiny::updateTextAreaInput(
+    session, "time_order", value = paste(labels, collapse = "\n")
+  )
+  shiny::updateSelectInput(
+    session, "selected_time", choices = labels,
+    selected = if (length(labels)) labels[[1L]] else character(0)
+  )
+  invisible(NULL)
+}
+
+
+.trajectory_update_condition_inputs <- function(info, input, session) {
+  shiny::req(!is.null(info))
+  group_var <- .trajectory_or(input$group_var, "")
+  choices <- .trajectory_condition_choices(info$points, group_var)
+  values <- unname(choices)
+  old_display <- shiny::isolate(input$display_levels)
+  selected_display <- intersect(as.character(old_display), values)
+  if (!length(selected_display)) selected_display <- values
+  shiny::updateSelectizeInput(
+    session, "display_levels", choices = choices,
+    selected = selected_display, server = FALSE
+  )
+
+  old_a <- shiny::isolate(input$condition_a)
+  old_b <- shiny::isolate(input$condition_b)
+  selected_a <- if (!is.null(old_a) && old_a %in% values) {
+    old_a
+  } else if (length(values)) {
+    values[[1L]]
+  } else {
+    character(0)
+  }
+  selected_b <- if (!is.null(old_b) && old_b %in% values && old_b != selected_a) {
+    old_b
+  } else {
+    remaining <- setdiff(values, selected_a)
+    if (length(remaining)) remaining[[1L]] else character(0)
+  }
+  shiny::updateSelectInput(
+    session, "condition_a", choices = choices, selected = selected_a
+  )
+  shiny::updateSelectInput(
+    session, "condition_b", choices = choices, selected = selected_b
+  )
+
+  old_overlay_group <- shiny::isolate(input$overlay_group)
+  selected_overlay_group <- if (!is.null(old_overlay_group) &&
+                                old_overlay_group %in% values) {
+    old_overlay_group
+  } else {
+    ""
+  }
+  shiny::updateSelectInput(
+    session, "overlay_group",
+    choices = c("Overall across all trajectory groups" = "", choices),
+    selected = selected_overlay_group
+  )
+  invisible(NULL)
+}
+
+
+.trajectory_setup_selection_observers <- function(
+    input, session, data_info, analysis_result, selected_axes
+) {
+  shiny::observeEvent(data_info(), {
+    .trajectory_update_time_input(data_info(), input, session)
+  }, ignoreNULL = FALSE)
+  shiny::observeEvent(list(data_info(), input$time_var), {
+    .trajectory_update_id_input(data_info(), input, session)
+  }, ignoreNULL = FALSE)
+  shiny::observeEvent(list(data_info(), input$time_var, input$id_var), {
+    .trajectory_update_group_input(data_info(), input, session)
+  }, ignoreNULL = FALSE)
+  shiny::observe({
+    .trajectory_update_axis_inputs(
+      data_info(), input, session, analysis_result, selected_axes
+    )
+  })
+  shiny::observeEvent(list(data_info(), input$time_var), {
+    .trajectory_generate_order_inputs(data_info(), input, session)
+  }, ignoreNULL = TRUE)
+  shiny::observeEvent(input$generate_order, {
+    .trajectory_generate_order_inputs(data_info(), input, session)
+  }, ignoreInit = TRUE)
+  shiny::observe({
+    .trajectory_update_condition_inputs(data_info(), input, session)
+  })
+  shiny::observeEvent(input$group_var, {
+    if (!nzchar(.trajectory_or(input$group_var, ""))) {
+      shiny::updateCheckboxInput(
+        session, "run_comparison", value = FALSE
+      )
+      shiny::updateCheckboxInput(
+        session, "confirm_paired_ids", value = FALSE
+      )
+    }
+  }, ignoreNULL = FALSE)
+  invisible(NULL)
+}
+
+
+.trajectory_validate_run_variables <- function(info, input) {
+  object <- info$object
+  points <- info$points
+  full_dimensions <- info$dimensions
+  if (!exists("compute_centroid_path", mode = "function", inherits = TRUE)) {
+    stop("compute_centroid_path() is unavailable; source trajectory_analysis.R first.")
+  }
+
+  time_var <- .trajectory_or(input$time_var, "")
+  id_var <- .trajectory_or(input$id_var, "")
+  group_var <- .trajectory_or(input$group_var, "")
+  if (!nzchar(time_var) || !time_var %in% names(points)) {
+    stop("Select a valid time / order variable.")
+  }
+  if (!nzchar(id_var) || !id_var %in% names(points)) {
+    stop("Select a valid repeated entity ID variable.")
+  }
+  if (identical(time_var, id_var)) {
+    stop("Time and entity ID must be different variables.")
+  }
+  if (nzchar(group_var) && !group_var %in% names(points)) {
+    stop("Select a valid group / condition variable.")
+  }
+  if (nzchar(group_var) && group_var %in% c(time_var, id_var)) {
+    stop("Group / condition must differ from time and entity ID.")
+  }
+
+  coverage <- .trajectory_id_coverage(
+    points, time_var, id_var, if (nzchar(group_var)) group_var else NULL
+  )
+  if (coverage$n_repeated_ids < 1L) {
+    stop(.trajectory_id_coverage_message(coverage, id_var, group_var))
+  }
+  export_keys <- c(time_var, if (nzchar(group_var)) group_var else character())
+  if (any(startsWith(export_keys, ".analysis_"))) {
+    stop(
+      "Time and group fields beginning with reserved `.analysis_` cannot be exported safely."
+    )
+  }
+  list(
+    object = object, points = points, full_dimensions = full_dimensions,
+    time_var = time_var, id_var = id_var, group_var = group_var,
+    coverage = coverage
+  )
+}
+
+
+.trajectory_validate_run_dimensions <- function(input, selected_axes,
+                                                full_dimensions) {
+  dimensions <- .trajectory_flatten_axes(selected_axes)
+  dimensions <- intersect(dimensions, full_dimensions)
+  if (!length(dimensions)) dimensions <- head(full_dimensions, 3L)
+  if (length(dimensions) < 2L) {
+    stop("At least two numeric ENA dimensions are required.")
+  }
+  if (identical(input$view, "3d") && length(unique(dimensions)) < 3L) {
+    stop("The 3D view requires three distinct selected ENA dimensions.")
+  }
+  dimensions
+}
+
+
+.trajectory_validate_bootstrap_settings <- function(
+    input, show_uncertainty, run_comparison, group_var
+) {
+  bootstrap_design <- match.arg(
+    .trajectory_or(input$bootstrap_design, "auto"),
+    c("auto", "cluster", "stratified")
+  )
+  raw_n_boot <- .trajectory_or(input$bootstrap_reps, 500L)
+  if (!is.numeric(raw_n_boot) || length(raw_n_boot) != 1L ||
+      is.na(raw_n_boot) || !is.finite(raw_n_boot) ||
+      raw_n_boot != floor(raw_n_boot) ||
+      raw_n_boot > .Machine$integer.max) {
+    stop("Bootstrap reps must be one whole number.")
+  }
+  n_boot <- as.integer(raw_n_boot)
+  conf_level <- as.numeric(.trajectory_or(input$confidence, 0.95))
+  seed <- as.integer(.trajectory_or(input$bootstrap_seed, 2026L))
+  if (is.na(n_boot) || n_boot < 2L) stop("Bootstrap reps must be at least 2.")
+  if (n_boot > .trajectory_bootstrap_max_reps()) {
+    stop(
+      "Bootstrap reps must be at most ",
+      .trajectory_bootstrap_max_reps(),
+      " on the hosted application."
+    )
+  }
+  if (!is.finite(conf_level) || conf_level <= 0 || conf_level >= 1) {
+    stop("Confidence must be between 0 and 1.")
+  }
+  if (is.na(seed) || seed < 0L) stop("Bootstrap seed must be non-negative.")
+
+  bootstrap_requested <- show_uncertainty ||
+    (run_comparison && nzchar(group_var))
+  if (bootstrap_requested && n_boot < 200L) {
+    stop("Hosted confidence intervals require at least 200 bootstrap repetitions.")
+  }
+  if (bootstrap_requested) {
+    required_reps <- .trajectory_bootstrap_required_valid(n_boot, conf_level)
+    tail_required <- ceiling(10 / (1 - conf_level))
+    if (n_boot < required_reps) {
+      stop(
+        "Bootstrap reps are insufficient for this confidence level: need at least ",
+        tail_required,
+        " so each interval tail has five expected replicates."
+      )
+    }
+  }
+  list(
+    bootstrap_design = bootstrap_design, n_boot = n_boot,
+    conf_level = conf_level, seed = seed
+  )
+}
+
+
+.trajectory_validate_run_context <- function(
+    input, info, selected_axes, overlap
+) {
+  if (is.null(info)) stop("No ENA object is available.")
+  variables <- .trajectory_validate_run_variables(info, input)
+  dimensions <- .trajectory_validate_run_dimensions(
+    input, selected_axes, variables$full_dimensions
+  )
+  order <- .trajectory_parse_order(
+    input$time_order, variables$points[[variables$time_var]]
+  )
+  show_uncertainty <- isTRUE(input$show_uncertainty)
+  run_comparison <- isTRUE(input$run_comparison) &&
+    nzchar(variables$group_var)
+  paired_ids_confirmed <- run_comparison &&
+    isTRUE(input$confirm_paired_ids)
+  bootstrap <- .trajectory_validate_bootstrap_settings(
+    input, show_uncertainty, run_comparison, variables$group_var
+  )
+  condition_a <- .trajectory_or(input$condition_a, "")
+  condition_b <- .trajectory_or(input$condition_b, "")
+  if (run_comparison &&
+      (!nzchar(condition_a) || !nzchar(condition_b) ||
+       identical(condition_a, condition_b))) {
+    stop("Select two distinct levels for the paired trajectory comparison.")
+  }
+  if (run_comparison && !paired_ids_confirmed) {
+    stop(paste0(
+      "Confirm that the same raw ID across the two conditions denotes ",
+      "the same physical entity before running a paired comparison."
+    ))
+  }
+
+  distance_space <- .trajectory_or(input$distance_space, "selected")
+  job_dimensions <- if (identical(distance_space, "full")) {
+    variables$full_dimensions
+  } else {
+    dimensions
+  }
+  job_cost <- .trajectory_bootstrap_cost(
+    variables$points, job_dimensions, bootstrap$n_boot,
+    uncertainty = show_uncertainty,
+    comparison = run_comparison && nzchar(variables$group_var)
+  )
+  .trajectory_validate_bootstrap_cost(job_cost)
+
+  c(variables, bootstrap, list(
+    dimensions = dimensions,
+    order = order,
+    cohort_policy = .trajectory_or(input$cohort_policy, "available"),
+    na_policy = .trajectory_or(input$na_policy, "complete"),
+    distance_space = distance_space,
+    show_uncertainty = show_uncertainty,
+    run_comparison = run_comparison,
+    paired_ids_confirmed = paired_ids_confirmed,
+    condition_a = condition_a,
+    condition_b = condition_b,
+    current_time = input$selected_time,
+    overlap = overlap
+  ))
+}
+
+
+.trajectory_common_arguments <- function(context) {
+  list(
+    points = context$points,
+    time_var = context$time_var,
+    id_var = context$id_var,
+    group_vars = if (nzchar(context$group_var)) context$group_var else NULL,
+    dimensions = context$dimensions,
+    order = context$order,
+    cohort_policy = context$cohort_policy,
+    weights = NULL,
+    na_policy = context$na_policy,
+    distance_space = context$distance_space,
+    full_dimensions = context$full_dimensions
+  )
+}
+
+
+.trajectory_time_order_diagnostics <- function(points, time_var) {
+  diagnostics <- .trajectory_module_diagnostic(
+    "none", "", severity = "info"
+  )[0, , drop = FALSE]
+  time_values <- points[[time_var]]
+  if (!is.character(time_values) &&
+      !(is.factor(time_values) && !is.ordered(time_values))) {
+    return(diagnostics)
+  }
+  .trajectory_bind_diagnostics(
+    diagnostics,
+    .trajectory_module_diagnostic(
+      "time_order_requires_review",
+      paste0(
+        "The time variable is character or an unordered factor. ",
+        "Verify that the explicit order shown in the control is substantively correct."
+      )
+    )
+  )
+}
+
+
+.trajectory_comparison_arguments <- function(context, common_arguments) {
+  diagnostics <- .trajectory_module_diagnostic(
+    "none", "", severity = "info"
+  )[0, , drop = FALSE]
+  if (!nzchar(context$group_var) || !context$run_comparison) {
+    return(list(arguments = NULL, diagnostics = diagnostics))
+  }
+  valid_levels <- nzchar(context$condition_a) && nzchar(context$condition_b) &&
+    !identical(context$condition_a, context$condition_b)
+  if (!valid_levels) {
+    diagnostics <- .trajectory_module_diagnostic(
+      "comparison_levels_unavailable",
+      "The grouped paths were computed, but comparison needs two distinct levels."
+    )
+    return(list(arguments = NULL, diagnostics = diagnostics))
+  }
+
+  points_a <- context$points[
+    .trajectory_time_filter_mask(
+      context$points[[context$group_var]], context$condition_a
+    ),
+    , drop = FALSE
+  ]
+  points_b <- context$points[
+    .trajectory_time_filter_mask(
+      context$points[[context$group_var]], context$condition_b
+    ),
+    , drop = FALSE
+  ]
+  arguments <- list(
+    points_a = points_a,
+    points_b = points_b,
+    time_var = context$time_var,
+    id_var = context$id_var,
+    group_vars = NULL,
+    dimensions = context$dimensions,
+    order = context$order,
+    cohort_policy = context$cohort_policy,
+    weights_a = NULL,
+    weights_b = NULL,
+    na_policy = context$na_policy,
+    distance_space = context$distance_space,
+    full_dimensions = context$full_dimensions,
+    n_boot = context$n_boot,
+    conf_level = context$conf_level,
+    seed = context$seed,
+    labels = c(context$condition_a, context$condition_b),
+    pair_weight_policy = "require_equal",
+    bootstrap_design = context$bootstrap_design
+  )
+  list(arguments = arguments, diagnostics = diagnostics)
+}
+
+
+.trajectory_prepare_run <- function(context, progress) {
+  common_arguments <- .trajectory_common_arguments(context)
+  progress$set(value = 0.10, detail = "Computing ordered centroid path")
+  path <- do.call(compute_centroid_path, common_arguments)
+  progress$set(value = 0.28, detail = "Centroid path complete")
+
+  module_diagnostics <- .trajectory_time_order_diagnostics(
+    context$points, context$time_var
+  )
+  comparison <- .trajectory_comparison_arguments(context, common_arguments)
+  module_diagnostics <- .trajectory_bind_diagnostics(
+    module_diagnostics, comparison$diagnostics
+  )
+  uncertainty_arguments <- if (context$show_uncertainty) {
+    c(common_arguments, list(
+      n_boot = context$n_boot,
+      conf_level = context$conf_level,
+      seed = context$seed,
+      bootstrap_design = context$bootstrap_design
+    ))
+  } else {
+    NULL
+  }
+  list(
+    path = path,
+    module_diagnostics = module_diagnostics,
+    uncertainty_arguments = uncertainty_arguments,
+    comparison_arguments = comparison$arguments
+  )
+}
+
+
+.trajectory_run_diagnostics <- function(prepared, job_result) {
+  path_diagnostics <- .trajectory_module_diagnostics_from(
+    prepared$path, "path"
+  )
+  uncertainty_diagnostics <- .trajectory_module_diagnostics_from(
+    job_result$uncertainty, "bootstrap"
+  )
+  uncertainty_diagnostics <- .trajectory_remove_inherited_diagnostics(
+    uncertainty_diagnostics, path_diagnostics
+  )
+  .trajectory_bind_diagnostics(
+    path_diagnostics,
+    uncertainty_diagnostics,
+    .trajectory_module_diagnostics_from(job_result$comparison, "comparison"),
+    prepared$module_diagnostics
+  )
+}
+
+
+.trajectory_run_metadata <- function(context, job_result) {
+  uncertainty <- job_result$uncertainty
+  comparison <- job_result$comparison
+  c(list(
+    time_var = context$time_var,
+    id_var = context$id_var,
+    group_var = if (nzchar(context$group_var)) {
+      context$group_var
+    } else {
+      NA_character_
+    },
+    condition_a = if (nzchar(context$group_var)) {
+      context$condition_a
+    } else {
+      NA_character_
+    },
+    condition_b = if (nzchar(context$group_var)) {
+      context$condition_b
+    } else {
+      NA_character_
+    },
+    dimensions = context$dimensions,
+    full_dimensions = context$full_dimensions,
+    distance_space = context$distance_space,
+    cohort_policy = context$cohort_policy,
+    na_policy = context$na_policy,
+    time_order = .trajectory_order_labels(context$order),
+    bootstrap_enabled = context$show_uncertainty,
+    comparison_requested = context$run_comparison && nzchar(context$group_var),
+    comparison_enabled = !is.null(comparison),
+    paired_id_identity_confirmed = context$paired_ids_confirmed,
+    comparison_overlap_ids = context$overlap$n_overlap_ids,
+    comparison_matched_id_times = context$overlap$n_matched_id_times,
+    bootstrap_design_requested_ui = context$bootstrap_design,
+    bootstrap_reps = if (context$show_uncertainty || !is.null(comparison)) {
+      context$n_boot
+    } else {
+      NA_integer_
+    },
+    confidence = if (context$show_uncertainty || !is.null(comparison)) {
+      context$conf_level
+    } else {
+      NA_real_
+    },
+    seed = if (context$show_uncertainty || !is.null(comparison)) {
+      context$seed
+    } else {
+      NA_integer_
+    },
+    raw_point_rows = nrow(context$points),
+    id_profiles = context$coverage$n_ids,
+    repeated_id_profiles = context$coverage$n_repeated_ids,
+    repeated_id_row_coverage = context$coverage$repeated_row_fraction,
+    duplicate_id_time_rows = context$coverage$n_duplicate_id_time_rows,
+    csv_text_escape = paste0(
+      "Character cells and column headers beginning with =, +, -, or @ ",
+      "are prefixed with an apostrophe in CSV files to prevent ",
+      "spreadsheet formula execution."
+    ),
+    generated_at_utc = format(
+      Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"
+    )
+  ),
+  .trajectory_provenance_metadata(context$object, context$full_dimensions),
+  .trajectory_bootstrap_metadata(uncertainty, comparison))
+}
+
+
+.trajectory_run_result <- function(context, prepared, job_result) {
+  list(
+    path = prepared$path,
+    bootstrap = job_result$uncertainty,
+    comparison = job_result$comparison,
+    diagnostics = .trajectory_run_diagnostics(prepared, job_result),
+    metadata = .trajectory_run_metadata(context, job_result),
+    settings = list(
+      dimensions = context$dimensions,
+      full_dimensions = context$full_dimensions,
+      group_var = if (nzchar(context$group_var)) context$group_var else NULL,
+      time_var = context$time_var,
+      id_var = context$id_var,
+      distance_space = context$distance_space,
+      cohort_policy = context$cohort_policy,
+      na_policy = context$na_policy,
+      bootstrap_design_requested = context$bootstrap_design,
+      paired_id_identity_confirmed = context$paired_ids_confirmed
+    )
+  )
+}
+
+
+.trajectory_publish_run <- function(
+    context, prepared, job_result, analysis_result, analysis_source,
+    status, session, progress
+) {
+  progress$set(value = 0.93, detail = "Recording reproducibility metadata")
+  result <- .trajectory_run_result(context, prepared, job_result)
+  analysis_source(context$object)
+  analysis_result(result)
+  progress$set(value = 1, detail = "Analysis and provenance complete")
+
+  time_labels <- .trajectory_order_labels(context$order)
+  selected_time <- if (!is.null(context$current_time) &&
+                       context$current_time %in% time_labels) {
+    context$current_time
+  } else {
+    time_labels[[1L]]
+  }
+  shiny::updateSelectInput(
+    session, "selected_time", choices = time_labels, selected = selected_time
+  )
+  trajectory_count <- if (nzchar(context$group_var)) {
+    .trajectory_distinct_value_count(prepared$path[[context$group_var]])
+  } else {
+    1L
+  }
+  status(paste0(
+    "Completed ", nrow(prepared$path), " centroid slices across ",
+    trajectory_count,
+    if (trajectory_count == 1L) " trajectory" else " trajectories",
+    "; distances use the ", context$distance_space, " ENA space."
+  ))
+  invisible(result)
+}
+
+
+.trajectory_new_progress <- function(session) {
+  progress_state <- new.env(parent = emptyenv())
+  progress_state$progress <- shiny::Progress$new(session, min = 0, max = 1)
+  progress_state$closed <- FALSE
+  progress_state
+}
+
+
+.trajectory_close_progress <- function(progress_state) {
+  if (!progress_state$closed) {
+    progress_state$closed <- TRUE
+    try(progress_state$progress$close(), silent = TRUE)
+  }
+  invisible(NULL)
+}
+
+
+.trajectory_fail_run <- function(
+    error, bootstrap_state, run_generation, progress_state, status
+) {
+  if (!identical(bootstrap_state$generation, run_generation)) {
+    return(invisible(NULL))
+  }
+  bootstrap_state$active <- NULL
+  .trajectory_close_progress(progress_state)
+  status(paste("Trajectory analysis failed:", conditionMessage(error)))
+  invisible(NULL)
+}
+
+
+.trajectory_finish_async_run <- function(
+    job_result, bootstrap_state, run_generation, progress_state,
+    context, prepared, analysis_result, analysis_source, status, session
+) {
+  if (!identical(bootstrap_state$generation, run_generation)) {
+    return(invisible(NULL))
+  }
+  bootstrap_state$active <- NULL
+  on.exit(.trajectory_close_progress(progress_state), add = TRUE)
+  .trajectory_publish_run(
+    context, prepared, job_result, analysis_result, analysis_source,
+    status, session, progress_state$progress
+  )
+}
+
+
+.trajectory_execute_run <- function(
+    input, data_info, selected_axes, comparison_overlap, bootstrap_state,
+    run_generation, progress_state, cost_message, analysis_result,
+    analysis_source, status, session, fail_analysis
+) {
+  context <- .trajectory_validate_run_context(
+    input, data_info(), selected_axes, comparison_overlap()
+  )
+  prepared <- .trajectory_prepare_run(context, progress_state$progress)
+  if (is.null(prepared$uncertainty_arguments) &&
+      is.null(prepared$comparison_arguments)) {
+    .trajectory_publish_run(
+      context, prepared, list(uncertainty = NULL, comparison = NULL),
+      analysis_result, analysis_source, status, session,
+      progress_state$progress
+    )
+    .trajectory_close_progress(progress_state)
+    return(invisible(NULL))
+  }
+
+  progress_state$progress$set(
+    value = 0.32,
+    detail = paste(
+      "Running isolated bootstrap worker with an executable deadline;",
+      cost_message
+    )
+  )
+  worker <- .trajectory_start_bootstrap_job(
+    uncertainty_arguments = prepared$uncertainty_arguments,
+    comparison_arguments = prepared$comparison_arguments,
+    timeout_seconds = .trajectory_bootstrap_max_seconds()
+  )
+  bootstrap_state$active <- list(
+    worker = worker,
+    close_progress = function() .trajectory_close_progress(progress_state),
+    generation = run_generation
+  )
+  completed <- promises::then(worker$promise, function(job_result) {
+    .trajectory_finish_async_run(
+      job_result, bootstrap_state, run_generation, progress_state,
+      context, prepared, analysis_result, analysis_source, status, session
+    )
+  })
+  promises::catch(completed, function(error) {
+    fail_analysis(error)
+    NULL
+  })
+  invisible(NULL)
+}
+
+
+.trajectory_setup_run_observer <- function(
+    input, session, data_info, selected_axes, comparison_overlap,
+    bootstrap_cost, bootstrap_state, cancel_active_bootstrap,
+    analysis_result, analysis_source, status
+) {
+  shiny::observeEvent(input$run_trajectory, {
+    cancel_active_bootstrap(
+      "The isolated bootstrap job was cancelled by a newer analysis request."
+    )
+    run_generation <- bootstrap_state$generation
+    cost_message <- .trajectory_bootstrap_cost_message(bootstrap_cost())
+    status(paste("Running centroid trajectory analysis.", cost_message))
+    analysis_result(NULL)
+    analysis_source(NULL)
+    progress_state <- .trajectory_new_progress(session)
+    progress_state$progress$set(
+      value = 0.02, message = "Trajectory analysis",
+      detail = "Validating selections"
+    )
+    fail_analysis <- function(error) {
+      .trajectory_fail_run(
+        error, bootstrap_state, run_generation, progress_state, status
+      )
+    }
+    tryCatch(
+      .trajectory_execute_run(
+        input, data_info, selected_axes, comparison_overlap, bootstrap_state,
+        run_generation, progress_state, cost_message, analysis_result,
+        analysis_source, status, session, fail_analysis
+      ),
+      error = fail_analysis
+    )
+  }, ignoreInit = TRUE)
+  invisible(NULL)
+}
+
+
+.trajectory_diagnostics_ui <- function(result) {
+  if (is.null(result) || !nrow(result$diagnostics)) return(NULL)
+  diagnostics <- result$diagnostics
+  messages <- vapply(seq_len(nrow(diagnostics)), function(index) {
+    context <- character(0)
+    if ("group" %in% names(diagnostics) &&
+        !is.na(diagnostics$group[[index]]) &&
+        nzchar(as.character(diagnostics$group[[index]])) &&
+        diagnostics$group[[index]] != "all") {
+      context <- c(context, paste0("group ", diagnostics$group[[index]]))
+    }
+    if ("time_order" %in% names(diagnostics) &&
+        !is.na(diagnostics$time_order[[index]])) {
+      context <- c(
+        context, paste0("time order ", diagnostics$time_order[[index]])
+      )
+    }
+    if ("count" %in% names(diagnostics) &&
+        !is.na(diagnostics$count[[index]]) && diagnostics$count[[index]] > 1L) {
+      context <- c(context, paste0("count ", diagnostics$count[[index]]))
+    }
+    suffix <- if (length(context)) {
+      paste0(" (", paste(context, collapse = ", "), ")")
+    } else {
+      ""
+    }
+    paste0(
+      "[", toupper(diagnostics$severity[[index]]), "] ",
+      diagnostics$message[[index]], suffix
+    )
+  }, character(1))
+  messages <- unique(messages[!is.na(messages) & nzchar(messages)])
+  shiny::tags$div(
+    class = "trajectory-analysis-warnings alert alert-warning",
+    style = "margin-top: 0.5rem;",
+    shiny::tags$strong("Trajectory diagnostics"),
+    shiny::tags$ul(lapply(messages, shiny::tags$li))
+  )
+}
+
+
+.trajectory_overlay_value <- function(input, result, source) {
+  if (is.null(result)) {
+    return(list(
+      code_nodes = NULL, network_edges = NULL, message = "Overlay off."
+    ))
+  }
+  base_nodes <- if (!is.null(source) && !is.data.frame(source) &&
+                    !is.null(source$rotation$nodes)) {
+    as.data.frame(source$rotation$nodes)
+  } else {
+    NULL
+  }
+  if (!isTRUE(input$network_overlay)) {
+    return(list(
+      code_nodes = base_nodes,
+      network_edges = NULL,
+      message = "Code nodes shown; mean network overlay off."
+    ))
+  }
+
+  view <- .trajectory_or(input$view, "3d")
+  dimensions <- if (identical(view, "2d")) {
+    c(input$axis_x, input$axis_y)
+  } else {
+    head(result$settings$dimensions, 3L)
+  }
+  dimensions <- dimensions[!is.na(dimensions) & nzchar(dimensions)]
+  overlay <- .trajectory_network_overlay(
+    source, dimensions, result$settings$time_var,
+    .trajectory_or(input$selected_time, ""),
+    group_var = result$settings$group_var,
+    selected_group = .trajectory_or(input$overlay_group, "")
+  )
+  if (is.null(overlay$code_nodes)) overlay$code_nodes <- base_nodes
+  overlay
+}
+
+
+.trajectory_plot_dimensions <- function(input, result) {
+  view <- .trajectory_or(input$view, "3d")
+  dimensions <- if (identical(view, "2d")) {
+    c(input$axis_x, input$axis_y)
+  } else {
+    head(result$settings$dimensions, 3L)
+  }
+  dimensions <- dimensions[!is.na(dimensions) & nzchar(dimensions)]
+  required_count <- if (identical(view, "2d")) 2L else 3L
+  shiny::validate(shiny::need(
+    length(unique(dimensions)) == required_count,
+    paste0(
+      "Select ", required_count, " distinct axes for the ",
+      toupper(view), " view."
+    )
+  ))
+  list(view = view, dimensions = dimensions)
+}
+
+
+.trajectory_plot_data <- function(input, result) {
+  plot_data <- if (isTRUE(input$show_uncertainty) &&
+                   !is.null(result$bootstrap)) {
+    result$bootstrap
+  } else {
+    result$path
+  }
+  group_var <- .trajectory_or(result$settings$group_var, "")
+  display_levels <- as.character(.trajectory_or(
+    input$display_levels, character(0)
+  ))
+  if (nzchar(group_var) && group_var %in% names(plot_data)) {
+    keep <- .trajectory_selection_filter_mask(
+      plot_data[[group_var]], display_levels
+    )
+    plot_data <- plot_data[keep, , drop = FALSE]
+  }
+  shiny::validate(shiny::need(
+    nrow(plot_data) > 0L,
+    "Choose at least one displayed trajectory level."
+  ))
+  list(
+    data = plot_data, group_var = group_var,
+    display_levels = display_levels
+  )
+}
+
+
+.trajectory_plot_unit_points <- function(
+    source, group_var, display_levels
+) {
+  unit_points <- if (!is.null(source)) .trajectory_points(source) else NULL
+  if (!is.null(unit_points) && nzchar(group_var) &&
+      group_var %in% names(unit_points)) {
+    unit_points <- unit_points[
+      .trajectory_selection_filter_mask(
+        unit_points[[group_var]], display_levels
+      ),
+      , drop = FALSE
+    ]
+  }
+  unit_points
+}
+
+
+.trajectory_plot_value <- function(
+    input, result, source, overlay, group_colors, camera
+) {
+  shiny::validate(shiny::need(
+    exists("plot_centroid_trajectory", mode = "function", inherits = TRUE),
+    "plot_centroid_trajectory() is unavailable; source trajectory_plot.R first."
+  ))
+  axes <- .trajectory_plot_dimensions(input, result)
+  selected <- .trajectory_plot_data(input, result)
+  unit_points <- .trajectory_plot_unit_points(
+    source, selected$group_var, selected$display_levels
+  )
+  plot_centroid_trajectory(
+    path = selected$data,
+    dimensions = axes$dimensions,
+    view = axes$view,
+    group_cols = result$settings$group_var,
+    colors = .trajectory_colors(group_colors),
+    camera = .trajectory_resolve_value(camera),
+    display_scale = 1,
+    unit_points = unit_points,
+    code_nodes = overlay$code_nodes,
+    network_edges = overlay$network_edges,
+    selected_time = input$selected_time,
+    show_warnings = TRUE,
+    show_direction = !identical(input$show_direction, FALSE)
+  )
+}
+
+
+.trajectory_setup_status_outputs <- function(
+    input, output, status, id_coverage, comparison_overlap, bootstrap_cost
+) {
+  output$id_coverage_status <- shiny::renderText({
+    .trajectory_id_coverage_message(
+      id_coverage(),
+      .trajectory_or(input$id_var, ""),
+      .trajectory_or(input$group_var, "")
+    )
+  })
+  output$comparison_overlap_status <- shiny::renderText({
+    .trajectory_comparison_overlap_message(comparison_overlap())
+  })
+  output$bootstrap_cost_status <- shiny::renderText({
+    .trajectory_bootstrap_cost_message(bootstrap_cost())
+  })
+  output$status <- shiny::renderText(status())
+  invisible(NULL)
+}
+
+
+.trajectory_setup_result_outputs <- function(
+    input, output, session, analysis_result, analysis_source,
+    group_colors, camera
+) {
+  output$warnings <- shiny::renderUI({
+    .trajectory_diagnostics_ui(analysis_result())
+  })
+  output$downloads <- shiny::renderUI({
+    .trajectory_download_controls(analysis_result(), session$ns)
+  })
+  output$node_legend <- shiny::renderUI({
+    result <- analysis_result()
+    if (is.null(result)) return(NULL)
+    .trajectory_node_legend_ui(result$path)
+  })
+  shiny::outputOptions(output, "node_legend", suspendWhenHidden = FALSE)
+
+  overlay_data <- shiny::reactive({
+    .trajectory_overlay_value(input, analysis_result(), analysis_source())
+  })
+  output$overlay_status <- shiny::renderText(overlay_data()$message)
+  output$trajectory_plot <- plotly::renderPlotly({
+    result <- analysis_result()
+    shiny::validate(shiny::need(
+      !is.null(result), "Run the trajectory analysis to create a plot."
+    ))
+    .trajectory_plot_value(
+      input, result, analysis_source(), overlay_data(), group_colors, camera
+    )
+  })
+  overlay_data
+}
+
+
+.trajectory_metadata_download_value <- function(result) {
+  metadata <- .trajectory_metadata_table(result$metadata)
+  if (!nrow(result$diagnostics)) return(metadata)
+  diagnostics <- data.frame(
+    field = paste0("diagnostic_", seq_len(nrow(result$diagnostics))),
+    value = paste(
+      result$diagnostics$severity,
+      result$diagnostics$code,
+      result$diagnostics$message,
+      sep = ": "
+    ),
+    stringsAsFactors = FALSE
+  )
+  rbind(metadata, diagnostics)
+}
+
+
+.trajectory_setup_downloads <- function(output, analysis_result) {
+  output$download_bundle <- shiny::downloadHandler(
+    filename = function() {
+      paste0(
+        "ena3d-trajectory-analysis-", format(Sys.Date(), "%Y%m%d"), ".zip"
+      )
+    },
+    contentType = "application/zip",
+    content = function(file) {
+      result <- analysis_result()
+      shiny::req(!is.null(result))
+      .trajectory_write_bundle(result, file)
+    }
+  )
+  output$download_path <- shiny::downloadHandler(
+    filename = function() {
+      paste0("centroid-path-", format(Sys.Date(), "%Y%m%d"), ".csv")
+    },
+    content = function(file) {
+      result <- analysis_result()
+      shiny::req(!is.null(result))
+      .trajectory_write_csv(
+        .trajectory_export_metadata(result$path, result$metadata), file
+      )
+    }
+  )
+  output$download_uncertainty <- shiny::downloadHandler(
+    filename = function() {
+      paste0(
+        "centroid-path-bootstrap-", format(Sys.Date(), "%Y%m%d"), ".csv"
+      )
+    },
+    content = function(file) {
+      result <- analysis_result()
+      shiny::req(!is.null(result), !is.null(result$bootstrap))
+      .trajectory_write_csv(
+        .trajectory_export_metadata(result$bootstrap, result$metadata), file
+      )
+    }
+  )
+  output$download_comparison <- shiny::downloadHandler(
+    filename = function() {
+      result <- analysis_result()
+      levels <- c(result$metadata$condition_a, result$metadata$condition_b)
+      levels <- .trajectory_safe_file_part(paste(levels, collapse = "-vs-"))
+      paste0(
+        "centroid-path-comparison-", levels, "-",
+        format(Sys.Date(), "%Y%m%d"), ".csv"
+      )
+    },
+    content = function(file) {
+      result <- analysis_result()
+      shiny::req(!is.null(result), !is.null(result$comparison))
+      .trajectory_write_csv(
+        .trajectory_export_metadata(result$comparison, result$metadata), file
+      )
+    }
+  )
+  output$download_metadata <- shiny::downloadHandler(
+    filename = function() {
+      paste0(
+        "centroid-path-metadata-", format(Sys.Date(), "%Y%m%d"), ".csv"
+      )
+    },
+    content = function(file) {
+      result <- analysis_result()
+      shiny::req(!is.null(result))
+      .trajectory_write_csv(.trajectory_metadata_download_value(result), file)
+    }
+  )
+  invisible(NULL)
+}
+
+
+.trajectory_result_component <- function(analysis_result, component) {
+  result <- analysis_result()
+  if (is.null(result)) NULL else result[[component]]
+}
+
+
+.trajectory_result_api <- function(analysis_result, status) {
+  list(
+    result = shiny::reactive(analysis_result()),
+    path = shiny::reactive({
+      .trajectory_result_component(analysis_result, "path")
+    }),
+    bootstrap = shiny::reactive({
+      .trajectory_result_component(analysis_result, "bootstrap")
+    }),
+    comparison = shiny::reactive({
+      .trajectory_result_component(analysis_result, "comparison")
+    }),
+    diagnostics = shiny::reactive({
+      .trajectory_result_component(analysis_result, "diagnostics")
+    }),
+    metadata = shiny::reactive({
+      .trajectory_result_component(analysis_result, "metadata")
+    }),
+    status = shiny::reactive(status())
+  )
+}
+
+
+.trajectory_server_impl <- function(
+    input, output, session, ena_obj, selected_axes, raw_dimensions,
+    group_colors, camera, analysis_result, status
+) {
+  analysis_source <- shiny::reactiveVal(NULL)
+  bootstrap_state <- new.env(parent = emptyenv())
+  bootstrap_state$active <- NULL
+  bootstrap_state$generation <- 0L
+  cancel_active_bootstrap <- function(reason) {
+    .trajectory_cancel_active_bootstrap(bootstrap_state, reason)
+  }
+  current_ena_obj <- shiny::reactive({
+    .trajectory_resolve_value(ena_obj)
+  })
+  source_signature <- shiny::reactive({
+    list(
+      object = current_ena_obj(),
+      raw_dimensions = .trajectory_flatten_axes(raw_dimensions)
+    )
+  })
+  analytical_settings <- shiny::reactive({
+    .trajectory_analytical_settings_value(input, selected_axes)
+  })
+  data_info <- shiny::reactive({
+    .trajectory_data_info_value(current_ena_obj(), raw_dimensions)
+  })
+  id_coverage <- shiny::reactive({
+    .trajectory_id_coverage_value(data_info(), input)
+  })
+  comparison_overlap <- shiny::reactive({
+    .trajectory_comparison_overlap_value(data_info(), input)
+  })
+  bootstrap_cost <- shiny::reactive({
+    .trajectory_bootstrap_cost_value(data_info(), input, selected_axes)
+  })
+
+  .trajectory_setup_invalidation(
+    session, source_signature, analytical_settings, cancel_active_bootstrap,
+    analysis_result, analysis_source, status
+  )
+  .trajectory_setup_status_outputs(
+    input, output, status, id_coverage, comparison_overlap, bootstrap_cost
+  )
+  .trajectory_setup_selection_observers(
+    input, session, data_info, analysis_result, selected_axes
+  )
+  .trajectory_setup_run_observer(
+    input, session, data_info, selected_axes, comparison_overlap,
+    bootstrap_cost, bootstrap_state, cancel_active_bootstrap,
+    analysis_result, analysis_source, status
+  )
+  .trajectory_setup_result_outputs(
+    input, output, session, analysis_result, analysis_source,
+    group_colors, camera
+  )
+  .trajectory_setup_downloads(output, analysis_result)
+  .trajectory_result_api(analysis_result, status)
+}
+
+
 trajectory_server <- function(id, ena_obj, selected_axes = NULL,
                               raw_dimensions = NULL, group_colors = NULL,
                               camera = NULL) {
   shiny::moduleServer(id, function(input, output, session) {
     analysis_result <- shiny::reactiveVal(NULL)
-    analysis_source <- shiny::reactiveVal(NULL)
     status <- shiny::reactiveVal(
       "Load an ENA object, choose variables, then run the trajectory analysis."
     )
-    bootstrap_state <- new.env(parent = emptyenv())
-    bootstrap_state$active <- NULL
-    bootstrap_state$generation <- 0L
-
-    cancel_active_bootstrap <- function(reason) {
-      bootstrap_state$generation <- bootstrap_state$generation + 1L
-      job <- bootstrap_state$active
-      bootstrap_state$active <- NULL
-      if (is.null(job)) return(invisible(FALSE))
-      try(job$close_progress(), silent = TRUE)
-      try(job$worker$cancel(reason), silent = TRUE)
-      invisible(TRUE)
-    }
-
-    session$onSessionEnded(function() {
-      cancel_active_bootstrap(
-        "The isolated bootstrap job was cancelled because its Shiny session ended."
-      )
-    })
-
-    current_ena_obj <- shiny::reactive({
-      .trajectory_resolve_value(ena_obj)
-    })
-
-    source_signature <- shiny::reactive({
-      # Reading these reactives is enough to invalidate an old result. The
-      # object itself remains raw and is not hashed, copied, or transformed.
-      list(
-        object = current_ena_obj(),
-        raw_dimensions = .trajectory_flatten_axes(raw_dimensions)
-      )
-    })
-
-    shiny::observeEvent(source_signature(), {
-      cancelled <- cancel_active_bootstrap(
-        "The isolated bootstrap job was cancelled because the dataset or rotation changed."
-      )
-      if (cancelled || !is.null(analysis_result())) {
-        analysis_result(NULL)
-        analysis_source(NULL)
-        status("The ENA dataset or rotation changed. Run the trajectory analysis again.")
-      }
-    }, ignoreInit = TRUE, priority = 100)
-
-    analytical_settings <- shiny::reactive({
-      list(
-        time_var = input$time_var,
-        id_var = input$id_var,
-        group_var = input$group_var,
-        condition_a = input$condition_a,
-        condition_b = input$condition_b,
-        run_comparison = input$run_comparison,
-        confirm_paired_ids = input$confirm_paired_ids,
-        time_order = input$time_order,
-        cohort_policy = input$cohort_policy,
-        na_policy = input$na_policy,
-        distance_space = input$distance_space,
-        show_uncertainty = input$show_uncertainty,
-        bootstrap_reps = input$bootstrap_reps,
-        confidence = input$confidence,
-        bootstrap_seed = input$bootstrap_seed,
-        bootstrap_design = input$bootstrap_design,
-        selected_axes = .trajectory_flatten_axes(selected_axes)
-      )
-    })
-
-    shiny::observeEvent(analytical_settings(), {
-      cancelled <- cancel_active_bootstrap(
-        "The isolated bootstrap job was cancelled because trajectory settings changed."
-      )
-      if (cancelled || !is.null(analysis_result())) {
-        analysis_result(NULL)
-        analysis_source(NULL)
-        status("Trajectory settings changed. Select Run / recompute to update the analysis.")
-      }
-    }, ignoreInit = TRUE, priority = 90)
-
-    data_info <- shiny::reactive({
-      object <- current_ena_obj()
-      if (is.null(object) ||
-          (!is.data.frame(object) &&
-           (is.null(object$points) || !is.data.frame(object$points)))) {
-        return(NULL)
-      }
-      points <- .trajectory_points(object)
-      dimensions <- .trajectory_dimensions(object, points, raw_dimensions)
-      metadata <- .trajectory_metadata_columns(object, points, dimensions)
-      list(
-        object = object,
-        points = points,
-        dimensions = dimensions,
-        metadata = metadata,
-        declared = .trajectory_declared_unit_vars(object),
-        declared_time = .trajectory_declared_default(object, "time"),
-        declared_id = .trajectory_declared_default(object, "id"),
-        declared_group = .trajectory_declared_default(object, "group")
-      )
-    })
-
-    id_coverage <- shiny::reactive({
-      info <- data_info()
-      if (is.null(info)) return(.trajectory_id_coverage(data.frame(), "", ""))
-      .trajectory_id_coverage(
-        info$points,
-        .trajectory_or(input$time_var, ""),
-        .trajectory_or(input$id_var, ""),
-        .trajectory_or(input$group_var, "")
-      )
-    })
-
-    output$id_coverage_status <- shiny::renderText({
-      .trajectory_id_coverage_message(
-        id_coverage(),
-        .trajectory_or(input$id_var, ""),
-        .trajectory_or(input$group_var, "")
-      )
-    })
-
-    comparison_overlap <- shiny::reactive({
-      info <- data_info()
-      if (is.null(info)) return(.trajectory_comparison_overlap(
-        data.frame(), "", "", "", "", ""
-      ))
-      .trajectory_comparison_overlap(
-        info$points,
-        .trajectory_or(input$group_var, ""),
-        .trajectory_or(input$condition_a, ""),
-        .trajectory_or(input$condition_b, ""),
-        .trajectory_or(input$id_var, ""),
-        .trajectory_or(input$time_var, "")
-      )
-    })
-
-    output$comparison_overlap_status <- shiny::renderText({
-      .trajectory_comparison_overlap_message(comparison_overlap())
-    })
-
-    bootstrap_cost <- shiny::reactive({
-      info <- data_info()
-      points <- if (is.null(info)) data.frame() else info$points
-      dimensions <- if (is.null(info)) {
-        character(0)
-      } else if (identical(.trajectory_or(input$distance_space, "selected"), "full")) {
-        info$dimensions
-      } else {
-        intersect(.trajectory_flatten_axes(selected_axes), info$dimensions)
-      }
-      .trajectory_bootstrap_cost(
-        points,
-        dimensions,
-        input$bootstrap_reps,
-        uncertainty = input$show_uncertainty,
-        comparison = isTRUE(input$run_comparison) &&
-          nzchar(.trajectory_or(input$group_var, ""))
-      )
-    })
-
-    output$bootstrap_cost_status <- shiny::renderText({
-      .trajectory_bootstrap_cost_message(bootstrap_cost())
-    })
-
-    shiny::observeEvent(data_info(), {
-      info <- data_info()
-      shiny::req(!is.null(info))
-      metadata <- info$metadata
-      shiny::req(length(metadata) >= 2L)
-
-      old_time <- shiny::isolate(input$time_var)
-      time_default <- if (!is.null(old_time) && old_time %in% metadata) {
-        old_time
-      } else {
-        .trajectory_default_variable(
-          metadata, c(info$declared_time, info$declared), "time"
-        )
-      }
-      shiny::updateSelectInput(
-        session, "time_var", choices = metadata, selected = time_default
-      )
-    }, ignoreNULL = FALSE)
-
-    shiny::observeEvent(list(data_info(), input$time_var), {
-      info <- data_info()
-      shiny::req(!is.null(info), length(info$metadata) >= 2L)
-      metadata <- info$metadata
-      time_var <- input$time_var
-      if (is.null(time_var) || !length(time_var) || !time_var %in% metadata) {
-        time_var <- .trajectory_default_variable(
-          metadata, c(info$declared_time, info$declared), "time"
-        )
-      }
-
-      id_choices <- setdiff(metadata, time_var)
-      old_id <- shiny::isolate(input$id_var)
-      id_default <- if (!is.null(old_id) && old_id %in% id_choices) {
-        old_id
-      } else {
-        .trajectory_default_variable(
-          metadata, c(info$declared, info$declared_id), "id", exclude = time_var
-        )
-      }
-      shiny::updateSelectInput(
-        session,
-        "id_var",
-        choices = .trajectory_id_choices(info$points, id_choices, time_var),
-        selected = id_default
-      )
-    }, ignoreNULL = FALSE)
-
-    shiny::observeEvent(list(data_info(), input$time_var, input$id_var), {
-      info <- data_info()
-      shiny::req(!is.null(info))
-      metadata <- info$metadata
-      time_var <- .trajectory_or(input$time_var, character(0))
-      id_var <- .trajectory_or(input$id_var, character(0))
-      group_choices <- setdiff(metadata, c(time_var, id_var))
-      old_group <- shiny::isolate(input$group_var)
-      group_default <- if (!is.null(old_group) && old_group %in% group_choices) {
-        old_group
-      } else if (length(info$declared_group) &&
-                 info$declared_group[[1L]] %in% group_choices) {
-        info$declared_group[[1L]]
-      } else {
-        ""
-      }
-      shiny::updateSelectInput(
-        session, "group_var",
-        choices = c("None" = "", stats::setNames(group_choices, group_choices)),
-        selected = group_default
-      )
-    }, ignoreNULL = FALSE)
-
-    shiny::observe({
-      info <- data_info()
-      shiny::req(!is.null(info), length(info$dimensions) >= 2L)
-      completed <- analysis_result()
-      selected <- if (is.null(completed)) {
-        .trajectory_flatten_axes(selected_axes)
-      } else {
-        completed$settings$dimensions
-      }
-      selected <- intersect(selected, info$dimensions)
-      if (!length(selected)) selected <- head(info$dimensions, 3L)
-
-      old_x <- shiny::isolate(input$axis_x)
-      old_y <- shiny::isolate(input$axis_y)
-      new_x <- if (!is.null(old_x) && old_x %in% selected) old_x else selected[[1]]
-      new_y <- if (!is.null(old_y) && old_y %in% selected && old_y != new_x) {
-        old_y
-      } else if (length(selected) >= 2L) {
-        selected[[2]]
-      } else {
-        selected[[1]]
-      }
-      shiny::updateSelectInput(session, "axis_x", choices = selected, selected = new_x)
-      shiny::updateSelectInput(session, "axis_y", choices = selected, selected = new_y)
-    })
-
-    generate_order <- function() {
-      info <- data_info()
-      shiny::req(!is.null(info))
-      time_var <- input$time_var
-      shiny::req(!is.null(time_var), nzchar(time_var), time_var %in% names(info$points))
-      order <- .trajectory_default_order(info$points[[time_var]])
-      labels <- .trajectory_order_labels(order)
-      shiny::updateTextAreaInput(
-        session, "time_order", value = paste(labels, collapse = "\n")
-      )
-      shiny::updateSelectInput(
-        session, "selected_time", choices = labels,
-        selected = if (length(labels)) labels[[1]] else character(0)
-      )
-    }
-
-    shiny::observeEvent(list(data_info(), input$time_var), {
-      generate_order()
-    }, ignoreNULL = TRUE)
-
-    shiny::observeEvent(input$generate_order, {
-      generate_order()
-    }, ignoreInit = TRUE)
-
-    shiny::observe({
-      info <- data_info()
-      shiny::req(!is.null(info))
-      group_var <- .trajectory_or(input$group_var, "")
-      choices <- .trajectory_condition_choices(info$points, group_var)
-      values <- unname(choices)
-      old_display <- shiny::isolate(input$display_levels)
-      selected_display <- intersect(as.character(old_display), values)
-      if (!length(selected_display)) selected_display <- values
-      shiny::updateSelectizeInput(
-        session,
-        "display_levels",
-        choices = choices,
-        selected = selected_display,
-        server = TRUE
-      )
-      old_a <- shiny::isolate(input$condition_a)
-      old_b <- shiny::isolate(input$condition_b)
-      selected_a <- if (!is.null(old_a) && old_a %in% values) {
-        old_a
-      } else if (length(values)) {
-        values[[1]]
-      } else {
-        character(0)
-      }
-      selected_b <- if (!is.null(old_b) && old_b %in% values && old_b != selected_a) {
-        old_b
-      } else {
-        remaining <- setdiff(values, selected_a)
-        if (length(remaining)) remaining[[1]] else character(0)
-      }
-      shiny::updateSelectInput(
-        session, "condition_a", choices = choices, selected = selected_a
-      )
-      shiny::updateSelectInput(
-        session, "condition_b", choices = choices, selected = selected_b
-      )
-      old_overlay_group <- shiny::isolate(input$overlay_group)
-      selected_overlay_group <- if (!is.null(old_overlay_group) &&
-                                    old_overlay_group %in% values) {
-        old_overlay_group
-      } else {
-        ""
-      }
-      shiny::updateSelectInput(
-        session,
-        "overlay_group",
-        choices = c(
-          "Overall across all trajectory groups" = "",
-          choices
-        ),
-        selected = selected_overlay_group
-      )
-    })
-
-    shiny::observeEvent(input$run_trajectory, {
-      cancel_active_bootstrap(
-        "The isolated bootstrap job was cancelled by a newer analysis request."
-      )
-      run_generation <- bootstrap_state$generation
-      cost_message <- .trajectory_bootstrap_cost_message(bootstrap_cost())
-      status(paste("Running centroid trajectory analysis.", cost_message))
-      analysis_result(NULL)
-      analysis_source(NULL)
-      progress <- shiny::Progress$new(session, min = 0, max = 1)
-      progress_closed <- FALSE
-      close_progress <- function() {
-        if (!progress_closed) {
-          progress_closed <<- TRUE
-          try(progress$close(), silent = TRUE)
-        }
-        invisible(NULL)
-      }
-      progress$set(value = 0.02, message = "Trajectory analysis",
-                   detail = "Validating selections")
-
-      fail_analysis <- function(error) {
-        if (!identical(bootstrap_state$generation, run_generation)) {
-          return(invisible(NULL))
-        }
-        bootstrap_state$active <- NULL
-        close_progress()
-        status(paste("Trajectory analysis failed:", conditionMessage(error)))
-        invisible(NULL)
-      }
-
-      tryCatch({
-        info <- data_info()
-        if (is.null(info)) stop("No ENA object is available.")
-        object <- info$object
-        points <- info$points
-        full_dimensions <- info$dimensions
-
-        if (!exists("compute_centroid_path", mode = "function", inherits = TRUE)) {
-          stop("compute_centroid_path() is unavailable; source trajectory_analysis.R first.")
-        }
-        time_var <- .trajectory_or(input$time_var, "")
-        id_var <- .trajectory_or(input$id_var, "")
-        group_var <- .trajectory_or(input$group_var, "")
-        condition_a <- .trajectory_or(input$condition_a, "")
-        condition_b <- .trajectory_or(input$condition_b, "")
-        show_uncertainty <- isTRUE(input$show_uncertainty)
-        run_comparison <- isTRUE(input$run_comparison)
-        paired_ids_confirmed <- isTRUE(input$confirm_paired_ids)
-        current_time <- input$selected_time
-        overlap <- comparison_overlap()
-        if (!nzchar(time_var) || !time_var %in% names(points)) {
-          stop("Select a valid time / order variable.")
-        }
-        if (!nzchar(id_var) || !id_var %in% names(points)) {
-          stop("Select a valid repeated entity ID variable.")
-        }
-        if (identical(time_var, id_var)) {
-          stop("Time and entity ID must be different variables.")
-        }
-        if (nzchar(group_var) && !group_var %in% names(points)) {
-          stop("Select a valid group / condition variable.")
-        }
-        if (nzchar(group_var) && group_var %in% c(time_var, id_var)) {
-          stop("Group / condition must differ from time and entity ID.")
-        }
-        coverage <- .trajectory_id_coverage(
-          points, time_var, id_var, if (nzchar(group_var)) group_var else NULL
-        )
-        if (coverage$n_repeated_ids < 1L) {
-          stop(.trajectory_id_coverage_message(coverage, id_var, group_var))
-        }
-        export_keys <- c(time_var, if (nzchar(group_var)) group_var else character())
-        if (any(startsWith(export_keys, ".analysis_"))) {
-          stop(
-            "Time and group fields beginning with reserved `.analysis_` cannot be exported safely."
-          )
-        }
-
-        dimensions <- .trajectory_flatten_axes(selected_axes)
-        dimensions <- intersect(dimensions, full_dimensions)
-        if (!length(dimensions)) dimensions <- head(full_dimensions, 3L)
-        if (length(dimensions) < 2L) {
-          stop("At least two numeric ENA dimensions are required.")
-        }
-        if (identical(input$view, "3d") &&
-            length(unique(dimensions)) < 3L) {
-          stop("The 3D view requires three distinct selected ENA dimensions.")
-        }
-
-        order <- .trajectory_parse_order(input$time_order, points[[time_var]])
-        cohort_policy <- .trajectory_or(input$cohort_policy, "available")
-        na_policy <- .trajectory_or(input$na_policy, "complete")
-        distance_space <- .trajectory_or(input$distance_space, "selected")
-        bootstrap_design <- match.arg(
-          .trajectory_or(input$bootstrap_design, "auto"),
-          c("auto", "cluster", "stratified")
-        )
-        raw_n_boot <- .trajectory_or(input$bootstrap_reps, 500L)
-        if (!is.numeric(raw_n_boot) || length(raw_n_boot) != 1L ||
-            is.na(raw_n_boot) || !is.finite(raw_n_boot) ||
-            raw_n_boot != floor(raw_n_boot) ||
-            raw_n_boot > .Machine$integer.max) {
-          stop("Bootstrap reps must be one whole number.")
-        }
-        n_boot <- as.integer(raw_n_boot)
-        conf_level <- as.numeric(.trajectory_or(input$confidence, 0.95))
-        seed <- as.integer(.trajectory_or(input$bootstrap_seed, 2026L))
-        if (is.na(n_boot) || n_boot < 2L) stop("Bootstrap reps must be at least 2.")
-        if (n_boot > .trajectory_bootstrap_max_reps()) {
-          stop(
-            "Bootstrap reps must be at most ",
-            .trajectory_bootstrap_max_reps(),
-            " on the hosted application."
-          )
-        }
-        if (!is.finite(conf_level) || conf_level <= 0 || conf_level >= 1) {
-          stop("Confidence must be between 0 and 1.")
-        }
-        if (is.na(seed) || seed < 0L) stop("Bootstrap seed must be non-negative.")
-        bootstrap_requested <- show_uncertainty ||
-          (run_comparison && nzchar(group_var))
-        if (bootstrap_requested) {
-          if (n_boot < 200L) {
-            stop(
-              "Hosted confidence intervals require at least 200 bootstrap repetitions."
-            )
-          }
-          required_reps <- .trajectory_bootstrap_required_valid(
-            n_boot, conf_level
-          )
-          tail_required <- ceiling(10 / (1 - conf_level))
-          if (n_boot < required_reps) {
-            stop(
-              "Bootstrap reps are insufficient for this confidence level: need at least ",
-              tail_required,
-              " so each interval tail has five expected replicates."
-            )
-          }
-        }
-        if (run_comparison && nzchar(group_var) && !paired_ids_confirmed) {
-          stop(
-            paste0(
-              "Confirm that the same raw ID across the two conditions denotes ",
-              "the same physical entity before running a paired comparison."
-            )
-          )
-        }
-        job_dimensions <- if (identical(distance_space, "full")) {
-          full_dimensions
-        } else {
-          dimensions
-        }
-        job_cost <- .trajectory_bootstrap_cost(
-          points, job_dimensions, n_boot,
-          uncertainty = show_uncertainty,
-          comparison = run_comparison && nzchar(group_var)
-        )
-        .trajectory_validate_bootstrap_cost(job_cost)
-
-        common_arguments <- list(
-          points = points,
-          time_var = time_var,
-          id_var = id_var,
-          group_vars = if (nzchar(group_var)) group_var else NULL,
-          dimensions = dimensions,
-          order = order,
-          cohort_policy = cohort_policy,
-          weights = NULL,
-          na_policy = na_policy,
-          distance_space = distance_space,
-          full_dimensions = full_dimensions
-        )
-        progress$set(value = 0.10, detail = "Computing ordered centroid path")
-        path <- do.call(compute_centroid_path, common_arguments)
-        progress$set(value = 0.28, detail = "Centroid path complete")
-
-        module_diagnostics <- .trajectory_module_diagnostic(
-          "none", "", severity = "info"
-        )[0, , drop = FALSE]
-        time_values <- points[[time_var]]
-        if (is.character(time_values) ||
-            (is.factor(time_values) && !is.ordered(time_values))) {
-          module_diagnostics <- .trajectory_bind_diagnostics(
-            module_diagnostics,
-            .trajectory_module_diagnostic(
-              "time_order_requires_review",
-              paste0(
-                "The time variable is character or an unordered factor. ",
-                "Verify that the explicit order shown in the control is substantively correct."
-              )
-            )
-          )
-        }
-
-        uncertainty_arguments <- if (show_uncertainty) {
-          c(common_arguments, list(
-            n_boot = n_boot,
-            conf_level = conf_level,
-            seed = seed,
-            bootstrap_design = bootstrap_design
-          ))
-        } else {
-          NULL
-        }
-        comparison_arguments <- NULL
-        if (nzchar(group_var) && run_comparison) {
-          if (nzchar(condition_a) && nzchar(condition_b) &&
-              !identical(condition_a, condition_b)) {
-            points_a <- points[
-              .trajectory_time_filter_mask(
-                points[[group_var]], condition_a
-              ),
-              , drop = FALSE
-            ]
-            points_b <- points[
-              .trajectory_time_filter_mask(
-                points[[group_var]], condition_b
-              ),
-              , drop = FALSE
-            ]
-            comparison_arguments <- list(
-              points_a = points_a,
-              points_b = points_b,
-              time_var = time_var,
-              id_var = id_var,
-              group_vars = NULL,
-              dimensions = dimensions,
-              order = order,
-              cohort_policy = cohort_policy,
-              weights_a = NULL,
-              weights_b = NULL,
-              na_policy = na_policy,
-              distance_space = distance_space,
-              full_dimensions = full_dimensions,
-              n_boot = n_boot,
-              conf_level = conf_level,
-              seed = seed,
-              labels = c(condition_a, condition_b),
-              pair_weight_policy = "require_equal",
-              bootstrap_design = bootstrap_design
-            )
-          } else {
-            module_diagnostics <- .trajectory_bind_diagnostics(
-              module_diagnostics,
-              .trajectory_module_diagnostic(
-                "comparison_levels_unavailable",
-                "The grouped paths were computed, but comparison needs two distinct levels."
-              )
-            )
-          }
-        }
-
-        complete_analysis <- function(job_result) {
-          uncertainty <- job_result$uncertainty
-          comparison <- job_result$comparison
-          path_diagnostics <- .trajectory_module_diagnostics_from(path, "path")
-          uncertainty_diagnostics <- .trajectory_module_diagnostics_from(
-            uncertainty, "bootstrap"
-          )
-          uncertainty_diagnostics <- .trajectory_remove_inherited_diagnostics(
-            uncertainty_diagnostics, path_diagnostics
-          )
-          diagnostics <- .trajectory_bind_diagnostics(
-            path_diagnostics,
-            uncertainty_diagnostics,
-            .trajectory_module_diagnostics_from(comparison, "comparison"),
-            module_diagnostics
-          )
-          progress$set(value = 0.93, detail = "Recording reproducibility metadata")
-          metadata <- c(list(
-            time_var = time_var,
-            id_var = id_var,
-            group_var = if (nzchar(group_var)) group_var else NA_character_,
-            condition_a = if (nzchar(group_var)) condition_a else NA_character_,
-            condition_b = if (nzchar(group_var)) condition_b else NA_character_,
-            dimensions = dimensions,
-            full_dimensions = full_dimensions,
-            distance_space = distance_space,
-            cohort_policy = cohort_policy,
-            na_policy = na_policy,
-            time_order = .trajectory_order_labels(order),
-            bootstrap_enabled = show_uncertainty,
-            comparison_requested = run_comparison && nzchar(group_var),
-            comparison_enabled = !is.null(comparison),
-            paired_id_identity_confirmed = paired_ids_confirmed,
-            comparison_overlap_ids = overlap$n_overlap_ids,
-            comparison_matched_id_times = overlap$n_matched_id_times,
-            bootstrap_design_requested_ui = bootstrap_design,
-            bootstrap_reps = if (show_uncertainty || !is.null(comparison)) {
-              n_boot
-            } else {
-              NA_integer_
-            },
-            confidence = if (show_uncertainty || !is.null(comparison)) {
-              conf_level
-            } else {
-              NA_real_
-            },
-            seed = if (show_uncertainty || !is.null(comparison)) seed else NA_integer_,
-            raw_point_rows = nrow(points),
-            id_profiles = coverage$n_ids,
-            repeated_id_profiles = coverage$n_repeated_ids,
-            repeated_id_row_coverage = coverage$repeated_row_fraction,
-            duplicate_id_time_rows = coverage$n_duplicate_id_time_rows,
-            csv_text_escape = paste0(
-              "Character cells and column headers beginning with =, +, -, or @ ",
-              "are prefixed with an apostrophe in CSV files to prevent ",
-              "spreadsheet formula execution."
-            ),
-            generated_at_utc = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
-          ),
-          .trajectory_provenance_metadata(object, full_dimensions),
-          .trajectory_bootstrap_metadata(uncertainty, comparison))
-
-          result <- list(
-            path = path,
-            bootstrap = uncertainty,
-            comparison = comparison,
-            diagnostics = diagnostics,
-            metadata = metadata,
-            settings = list(
-              dimensions = dimensions,
-              full_dimensions = full_dimensions,
-              group_var = if (nzchar(group_var)) group_var else NULL,
-              time_var = time_var,
-              id_var = id_var,
-              distance_space = distance_space,
-              cohort_policy = cohort_policy,
-              na_policy = na_policy,
-              bootstrap_design_requested = bootstrap_design,
-              paired_id_identity_confirmed = paired_ids_confirmed
-            )
-          )
-          analysis_source(object)
-          analysis_result(result)
-          progress$set(value = 1, detail = "Analysis and provenance complete")
-
-          time_labels <- .trajectory_order_labels(order)
-          shiny::updateSelectInput(
-            session, "selected_time", choices = time_labels,
-            selected = if (!is.null(current_time) && current_time %in% time_labels) {
-              current_time
-            } else {
-              time_labels[[1L]]
-            }
-          )
-          trajectory_count <- if (nzchar(group_var)) {
-            length(unique(as.character(path[[group_var]])))
-          } else {
-            1L
-          }
-          status(paste0(
-            "Completed ", nrow(path), " centroid slices across ", trajectory_count,
-            if (trajectory_count == 1L) " trajectory" else " trajectories",
-            "; distances use the ", distance_space, " ENA space."
-          ))
-          invisible(result)
-        }
-
-        if (is.null(uncertainty_arguments) && is.null(comparison_arguments)) {
-          complete_analysis(list(uncertainty = NULL, comparison = NULL))
-          close_progress()
-          return(invisible(NULL))
-        }
-
-        progress$set(
-          value = 0.32,
-          detail = paste(
-            "Running isolated bootstrap worker with an executable deadline;",
-            cost_message
-          )
-        )
-        worker <- .trajectory_start_bootstrap_job(
-          uncertainty_arguments = uncertainty_arguments,
-          comparison_arguments = comparison_arguments,
-          timeout_seconds = .trajectory_bootstrap_max_seconds()
-        )
-        bootstrap_state$active <- list(
-          worker = worker,
-          close_progress = close_progress,
-          generation = run_generation
-        )
-        completed <- promises::then(worker$promise, function(job_result) {
-          if (!identical(bootstrap_state$generation, run_generation)) {
-            return(invisible(NULL))
-          }
-          bootstrap_state$active <- NULL
-          on.exit(close_progress(), add = TRUE)
-          complete_analysis(job_result)
-        })
-        promises::catch(completed, function(error) {
-          fail_analysis(error)
-          NULL
-        })
-        invisible(NULL)
-      }, error = fail_analysis)
-    }, ignoreInit = TRUE)
-
-    output$status <- shiny::renderText(status())
-
-    output$warnings <- shiny::renderUI({
-      result <- analysis_result()
-      if (is.null(result) || !nrow(result$diagnostics)) return(NULL)
-
-      diagnostics <- result$diagnostics
-      messages <- vapply(seq_len(nrow(diagnostics)), function(index) {
-        context <- character(0)
-        if ("group" %in% names(diagnostics) &&
-            !is.na(diagnostics$group[[index]]) &&
-            nzchar(as.character(diagnostics$group[[index]])) &&
-            diagnostics$group[[index]] != "all") {
-          context <- c(context, paste0("group ", diagnostics$group[[index]]))
-        }
-        if ("time_order" %in% names(diagnostics) &&
-            !is.na(diagnostics$time_order[[index]])) {
-          context <- c(context, paste0("time order ", diagnostics$time_order[[index]]))
-        }
-        if ("count" %in% names(diagnostics) &&
-            !is.na(diagnostics$count[[index]]) && diagnostics$count[[index]] > 1L) {
-          context <- c(context, paste0("count ", diagnostics$count[[index]]))
-        }
-        suffix <- if (length(context)) paste0(" (", paste(context, collapse = ", "), ")") else ""
-        paste0(
-          "[", toupper(diagnostics$severity[[index]]), "] ",
-          diagnostics$message[[index]], suffix
-        )
-      }, character(1))
-      messages <- unique(messages[!is.na(messages) & nzchar(messages)])
-      shiny::tags$div(
-        class = "trajectory-analysis-warnings alert alert-warning",
-        style = "margin-top: 0.5rem;",
-        shiny::tags$strong("Trajectory diagnostics"),
-        shiny::tags$ul(lapply(messages, shiny::tags$li))
-      )
-    })
-
-    output$downloads <- shiny::renderUI({
-      .trajectory_download_controls(analysis_result(), session$ns)
-    })
-
-    output$node_legend <- shiny::renderUI({
-      result <- analysis_result()
-      if (is.null(result)) return(NULL)
-      .trajectory_node_legend_ui(result$path)
-    })
-    shiny::outputOptions(output, "node_legend", suspendWhenHidden = FALSE)
-
-    overlay_data <- shiny::reactive({
-      result <- analysis_result()
-      if (is.null(result)) {
-        return(list(code_nodes = NULL, network_edges = NULL, message = "Overlay off."))
-      }
-
-      source <- analysis_source()
-      base_nodes <- if (!is.null(source) && !is.data.frame(source) &&
-                        !is.null(source$rotation$nodes)) {
-        as.data.frame(source$rotation$nodes)
-      } else {
-        NULL
-      }
-      if (!isTRUE(input$network_overlay)) {
-        return(list(
-          code_nodes = base_nodes,
-          network_edges = NULL,
-          message = "Code nodes shown; mean network overlay off."
-        ))
-      }
-
-      view <- .trajectory_or(input$view, "3d")
-      dimensions <- if (identical(view, "2d")) {
-        c(input$axis_x, input$axis_y)
-      } else {
-        head(result$settings$dimensions, 3L)
-      }
-      dimensions <- dimensions[!is.na(dimensions) & nzchar(dimensions)]
-      overlay <- .trajectory_network_overlay(
-        analysis_source(), dimensions, result$settings$time_var,
-        .trajectory_or(input$selected_time, ""),
-        group_var = result$settings$group_var,
-        selected_group = .trajectory_or(input$overlay_group, "")
-      )
-      if (is.null(overlay$code_nodes)) overlay$code_nodes <- base_nodes
-      overlay
-    })
-
-    output$overlay_status <- shiny::renderText(overlay_data()$message)
-
-    output$trajectory_plot <- plotly::renderPlotly({
-      result <- analysis_result()
-      shiny::validate(shiny::need(
-        !is.null(result), "Run the trajectory analysis to create a plot."
-      ))
-      shiny::validate(shiny::need(
-        exists("plot_centroid_trajectory", mode = "function", inherits = TRUE),
-        "plot_centroid_trajectory() is unavailable; source trajectory_plot.R first."
-      ))
-
-      view <- .trajectory_or(input$view, "3d")
-      dimensions <- if (identical(view, "2d")) {
-        c(input$axis_x, input$axis_y)
-      } else {
-        head(result$settings$dimensions, 3L)
-      }
-      dimensions <- dimensions[!is.na(dimensions) & nzchar(dimensions)]
-      required_count <- if (identical(view, "2d")) 2L else 3L
-      shiny::validate(shiny::need(
-        length(unique(dimensions)) == required_count,
-        paste0("Select ", required_count, " distinct axes for the ", toupper(view), " view.")
-      ))
-
-      plot_data <- if (isTRUE(input$show_uncertainty) && !is.null(result$bootstrap)) {
-        result$bootstrap
-      } else {
-        result$path
-      }
-      group_var <- .trajectory_or(result$settings$group_var, "")
-      display_levels <- as.character(.trajectory_or(
-        input$display_levels, character(0)
-      ))
-      if (nzchar(group_var) && group_var %in% names(plot_data)) {
-        keep <- as.character(plot_data[[group_var]]) %in% display_levels
-        plot_data <- plot_data[keep, , drop = FALSE]
-      }
-      shiny::validate(shiny::need(
-        nrow(plot_data) > 0L,
-        "Choose at least one displayed trajectory level."
-      ))
-
-      source <- analysis_source()
-      unit_points <- if (!is.null(source)) {
-        .trajectory_points(source)
-      } else {
-        NULL
-      }
-      if (!is.null(unit_points) && nzchar(group_var) &&
-          group_var %in% names(unit_points)) {
-        unit_points <- unit_points[
-          as.character(unit_points[[group_var]]) %in% display_levels,
-          , drop = FALSE
-        ]
-      }
-      overlay <- overlay_data()
-      plot_centroid_trajectory(
-        path = plot_data,
-        dimensions = dimensions,
-        view = view,
-        group_cols = result$settings$group_var,
-        colors = .trajectory_colors(group_colors),
-        camera = .trajectory_resolve_value(camera),
-        display_scale = 1,
-        unit_points = unit_points,
-        code_nodes = overlay$code_nodes,
-        network_edges = overlay$network_edges,
-        selected_time = input$selected_time,
-        show_warnings = TRUE,
-        show_direction = !identical(input$show_direction, FALSE)
-      )
-    })
-
-    output$download_bundle <- shiny::downloadHandler(
-      filename = function() {
-        paste0("ena3d-trajectory-analysis-", format(Sys.Date(), "%Y%m%d"), ".zip")
-      },
-      contentType = "application/zip",
-      content = function(file) {
-        result <- analysis_result()
-        shiny::req(!is.null(result))
-        .trajectory_write_bundle(result, file)
-      }
-    )
-
-    output$download_path <- shiny::downloadHandler(
-      filename = function() {
-        paste0("centroid-path-", format(Sys.Date(), "%Y%m%d"), ".csv")
-      },
-      content = function(file) {
-        result <- analysis_result()
-        shiny::req(!is.null(result))
-        .trajectory_write_csv(
-          .trajectory_export_metadata(result$path, result$metadata), file
-        )
-      }
-    )
-
-    output$download_uncertainty <- shiny::downloadHandler(
-      filename = function() {
-        paste0("centroid-path-bootstrap-", format(Sys.Date(), "%Y%m%d"), ".csv")
-      },
-      content = function(file) {
-        result <- analysis_result()
-        shiny::req(!is.null(result), !is.null(result$bootstrap))
-        .trajectory_write_csv(
-          .trajectory_export_metadata(result$bootstrap, result$metadata), file
-        )
-      }
-    )
-
-    output$download_comparison <- shiny::downloadHandler(
-      filename = function() {
-        result <- analysis_result()
-        levels <- c(result$metadata$condition_a, result$metadata$condition_b)
-        levels <- .trajectory_safe_file_part(paste(levels, collapse = "-vs-"))
-        paste0("centroid-path-comparison-", levels, "-", format(Sys.Date(), "%Y%m%d"), ".csv")
-      },
-      content = function(file) {
-        result <- analysis_result()
-        shiny::req(!is.null(result), !is.null(result$comparison))
-        .trajectory_write_csv(
-          .trajectory_export_metadata(result$comparison, result$metadata), file
-        )
-      }
-    )
-
-    output$download_metadata <- shiny::downloadHandler(
-      filename = function() {
-        paste0("centroid-path-metadata-", format(Sys.Date(), "%Y%m%d"), ".csv")
-      },
-      content = function(file) {
-        result <- analysis_result()
-        shiny::req(!is.null(result))
-        metadata <- .trajectory_metadata_table(result$metadata)
-        if (nrow(result$diagnostics)) {
-          diagnostics <- data.frame(
-            field = paste0("diagnostic_", seq_len(nrow(result$diagnostics))),
-            value = paste(
-              result$diagnostics$severity,
-              result$diagnostics$code,
-              result$diagnostics$message,
-              sep = ": "
-            ),
-            stringsAsFactors = FALSE
-          )
-          metadata <- rbind(metadata, diagnostics)
-        }
-        .trajectory_write_csv(metadata, file)
-      }
-    )
-
-    # A stable, explicit test surface. No analytical result changes until the
-    # Run / recompute button is pressed again.
-    list(
-      result = shiny::reactive(analysis_result()),
-      path = shiny::reactive({
-        result <- analysis_result()
-        if (is.null(result)) NULL else result$path
-      }),
-      bootstrap = shiny::reactive({
-        result <- analysis_result()
-        if (is.null(result)) NULL else result$bootstrap
-      }),
-      comparison = shiny::reactive({
-        result <- analysis_result()
-        if (is.null(result)) NULL else result$comparison
-      }),
-      diagnostics = shiny::reactive({
-        result <- analysis_result()
-        if (is.null(result)) NULL else result$diagnostics
-      }),
-      metadata = shiny::reactive({
-        result <- analysis_result()
-        if (is.null(result)) NULL else result$metadata
-      }),
-      status = shiny::reactive(status())
+    .trajectory_server_impl(
+      input, output, session, ena_obj, selected_axes, raw_dimensions,
+      group_colors, camera, analysis_result, status
     )
   })
 }

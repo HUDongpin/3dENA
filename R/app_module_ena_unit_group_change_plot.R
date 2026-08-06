@@ -118,6 +118,68 @@ ena3d_change_lru_put <- function(cache, key, plot,
   cache
 }
 
+ena3d_change_selection_server <- function(
+    input, session, points, dataset_id, initialized,
+    default_group_var = function() character()) {
+  selection <- reactiveVal(list(
+    enabled = FALSE,
+    reason = "no_dataset",
+    choices = character(),
+    selected = character(),
+    message = "Load a dataset first."
+  ))
+
+  synchronize <- function(use_user_selection) {
+    if (!isTRUE(initialized())) return(invisible(NULL))
+    current_points <- points()
+    requested_group_var <- if (isTRUE(use_user_selection)) {
+      input$group_change_var
+    } else {
+      default_group_var()
+    }
+    resolved <- ena3d_change_selector_state_for_points(
+      current_points,
+      requested_group_var,
+      fallback_group_var = default_group_var()
+    )
+    selection(resolved)
+
+    if (isTRUE(use_user_selection)) {
+      if (!identical(
+        as.character(input$unit_change), as.character(resolved$selected)
+      )) {
+        freezeReactiveValue(input, "unit_change")
+      }
+    }
+    updateSelectInput(
+      session,
+      "unit_change",
+      choices = resolved$choices,
+      selected = resolved$selected
+    )
+    invisible(resolved)
+  }
+
+  # Dataset loading freezes the browser input values while replacing all
+  # dependent controls. Rebuild from server-owned dataset state first so a
+  # frozen/stale Selectize value cannot strand this module in an updating
+  # state. The lower-priority observer then accepts later user changes.
+  observeEvent(
+    list(dataset_id(), initialized(), default_group_var()),
+    synchronize(FALSE),
+    ignoreInit = FALSE,
+    priority = 1100
+  )
+  observeEvent(
+    input$group_change_var,
+    synchronize(TRUE),
+    ignoreInit = FALSE,
+    priority = 1000
+  )
+
+  reactive(selection())
+}
+
 ena_unit_group_change_plot_output <- function(input,output,session,
                                               rv_data,
                                               state,
@@ -132,11 +194,11 @@ ena_unit_group_change_plot_output <- function(input,output,session,
   z_axis <- reactive({
     tilde_var_or_null(input$z)
   })
-  change_cache_key <- reactive({
-    req(input$group_change_var, input$x, input$y, input$z)
+  change_cache_key <- function(group_var) {
+    req(group_var, input$x, input$y, input$z)
     ena3d_change_cache_key(
       dataset_id = rv_data$dataset_id,
-      group_var = input$group_change_var,
+      group_var = group_var,
       axes = c(input$x, input$y, input$z),
       scale_factor = input$scale_factor,
       line_width = input$line_width,
@@ -150,19 +212,34 @@ ena_unit_group_change_plot_output <- function(input,output,session,
       show_mean = input$group_change_show_mean,
       show_confidence_interval = input$group_change_show_confidence_interval
     )
+  }
+  change_selection <- ena3d_change_selection_server(
+    input,
+    session,
+    points = reactive({
+      # state is an R6 bridge rather than a reactiveValues object. Depend on
+      # the dataset identity explicitly so this reactive cannot retain the
+      # previous ENA object's points after a sample/upload switch.
+      rv_data$dataset_id
+      req(state$ena_obj)
+      state$ena_obj$points
+    }),
+    dataset_id = reactive(rv_data$dataset_id),
+    initialized = reactive(isTRUE(rv_data$initialized)),
+    default_group_var = reactive({
+      values <- as.character(rv_data$ena_groupVar)
+      if (length(values)) values[[1L]] else character()
+    })
+  )
+  output$change_value_status <- renderText({
+    resolved <- change_selection()
+    if (!isTRUE(resolved$enabled)) return(resolved$message)
+    selected <- input$unit_change
+    if (length(selected) && selected %in% resolved$choices) {
+      return(sprintf("%s Selected: %s.", resolved$message, selected))
+    }
+    resolved$message
   })
-  observeEvent(list(input$group_change_var, rv_data$dataset_id), {
-    req(rv_data$initialized, state$ena_obj, input$group_change_var)
-    values <- ena3d_change_group_values(state$ena_obj$points, input$group_change_var)
-    ena3d_validate_change_cardinality(values)
-    updateSelectInput(
-      session,
-      "unit_change",
-      choices = as.character(values),
-      selected = if (length(values)) as.character(values[[1L]]) else character()
-    )
-    rv_data$unit_group_change_plots <- list()
-  }, ignoreInit = TRUE)
   camera = reactive({
     pos = input$camera_position
     if(pos =='default'){
@@ -245,14 +322,14 @@ ena_unit_group_change_plot_output <- function(input,output,session,
   # Build only the currently requested value. Caching complete Plotly widgets
   # for every metadata level made high-cardinality variables unbounded in both
   # latency and per-session memory.
-  make_unit_group_change_plot <- function(current_group) {
+  make_unit_group_change_plot <- function(current_group, group_var) {
     withProgress(message = "Making Change plot", value = 0, {
       req(
         ena3d_axes_are_distinct(input$x, input$y, input$z),
         cancelOutput = TRUE
       )
       group_values <- ena3d_change_group_values(
-        state$ena_obj$points, input$group_change_var
+        state$ena_obj$points, group_var
       )
       ena3d_validate_change_cardinality(group_values)
       if (!as.character(current_group) %in% as.character(group_values)) {
@@ -281,7 +358,7 @@ ena_unit_group_change_plot_output <- function(input,output,session,
       c_network <- build_network(
         scaled_nodes(),
         network = get_mean_group_lineweights(
-          state$ena_obj, input$group_change_var, current_group
+          state$ena_obj, group_var, current_group
         ),
         adjacency.key = state$ena_obj$rotation$adjacency.key
       )
@@ -293,7 +370,7 @@ ena_unit_group_change_plot_output <- function(input,output,session,
       mplot <- add_3d_axis_based_on_user_selection(mplot)
       mplot <- add_mean_to_plot(
         mplot, all_points = scaled_points(), group_name = current_group,
-        group_var = input$group_change_var,
+        group_var = group_var,
         show_mean = input$group_change_show_mean,
         show_conf_int = input$group_change_show_confidence_interval,
         color = "red"
@@ -302,7 +379,7 @@ ena_unit_group_change_plot_output <- function(input,output,session,
       plot <- layout(
         mplot,
         title = list(
-          text = paste(input$group_change_var, current_group),
+          text = paste(group_var, current_group),
           pad = list(t = 50, b = 10, l = 10, r = 10)
         ),
         scene = list(
@@ -356,9 +433,17 @@ ena_unit_group_change_plot_output <- function(input,output,session,
   "
   output$ena_unit_group_change_plot <- renderPlotly({
     req(rv_data$initialized,cancelOutput = TRUE)
-    req(input$x, input$y, input$z, input$group_change_var, input$unit_change)
+    resolved <- change_selection()
+    validate(need(isTRUE(resolved$enabled), resolved$message))
+    group_var <- resolved$group_var
+    validate(need(
+      length(input$unit_change) == 1L &&
+        input$unit_change %in% resolved$choices,
+      "Select an available value to display its Change network."
+    ))
+    req(input$x, input$y, input$z, group_var)
     current_key <- c(
-      change_cache_key(),
+      change_cache_key(group_var),
       list(
         group_value = as.character(input$unit_change),
         camera_position = as.character(input$camera_position)
@@ -371,7 +456,7 @@ ena_unit_group_change_plot_output <- function(input,output,session,
     if (isTRUE(cached$hit)) {
       p <- cached$plot
     } else {
-      p <- make_unit_group_change_plot(input$unit_change)
+      p <- make_unit_group_change_plot(input$unit_change, group_var)
       isolate({
         rv_data$unit_group_change_plots <- ena3d_change_lru_put(
           rv_data$unit_group_change_plots, current_key, p

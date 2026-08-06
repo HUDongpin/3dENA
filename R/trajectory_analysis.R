@@ -17,6 +17,19 @@
     stop("`points` must have non-empty column names.", call. = FALSE)
   }
 
+  has_integer64 <- if (is.matrix(points)) {
+    inherits(points, "integer64")
+  } else {
+    any(vapply(points, inherits, logical(1L), what = "integer64"))
+  }
+  if (has_integer64) {
+    # Loading the namespace registers bit64's vector/data-frame subset methods
+    # before any copy or later group/template subset occurs. Without those S3
+    # methods, base `[` silently drops the integer64 class and reinterprets its
+    # raw storage as ordinary doubles (including NaN/Inf bit patterns).
+    .trajectory_require_integer64_namespace("copy and subset")
+  }
+
   copied <- if (is.matrix(points)) {
     lapply(seq_along(point_names), function(j) {
       points[, j, drop = TRUE]
@@ -63,7 +76,120 @@
   }
 }
 
+.trajectory_is_integer64 <- function(x) {
+  inherits(x, "integer64")
+}
+
+.trajectory_integer64_hex <- function(x) {
+  if (!.trajectory_is_integer64(x)) {
+    stop("Expected a bit64::integer64 vector.", call. = FALSE)
+  }
+  storage <- unclass(x)
+  if (!is.double(storage)) {
+    stop(
+      "integer64 columns must use bit64's 64-bit storage representation.",
+      call. = FALSE
+    )
+  }
+  if (!length(storage)) return(character())
+
+  bytes <- writeBin(storage, raw(), size = 8L, endian = "big")
+  vapply(seq_along(storage), function(index) {
+    positions <- ((index - 1L) * 8L + 1L):(index * 8L)
+    paste(sprintf("%02x", as.integer(bytes[positions])), collapse = "")
+  }, character(1L), USE.NAMES = FALSE)
+}
+
+.trajectory_integer64_missing <- function(x) {
+  # bit64 reserves signed INT64_MIN as NA. Reading the storage bits avoids the
+  # lossy double conversion that collapsed adjacent values above 2^53 and also
+  # works fail-closed when an integer64 vector was deserialized before the
+  # optional bit64 namespace was loaded.
+  .trajectory_integer64_hex(x) == "8000000000000000"
+}
+
+.trajectory_integer64_differences <- function(x) {
+  storage_hex <- .trajectory_integer64_hex(x)
+  if (length(storage_hex) < 2L) return(numeric())
+
+  parse_word <- function(value) {
+    strtoi(substr(value, 1L, 4L), base = 16L) * 2^16 +
+      strtoi(substr(value, 5L, 8L), base = 16L)
+  }
+  high <- vapply(substr(storage_hex, 1L, 8L), parse_word, numeric(1L))
+  low <- vapply(substr(storage_hex, 9L, 16L), parse_word, numeric(1L))
+  negative <- high >= 2^31
+  missing <- storage_hex == "8000000000000000"
+  base <- 2^32
+
+  # Convert two's-complement limbs to unsigned magnitude limbs without ever
+  # representing the original signed integer as a double. This retains a
+  # one-unit interval at either int64 extreme and also allows a final rounded
+  # double result for the full legal span, whose difference needs 65 bits.
+  magnitude_high <- high
+  magnitude_low <- low
+  negative_with_low <- negative & low != 0
+  negative_without_low <- negative & low == 0
+  magnitude_high[negative_with_low] <-
+    base - 1 - high[negative_with_low]
+  magnitude_low[negative_with_low] <- base - low[negative_with_low]
+  magnitude_high[negative_without_low] <-
+    base - high[negative_without_low]
+  magnitude_low[negative_without_low] <- 0
+
+  vapply(seq.int(2L, length(storage_hex)), function(index) {
+    previous <- index - 1L
+    if (missing[previous] || missing[index]) return(NA_real_)
+
+    if (negative[previous] == negative[index]) {
+      if (negative[index]) {
+        return(
+          (magnitude_high[previous] - magnitude_high[index]) * base +
+            (magnitude_low[previous] - magnitude_low[index])
+        )
+      }
+      return(
+        (magnitude_high[index] - magnitude_high[previous]) * base +
+          (magnitude_low[index] - magnitude_low[previous])
+      )
+    }
+
+    low_sum <- magnitude_low[previous] + magnitude_low[index]
+    carry <- floor(low_sum / base)
+    magnitude <-
+      (magnitude_high[previous] + magnitude_high[index] + carry) * base +
+      (low_sum - carry * base)
+    if (negative[previous]) magnitude else -magnitude
+  }, numeric(1L), USE.NAMES = FALSE)
+}
+
+.trajectory_integer64_label <- function(x) {
+  storage_hex <- .trajectory_integer64_hex(x)
+  decimal <- if (requireNamespace("bit64", quietly = TRUE)) {
+    as.character(x)
+  } else {
+    paste0("0x", storage_hex)
+  }
+  paste0(decimal, " [integer64=0x", storage_hex, "]")
+}
+
+.trajectory_require_integer64_namespace <- function(context) {
+  if (!requireNamespace("bit64", quietly = TRUE)) {
+    stop(
+      paste0(
+        "The `bit64` package is required to ", context,
+        " integer64 analytical keys without precision loss."
+      ),
+      call. = FALSE
+    )
+  }
+  invisible(TRUE)
+}
+
 .trajectory_is_missing <- function(x) {
+  if (.trajectory_is_integer64(x)) {
+    return(.trajectory_integer64_missing(x))
+  }
   missing <- is.na(x)
   if (is.numeric(x) || inherits(x, "Date") || inherits(x, "POSIXt") ||
       inherits(x, "difftime")) {
@@ -72,30 +198,97 @@
   missing
 }
 
+.trajectory_value_family <- function(x) {
+  if (is.factor(x) || is.character(x)) return("text")
+  if (inherits(x, "Date")) return("date")
+  if (inherits(x, "POSIXt")) return("datetime")
+  if (inherits(x, "difftime")) return("duration_seconds")
+  if (.trajectory_is_integer64(x)) return("integer64")
+  if (is.numeric(x)) return("numeric")
+  if (is.logical(x)) return("logical")
+  paste0("class:", paste(class(x), collapse = "/"))
+}
+
+.trajectory_canonical_zero <- function(x) {
+  x <- as.numeric(x)
+  finite_zero <- is.finite(x) & x == 0
+  x[finite_zero] <- 0
+  x
+}
+
 .trajectory_value_key <- function(x) {
+  family <- .trajectory_value_family(x)
   if (is.factor(x)) x <- as.character(x)
   if (inherits(x, "Date")) {
     value <- format(x, "%Y-%m-%d")
   } else if (inherits(x, "POSIXt")) {
-    value <- sprintf("%a", as.numeric(x))
+    value <- sprintf("%a", .trajectory_canonical_zero(x))
   } else if (inherits(x, "difftime")) {
     # `difftime` units are presentation metadata, not part of the physical
     # time key. Canonical seconds let equivalent hour/minute/second vectors
     # match across explicit orders and paired inputs.
-    value <- sprintf("%a", as.numeric(x, units = "secs"))
+    value <- sprintf(
+      "%a", .trajectory_canonical_zero(as.numeric(x, units = "secs"))
+    )
+  } else if (.trajectory_is_integer64(x)) {
+    value <- paste0("0x", .trajectory_integer64_hex(x))
   } else if (is.numeric(x)) {
     # Integer and double vectors represent the same analytical key space.
     # Formatting integer storage directly (for example, `1L`) used to produce
     # "1", while the semantically identical double `1` produced "1e+00".
     # Normalising storage first keeps cross-table ID, time, and group matches
     # independent of this implementation detail.
-    value <- sprintf("%a", as.numeric(x))
+    value <- sprintf("%a", .trajectory_canonical_zero(x))
   } else {
     value <- as.character(x)
   }
-  value[is.na(value)] <- "<NA>"
-  vapply(value, encodeString, character(1L), quote = '"', na.encode = TRUE,
-         USE.NAMES = FALSE)
+  missing <- .trajectory_is_missing(x)
+  encoded <- vapply(
+    value, encodeString, character(1L), quote = '"', na.encode = TRUE,
+    USE.NAMES = FALSE
+  )
+  family_prefix <- paste0(
+    "trajectory-key:v2:", nchar(family, type = "bytes"), ":", family, ":"
+  )
+  vapply(seq_along(encoded), function(index) {
+    if (missing[[index]]) return(paste0(family_prefix, "missing"))
+    paste0(
+      family_prefix, "value:", nchar(encoded[[index]], type = "bytes"), ":",
+      encoded[[index]]
+    )
+  }, character(1L), USE.NAMES = FALSE)
+}
+
+.trajectory_group_value_label <- function(value) {
+  if (!length(value) || .trajectory_is_missing(value[1L])) return("NA")
+  value <- value[1L]
+
+  if (inherits(value, "Date")) {
+    return(format(value, "%Y-%m-%d"))
+  }
+  if (inherits(value, "POSIXt")) {
+    epoch <- .trajectory_canonical_zero(value)
+    return(paste0(
+      as.character(value), " [epoch=", sprintf("%a", epoch), "]"
+    ))
+  }
+  if (inherits(value, "difftime")) {
+    seconds <- .trajectory_canonical_zero(as.numeric(value, units = "secs"))
+    return(paste0(
+      as.character(value), " [seconds=",
+      sprintf("%a", seconds), "]"
+    ))
+  }
+  if (.trajectory_is_integer64(value)) {
+    return(.trajectory_integer64_label(value))
+  }
+  if (is.numeric(value)) {
+    exact <- .trajectory_canonical_zero(value)
+    return(paste0(
+      as.character(exact), " [exact=", sprintf("%a", exact), "]"
+    ))
+  }
+  as.character(value)
 }
 
 .trajectory_stable_weighted_mean <- function(values, weights) {
@@ -267,6 +460,26 @@
     }
     return(as.difftime(as.numeric(order_values), units = units))
   }
+  if (.trajectory_is_integer64(time_values)) {
+    .trajectory_require_integer64_namespace("convert explicit order values for")
+    if (.trajectory_is_integer64(order_values)) return(order_values)
+    if (is.character(order_values) || is.integer(order_values)) {
+      return(bit64::as.integer64(order_values))
+    }
+    if (is.double(order_values)) {
+      safe <- is.na(order_values) |
+        (is.finite(order_values) & order_values == trunc(order_values) &
+           abs(order_values) <= 2^53)
+      if (all(safe)) return(bit64::as.integer64(order_values))
+    }
+    stop(
+      paste0(
+        "`order` for an integer64 time column must use integer64 values, ",
+        "exact decimal character values, or exactly represented whole numbers."
+      ),
+      call. = FALSE
+    )
+  }
   if (is.integer(time_values)) return(as.integer(order_values))
   if (is.numeric(time_values)) return(as.numeric(order_values))
   if (is.logical(time_values)) return(as.logical(order_values))
@@ -274,6 +487,12 @@
 }
 
 .trajectory_resolve_order <- function(time_values, order_values = NULL) {
+  if (.trajectory_is_integer64(time_values)) {
+    # Register integer64 subsetting before filtering missing values. Public
+    # callers normally arrive through `.trajectory_copy_frame()`, but this
+    # helper also maintains its invariant when used directly.
+    .trajectory_require_integer64_namespace("subset and order")
+  }
   observed <- time_values[!.trajectory_is_missing(time_values)]
   if (!length(observed) && is.null(order_values)) {
     stop("No non-missing time values are available and `order` was not supplied.",
@@ -296,6 +515,11 @@
       # the narrow physical-time equivalence rule also collapses conversion
       # noise in implicit paired inputs. Explicit equivalents remain an error.
       order_values <- ordered[.trajectory_difftime_unique_mask(ordered)]
+      source <- "ascending_value"
+    } else if (.trajectory_is_integer64(time_values)) {
+      order_values <- sort(
+        unique(observed), na.last = NA
+      )
       source <- "ascending_value"
     } else if (is.numeric(time_values) || inherits(time_values, "Date") ||
                inherits(time_values, "POSIXt") || is.logical(time_values)) {
@@ -351,7 +575,20 @@
     !.trajectory_is_missing(x)
   }))
   groups <- points[valid, group_vars, drop = FALSE]
-  groups[!duplicated(groups), , drop = FALSE]
+  if (!nrow(groups)) return(groups)
+  identity_columns <- lapply(groups[group_vars], .trajectory_value_key)
+  identity <- vapply(seq_len(nrow(groups)), function(row) {
+    pieces <- vapply(seq_along(group_vars), function(index) {
+      name <- group_vars[[index]]
+      value <- identity_columns[[index]][[row]]
+      paste0(
+        nchar(name, type = "bytes"), ":", name, "=",
+        nchar(value, type = "bytes"), ":", value
+      )
+    }, character(1L))
+    paste(pieces, collapse = "|")
+  }, character(1L))
+  groups[!duplicated(identity), , drop = FALSE]
 }
 
 .trajectory_group_mask <- function(points, group_vars, group_row) {
@@ -360,14 +597,16 @@
   for (name in group_vars) {
     target <- group_row[[name]][1L]
     column <- points[[name]]
-    if (is.na(target)) {
-      mask <- mask & is.na(column)
+    target_missing <- .trajectory_is_missing(target)
+    column_missing <- .trajectory_is_missing(column)
+    if (target_missing) {
+      mask <- mask & column_missing
     } else {
       # Direct factor comparison requires identical level sets. Comparisons
       # combine independently constructed point tables, so equal labels can
       # legitimately arrive with different unused levels. The same canonical
       # keys used for participant/time matching avoid that factor-level trap.
-      mask <- mask & !is.na(column) &
+      mask <- mask & !column_missing &
         (.trajectory_value_key(column) == .trajectory_value_key(target))
     }
   }
@@ -377,10 +616,19 @@
 
 .trajectory_group_label <- function(group_vars, group_row) {
   if (!length(group_vars)) return("all")
-  paste(paste0(group_vars, "=", vapply(group_vars, function(name) {
-    value <- group_row[[name]][1L]
-    if (is.na(value)) "NA" else as.character(value)
-  }, character(1L))), collapse = ", ")
+  encode_component <- function(value) {
+    value <- as.character(value)
+    needs_quotes <- grepl('[\\\\,="]', value, perl = TRUE) |
+      grepl("[[:cntrl:]]", value)
+    if (needs_quotes) encodeString(value, quote = '"') else value
+  }
+  paste(vapply(group_vars, function(name) {
+    name_label <- encode_component(name)
+    value_label <- encode_component(
+      .trajectory_group_value_label(group_row[[name]][1L])
+    )
+    paste0(name_label, "=", value_label)
+  }, character(1L)), collapse = ", ")
 }
 
 .trajectory_resolve_weights <- function(points, weights) {
@@ -757,6 +1005,9 @@
   } else if (inherits(order_values, "difftime")) {
     units <- attr(order_values, "units")
     elapsed[-1L] <- as.numeric(diff(order_values), units = units)
+  } else if (.trajectory_is_integer64(order_values)) {
+    elapsed[-1L] <- .trajectory_integer64_differences(order_values)
+    units <- "time units"
   } else if (is.numeric(order_values)) {
     elapsed[-1L] <- diff(as.numeric(order_values))
     units <- "time units"
@@ -1088,7 +1339,11 @@ compute_centroid_path <- function(
   if (any(is.finite(result$elapsed_interval) & result$elapsed_interval <= 0,
           na.rm = TRUE)) {
     add_diagnostic("nonpositive_elapsed_interval", "warning", "all", NA_integer_,
-                   "Explicit time order contains a non-positive numeric/Date-like interval; speed is undefined there.",
+                   paste0(
+                     "The explicit time order creates one or more non-positive ",
+                     "trajectory-group intervals; speed is undefined for each ",
+                     "affected group-interval cell."
+                   ),
                    sum(is.finite(result$elapsed_interval) &
                          result$elapsed_interval <= 0, na.rm = TRUE))
   }
@@ -1312,10 +1567,13 @@ compute_centroid_path <- function(
     mask <- candidate$time_order == reference$time_order[i]
     for (name in group_vars) {
       target <- reference[[name]][i]
-      if (is.na(target)) {
-        mask <- mask & is.na(candidate[[name]])
+      candidate_missing <- .trajectory_is_missing(candidate[[name]])
+      if (.trajectory_is_missing(target)) {
+        mask <- mask & candidate_missing
       } else {
-        mask <- mask & !is.na(candidate[[name]]) & candidate[[name]] == target
+        mask <- mask & !candidate_missing &
+          .trajectory_value_key(candidate[[name]]) ==
+            .trajectory_value_key(target)
       }
     }
     rows <- which(mask)
@@ -1660,6 +1918,7 @@ bootstrap_centroid_path <- function(
     if (inherits(value, "Date")) return("Date")
     if (inherits(value, "POSIXt")) return("POSIXt")
     if (inherits(value, "difftime")) return("difftime")
+    if (.trajectory_is_integer64(value)) return("integer64")
     if (is.factor(value)) return("factor")
     if (is.numeric(value)) return("numeric")
     if (is.character(value)) return("character")
@@ -1678,7 +1937,15 @@ bootstrap_centroid_path <- function(
     # adjacent time values.
     time_b <- .trajectory_align_difftime_units(time_b, time_a)
   }
-  combined <- tryCatch(c(time_a, time_b), error = function(e) NULL)
+  combined <- if (identical(family_a, "integer64")) {
+    .trajectory_require_integer64_namespace("combine")
+    tryCatch(
+      c(time_a, time_b),
+      error = function(error) NULL
+    )
+  } else {
+    tryCatch(c(time_a, time_b), error = function(error) NULL)
+  }
   if (is.null(combined)) {
     stop("The two time columns could not be combined.", call. = FALSE)
   }
@@ -1689,10 +1956,25 @@ bootstrap_centroid_path <- function(
   if (!length(group_vars)) {
     return(data.frame(.trajectory_no_group = 1L)[, FALSE, drop = FALSE])
   }
+  incompatible <- group_vars[vapply(group_vars, function(name) {
+    !identical(
+      .trajectory_value_family(points_a[[name]]),
+      .trajectory_value_family(points_b[[name]])
+    )
+  }, logical(1L))]
+  if (length(incompatible)) {
+    stop(
+      paste0(
+        "The two grouping columns must use compatible value types; mismatch: ",
+        paste(incompatible, collapse = ", "), "."
+      ),
+      call. = FALSE
+    )
+  }
   groups_a <- .trajectory_group_template(points_a, group_vars)
   groups_b <- .trajectory_group_template(points_b, group_vars)
   groups <- rbind(groups_a, groups_b)
-  groups[!duplicated(groups), , drop = FALSE]
+  .trajectory_group_template(groups, group_vars)
 }
 
 .trajectory_paired_centroids <- function(pairs, group_count, period_count,
@@ -1798,6 +2080,170 @@ bootstrap_centroid_path <- function(
     if (period_count > 1L) result[rows[-1L]] <- diff(values[rows])
   }
   result
+}
+
+.trajectory_paired_comparison_diagnostics <- function(
+    result, order_info, validation_a, labels,
+    participant_ids, pair_weight_policy, pairs, group_count, group_template,
+    period_count, cohort_policy, distance_space, bootstrap_diagnostics,
+    missing_key_total_a, missing_key_total_b,
+    missing_key_unassigned_a, missing_key_unassigned_b
+) {
+  diagnostics <- list()
+  add_diagnostic <- function(code, severity, group, time_order, message, count) {
+    diagnostics[[length(diagnostics) + 1L]] <<- data.frame(
+      code = code, severity = severity, group = group,
+      time_order = as.integer(time_order), message = message,
+      count = as.integer(count), stringsAsFactors = FALSE
+    )
+  }
+  if (order_info$implicit_character) {
+    add_diagnostic("implicit_character_order", "warning", "all", NA_integer_,
+                   "Character time values use stable first-appearance order; supply `order` for a substantive sequence.",
+                   period_count)
+  }
+  if (missing_key_total_a > 0L) {
+    add_diagnostic(
+      "missing_key_rows_a", "warning", labels[1L], NA_integer_,
+      paste0(
+        "Side A rows with missing/non-finite ID, time, or group keys were ",
+        "excluded; slice-assignable rows are exposed by ",
+        "`n_a_rows_missing_key`."
+      ),
+      missing_key_total_a
+    )
+  }
+  if (missing_key_total_b > 0L) {
+    add_diagnostic(
+      "missing_key_rows_b", "warning", labels[2L], NA_integer_,
+      paste0(
+        "Side B rows with missing/non-finite ID, time, or group keys were ",
+        "excluded; slice-assignable rows are exposed by ",
+        "`n_b_rows_missing_key`."
+      ),
+      missing_key_total_b
+    )
+  }
+  if (missing_key_unassigned_a > 0L) {
+    add_diagnostic(
+      "unassigned_missing_key_rows_a", "warning", labels[1L], NA_integer_,
+      "Side A rows missing a time or group key cannot be assigned to a requested group-period slice.",
+      missing_key_unassigned_a
+    )
+  }
+  if (missing_key_unassigned_b > 0L) {
+    add_diagnostic(
+      "unassigned_missing_key_rows_b", "warning", labels[2L], NA_integer_,
+      "Side B rows missing a time or group key cannot be assigned to a requested group-period slice.",
+      missing_key_unassigned_b
+    )
+  }
+  if (any(result$n_unmatched_a + result$n_unmatched_b > 0L)) {
+    add_diagnostic("unmatched_participants", "warning", "all", NA_integer_,
+                   "Participants present on only one side were excluded before paired centroid calculation.",
+                   sum(result$n_unmatched_a + result$n_unmatched_b))
+  }
+  if (any(result$n_dropped_a + result$n_dropped_b > 0L)) {
+    add_diagnostic("dropped_invalid_pairs", "warning", "all", NA_integer_,
+                   "Participants with invalid analytical values on either side were excluded.",
+                   sum(result$n_dropped_a + result$n_dropped_b))
+  }
+  if (!length(participant_ids)) {
+    add_diagnostic("no_matched_participants", "warning", "all", NA_integer_,
+                   "No valid participant IDs matched between the two paths.", 0L)
+  }
+  if (pair_weight_policy == "geometric") {
+    add_diagnostic(
+      "geometric_pair_weights", "warning", "all", NA_integer_,
+      paste0(
+        "Matched-side weights were combined with an explicitly requested ",
+        "geometric mean; this estimand can differ from either standalone ",
+        "weighted path."
+      ),
+      nrow(pairs)
+    )
+  }
+  for (g in seq_len(group_count)) {
+    group_row <- if (length(validation_a$group_vars)) {
+      group_template[g, , drop = FALSE]
+    } else {
+      NULL
+    }
+    label <- .trajectory_group_label(validation_a$group_vars, group_row)
+    group_indices <- ((g - 1L) * period_count + 1L):(g * period_count)
+    used_ids_by_period <- lapply(seq_len(period_count), function(t) {
+      unique(pairs$.id_key[
+        pairs$.group_index == g & pairs$.time_order == t
+      ])
+    })
+    for (t in seq_len(period_count)) {
+      index <- group_indices[t]
+      paired_slice <- pairs$.group_index == g & pairs$.time_order == t
+      distance_incomplete_count <- if (distance_space == "full" &&
+                                       any(paired_slice)) {
+        sum(!pairs$.distance_complete.x[paired_slice] |
+              !pairs$.distance_complete.y[paired_slice])
+      } else {
+        0L
+      }
+      if (result$n_used[index] == 0L) {
+        add_diagnostic(
+          "missing_paired_period", "warning", label, t,
+          "No matched participant pair is available for this requested period.",
+          1L
+        )
+      } else if (result$n_used[index] == 1L) {
+        add_diagnostic(
+          "one_pair_slice", "warning", label, t,
+          "The paired comparison is defined by one matched participant.",
+          1L
+        )
+      }
+      if (distance_incomplete_count > 0L) {
+        add_diagnostic(
+          "full_distance_incomplete", "warning", label, t,
+          paste0(
+            "Selected-axis paired centroids are retained, but full-space ",
+            "comparison distances are unavailable because the matched cohort ",
+            "has incomplete full-rotation coordinates."
+          ),
+          distance_incomplete_count
+        )
+      }
+    }
+    if (cohort_policy == "available" && period_count > 1L) {
+      signatures <- vapply(used_ids_by_period, function(ids) {
+        paste(sort(unique(ids)), collapse = "\r")
+      }, character(1L))
+      if (length(unique(signatures)) > 1L) {
+        add_diagnostic(
+          "changing_matched_cohort", "warning", label, NA_integer_,
+          paste0(
+            "The matched participant composition changes across requested ",
+            "periods under the available-cohort policy."
+          ),
+          length(unique(signatures))
+        )
+      }
+    }
+  }
+  if (any(is.finite(result$elapsed_interval) & result$elapsed_interval <= 0,
+          na.rm = TRUE)) {
+    add_diagnostic("nonpositive_elapsed_interval", "warning", "all", NA_integer_,
+                   paste0(
+                     "The explicit time order creates one or more non-positive ",
+                     "trajectory-group intervals; speed is undefined for each ",
+                     "affected group-interval cell."
+                   ),
+                   sum(is.finite(result$elapsed_interval) &
+                         result$elapsed_interval <= 0, na.rm = TRUE))
+  }
+  diagnostics <- .trajectory_diagnostics_frame(diagnostics)
+  if (nrow(bootstrap_diagnostics)) {
+    diagnostics <- rbind(diagnostics, bootstrap_diagnostics)
+    rownames(diagnostics) <- NULL
+  }
+  diagnostics
 }
 
 #' Compare two paired centroid paths
@@ -2147,155 +2593,19 @@ compare_centroid_paths <- function(
     required_valid, n_boot
   )
 
-  diagnostics <- list()
-  add_diagnostic <- function(code, severity, group, time_order, message, count) {
-    diagnostics[[length(diagnostics) + 1L]] <<- data.frame(
-      code = code, severity = severity, group = group,
-      time_order = as.integer(time_order), message = message,
-      count = as.integer(count), stringsAsFactors = FALSE
-    )
-  }
-  if (order_info$implicit_character) {
-    add_diagnostic("implicit_character_order", "warning", "all", NA_integer_,
-                   "Character time values use stable first-appearance order; supply `order` for a substantive sequence.",
-                   period_count)
-  }
   missing_key_total_a <- sum(validation_a$bad_key)
   missing_key_total_b <- sum(validation_b$bad_key)
   missing_key_assigned_a <- sum(result$n_a_rows_missing_key)
   missing_key_assigned_b <- sum(result$n_b_rows_missing_key)
   missing_key_unassigned_a <- missing_key_total_a - missing_key_assigned_a
   missing_key_unassigned_b <- missing_key_total_b - missing_key_assigned_b
-  if (missing_key_total_a > 0L) {
-    add_diagnostic(
-      "missing_key_rows_a", "warning", labels[1L], NA_integer_,
-      paste0(
-        "Side A rows with missing/non-finite ID, time, or group keys were ",
-        "excluded; slice-assignable rows are exposed by ",
-        "`n_a_rows_missing_key`."
-      ),
-      missing_key_total_a
-    )
-  }
-  if (missing_key_total_b > 0L) {
-    add_diagnostic(
-      "missing_key_rows_b", "warning", labels[2L], NA_integer_,
-      paste0(
-        "Side B rows with missing/non-finite ID, time, or group keys were ",
-        "excluded; slice-assignable rows are exposed by ",
-        "`n_b_rows_missing_key`."
-      ),
-      missing_key_total_b
-    )
-  }
-  if (missing_key_unassigned_a > 0L) {
-    add_diagnostic(
-      "unassigned_missing_key_rows_a", "warning", labels[1L], NA_integer_,
-      "Side A rows missing a time or group key cannot be assigned to a requested group-period slice.",
-      missing_key_unassigned_a
-    )
-  }
-  if (missing_key_unassigned_b > 0L) {
-    add_diagnostic(
-      "unassigned_missing_key_rows_b", "warning", labels[2L], NA_integer_,
-      "Side B rows missing a time or group key cannot be assigned to a requested group-period slice.",
-      missing_key_unassigned_b
-    )
-  }
-  if (any(result$n_unmatched_a + result$n_unmatched_b > 0L)) {
-    add_diagnostic("unmatched_participants", "warning", "all", NA_integer_,
-                   "Participants present on only one side were excluded before paired centroid calculation.",
-                   sum(result$n_unmatched_a + result$n_unmatched_b))
-  }
-  if (any(result$n_dropped_a + result$n_dropped_b > 0L)) {
-    add_diagnostic("dropped_invalid_pairs", "warning", "all", NA_integer_,
-                   "Participants with invalid analytical values on either side were excluded.",
-                   sum(result$n_dropped_a + result$n_dropped_b))
-  }
-  if (!length(participant_ids)) {
-    add_diagnostic("no_matched_participants", "warning", "all", NA_integer_,
-                   "No valid participant IDs matched between the two paths.", 0L)
-  }
-  if (pair_weight_policy == "geometric") {
-    add_diagnostic(
-      "geometric_pair_weights", "warning", "all", NA_integer_,
-      paste0(
-        "Matched-side weights were combined with an explicitly requested ",
-        "geometric mean; this estimand can differ from either standalone ",
-        "weighted path."
-      ),
-      nrow(pairs)
-    )
-  }
-  for (g in seq_len(group_count)) {
-    group_row <- if (length(validation_a$group_vars)) {
-      group_template[g, , drop = FALSE]
-    } else {
-      NULL
-    }
-    label <- .trajectory_group_label(validation_a$group_vars, group_row)
-    group_indices <- ((g - 1L) * period_count + 1L):(g * period_count)
-    used_ids_by_period <- lapply(seq_len(period_count), function(t) {
-      unique(pairs$.id_key[
-        pairs$.group_index == g & pairs$.time_order == t
-      ])
-    })
-    for (t in seq_len(period_count)) {
-      index <- group_indices[t]
-      paired_slice <- pairs$.group_index == g & pairs$.time_order == t
-      distance_incomplete_count <- if (distance_space == "full" &&
-                                       any(paired_slice)) {
-        sum(!pairs$.distance_complete.x[paired_slice] |
-              !pairs$.distance_complete.y[paired_slice])
-      } else {
-        0L
-      }
-      if (result$n_used[index] == 0L) {
-        add_diagnostic(
-          "missing_paired_period", "warning", label, t,
-          "No matched participant pair is available for this requested period.",
-          1L
-        )
-      } else if (result$n_used[index] == 1L) {
-        add_diagnostic(
-          "one_pair_slice", "warning", label, t,
-          "The paired comparison is defined by one matched participant.",
-          1L
-        )
-      }
-      if (distance_incomplete_count > 0L) {
-        add_diagnostic(
-          "full_distance_incomplete", "warning", label, t,
-          paste0(
-            "Selected-axis paired centroids are retained, but full-space ",
-            "comparison distances are unavailable because the matched cohort ",
-            "has incomplete full-rotation coordinates."
-          ),
-          distance_incomplete_count
-        )
-      }
-    }
-    if (cohort_policy == "available" && period_count > 1L) {
-      signatures <- vapply(used_ids_by_period, function(ids) {
-        paste(sort(unique(ids)), collapse = "\r")
-      }, character(1L))
-      if (length(unique(signatures)) > 1L) {
-        add_diagnostic(
-          "changing_matched_cohort", "warning", label, NA_integer_,
-          paste0(
-            "The matched participant composition changes across requested ",
-            "periods under the available-cohort policy."
-          ),
-          length(unique(signatures))
-        )
-      }
-    }
-  }
-  diagnostics <- .trajectory_diagnostics_frame(diagnostics)
-  if (nrow(bootstrap_diagnostics)) {
-    diagnostics <- rbind(diagnostics, bootstrap_diagnostics)
-    rownames(diagnostics) <- NULL
-  }
+  diagnostics <- .trajectory_paired_comparison_diagnostics(
+    result, order_info, validation_a, labels,
+    participant_ids, pair_weight_policy, pairs, group_count, group_template,
+    period_count, cohort_policy, distance_space, bootstrap_diagnostics,
+    missing_key_total_a, missing_key_total_b,
+    missing_key_unassigned_a, missing_key_unassigned_b
+  )
 
   class(result) <- c("paired_centroid_path_comparison", "data.frame")
   attr(result, "trajectory_warnings") <- diagnostics
@@ -2701,6 +3011,155 @@ compare_centroid_paths <- function(
   .trajectory_diagnostics_frame(diagnostics)
 }
 
+.trajectory_independent_comparison_diagnostics <- function(
+    result, order_info, validation_a, labels, group_count, group_template,
+    period_count, distance_space, cohort_policy, prepared_a, prepared_b,
+    bootstrap_diagnostics, permutation_diagnostics,
+    missing_key_total_a, missing_key_total_b,
+    missing_key_unassigned_a, missing_key_unassigned_b
+) {
+  diagnostics <- list()
+  add_diagnostic <- function(code, severity, group, time_order, message, count) {
+    diagnostics[[length(diagnostics) + 1L]] <<- data.frame(
+      code = code, severity = severity, group = group,
+      time_order = as.integer(time_order), message = message,
+      count = as.integer(count), stringsAsFactors = FALSE
+    )
+  }
+  if (order_info$implicit_character) {
+    add_diagnostic(
+      "implicit_character_order", "warning", "all", NA_integer_,
+      paste0(
+        "Character time values use stable first-appearance order; supply ",
+        "`order` for a substantive sequence."
+      ),
+      period_count
+    )
+  }
+  if (missing_key_total_a > 0L) {
+    add_diagnostic(
+      "missing_key_rows_a", "warning", labels[1L], NA_integer_,
+      "Side A rows with missing/non-finite analytical keys were excluded.",
+      missing_key_total_a
+    )
+  }
+  if (missing_key_total_b > 0L) {
+    add_diagnostic(
+      "missing_key_rows_b", "warning", labels[2L], NA_integer_,
+      "Side B rows with missing/non-finite analytical keys were excluded.",
+      missing_key_total_b
+    )
+  }
+  if (missing_key_unassigned_a > 0L) {
+    add_diagnostic(
+      "unassigned_missing_key_rows_a", "warning", labels[1L], NA_integer_,
+      "Side A rows missing time/group keys cannot be assigned to a slice.",
+      missing_key_unassigned_a
+    )
+  }
+  if (missing_key_unassigned_b > 0L) {
+    add_diagnostic(
+      "unassigned_missing_key_rows_b", "warning", labels[2L], NA_integer_,
+      "Side B rows missing time/group keys cannot be assigned to a slice.",
+      missing_key_unassigned_b
+    )
+  }
+  for (g in seq_len(group_count)) {
+    group_row <- if (length(validation_a$group_vars)) {
+      group_template[g, , drop = FALSE]
+    } else {
+      NULL
+    }
+    label <- .trajectory_group_label(validation_a$group_vars, group_row)
+    group_indices <- ((g - 1L) * period_count + 1L):(g * period_count)
+    for (t in seq_len(period_count)) {
+      index <- group_indices[t]
+      for (side in c("a", "b")) {
+        used <- result[[paste0("n_", side, "_used")]][index]
+        side_label <- labels[if (side == "a") 1L else 2L]
+        if (used == 0L) {
+          add_diagnostic(
+            paste0("missing_independent_period_", side), "warning", label, t,
+            paste0("No valid ", side_label,
+                   " participant is available for this period."),
+            1L
+          )
+        } else if (used == 1L) {
+          add_diagnostic(
+            paste0("one_entity_slice_", side), "warning", label, t,
+            paste0("The ", side_label,
+                   " centroid is defined by one participant."),
+            1L
+          )
+        }
+      }
+      if (distance_space == "full" &&
+          result$n_a_distance_incomplete[index] > 0L) {
+        add_diagnostic(
+          "full_distance_incomplete_a", "warning", label, t,
+          paste0(
+            "The selected-axis side A centroid is retained, but its ",
+            "full-space movement metrics are unavailable."
+          ),
+          result$n_a_distance_incomplete[index]
+        )
+      }
+      if (distance_space == "full" &&
+          result$n_b_distance_incomplete[index] > 0L) {
+        add_diagnostic(
+          "full_distance_incomplete_b", "warning", label, t,
+          paste0(
+            "The selected-axis side B centroid is retained, but its ",
+            "full-space movement metrics are unavailable."
+          ),
+          result$n_b_distance_incomplete[index]
+        )
+      }
+    }
+    if (cohort_policy == "available" && period_count > 1L) {
+      for (side in c("a", "b")) {
+        used_ids <- if (side == "a") {
+          prepared_a$used_ids[group_indices]
+        } else {
+          prepared_b$used_ids[group_indices]
+        }
+        signatures <- vapply(used_ids, function(ids) {
+          paste(sort(unique(ids)), collapse = "\r")
+        }, character(1L))
+        if (length(unique(signatures)) > 1L) {
+          add_diagnostic(
+            paste0("changing_cohort_", side), "warning", label, NA_integer_,
+            paste0(
+              "Side ", toupper(side),
+              " participant composition changes across requested periods."
+            ),
+            length(unique(signatures))
+          )
+        }
+      }
+    }
+  }
+  if (any(is.finite(result$elapsed_interval) & result$elapsed_interval <= 0,
+          na.rm = TRUE)) {
+    add_diagnostic("nonpositive_elapsed_interval", "warning", "all", NA_integer_,
+                   paste0(
+                     "The explicit time order creates one or more non-positive ",
+                     "trajectory-group intervals; speed is undefined for each ",
+                     "affected group-interval cell."
+                   ),
+                   sum(is.finite(result$elapsed_interval) &
+                         result$elapsed_interval <= 0, na.rm = TRUE))
+  }
+  diagnostics <- .trajectory_diagnostics_frame(diagnostics)
+  for (extra in list(bootstrap_diagnostics, permutation_diagnostics)) {
+    if (nrow(extra)) {
+      diagnostics <- rbind(diagnostics, extra)
+      rownames(diagnostics) <- NULL
+    }
+  }
+  diagnostics
+}
+
 #' Compare two independent centroid paths
 #'
 #' Participant IDs are interpreted in separate side-specific namespaces: an
@@ -3066,140 +3525,19 @@ compare_independent_centroid_paths <- function(
     permutation_replicate_failures, required_permutation, n_perm
   )
 
-  diagnostics <- list()
-  add_diagnostic <- function(code, severity, group, time_order, message, count) {
-    diagnostics[[length(diagnostics) + 1L]] <<- data.frame(
-      code = code, severity = severity, group = group,
-      time_order = as.integer(time_order), message = message,
-      count = as.integer(count), stringsAsFactors = FALSE
-    )
-  }
-  if (order_info$implicit_character) {
-    add_diagnostic(
-      "implicit_character_order", "warning", "all", NA_integer_,
-      paste0(
-        "Character time values use stable first-appearance order; supply ",
-        "`order` for a substantive sequence."
-      ),
-      period_count
-    )
-  }
   missing_key_total_a <- sum(validation_a$bad_key)
   missing_key_total_b <- sum(validation_b$bad_key)
   missing_key_assigned_a <- sum(result$n_a_rows_missing_key)
   missing_key_assigned_b <- sum(result$n_b_rows_missing_key)
   missing_key_unassigned_a <- missing_key_total_a - missing_key_assigned_a
   missing_key_unassigned_b <- missing_key_total_b - missing_key_assigned_b
-  if (missing_key_total_a > 0L) {
-    add_diagnostic(
-      "missing_key_rows_a", "warning", labels[1L], NA_integer_,
-      "Side A rows with missing/non-finite analytical keys were excluded.",
-      missing_key_total_a
-    )
-  }
-  if (missing_key_total_b > 0L) {
-    add_diagnostic(
-      "missing_key_rows_b", "warning", labels[2L], NA_integer_,
-      "Side B rows with missing/non-finite analytical keys were excluded.",
-      missing_key_total_b
-    )
-  }
-  if (missing_key_unassigned_a > 0L) {
-    add_diagnostic(
-      "unassigned_missing_key_rows_a", "warning", labels[1L], NA_integer_,
-      "Side A rows missing time/group keys cannot be assigned to a slice.",
-      missing_key_unassigned_a
-    )
-  }
-  if (missing_key_unassigned_b > 0L) {
-    add_diagnostic(
-      "unassigned_missing_key_rows_b", "warning", labels[2L], NA_integer_,
-      "Side B rows missing time/group keys cannot be assigned to a slice.",
-      missing_key_unassigned_b
-    )
-  }
-  for (g in seq_len(group_count)) {
-    group_row <- if (length(validation_a$group_vars)) {
-      group_template[g, , drop = FALSE]
-    } else {
-      NULL
-    }
-    label <- .trajectory_group_label(validation_a$group_vars, group_row)
-    group_indices <- ((g - 1L) * period_count + 1L):(g * period_count)
-    for (t in seq_len(period_count)) {
-      index <- group_indices[t]
-      for (side in c("a", "b")) {
-        used <- result[[paste0("n_", side, "_used")]][index]
-        side_label <- labels[if (side == "a") 1L else 2L]
-        if (used == 0L) {
-          add_diagnostic(
-            paste0("missing_independent_period_", side), "warning", label, t,
-            paste0("No valid ", side_label,
-                   " participant is available for this period."),
-            1L
-          )
-        } else if (used == 1L) {
-          add_diagnostic(
-            paste0("one_entity_slice_", side), "warning", label, t,
-            paste0("The ", side_label,
-                   " centroid is defined by one participant."),
-            1L
-          )
-        }
-      }
-      if (distance_space == "full" &&
-          result$n_a_distance_incomplete[index] > 0L) {
-        add_diagnostic(
-          "full_distance_incomplete_a", "warning", label, t,
-          paste0(
-            "The selected-axis side A centroid is retained, but its ",
-            "full-space movement metrics are unavailable."
-          ),
-          result$n_a_distance_incomplete[index]
-        )
-      }
-      if (distance_space == "full" &&
-          result$n_b_distance_incomplete[index] > 0L) {
-        add_diagnostic(
-          "full_distance_incomplete_b", "warning", label, t,
-          paste0(
-            "The selected-axis side B centroid is retained, but its ",
-            "full-space movement metrics are unavailable."
-          ),
-          result$n_b_distance_incomplete[index]
-        )
-      }
-    }
-    if (cohort_policy == "available" && period_count > 1L) {
-      for (side in c("a", "b")) {
-        used_ids <- if (side == "a") {
-          prepared_a$used_ids[group_indices]
-        } else {
-          prepared_b$used_ids[group_indices]
-        }
-        signatures <- vapply(used_ids, function(ids) {
-          paste(sort(unique(ids)), collapse = "\r")
-        }, character(1L))
-        if (length(unique(signatures)) > 1L) {
-          add_diagnostic(
-            paste0("changing_cohort_", side), "warning", label, NA_integer_,
-            paste0(
-              "Side ", toupper(side),
-              " participant composition changes across requested periods."
-            ),
-            length(unique(signatures))
-          )
-        }
-      }
-    }
-  }
-  diagnostics <- .trajectory_diagnostics_frame(diagnostics)
-  for (extra in list(bootstrap_diagnostics, permutation_diagnostics)) {
-    if (nrow(extra)) {
-      diagnostics <- rbind(diagnostics, extra)
-      rownames(diagnostics) <- NULL
-    }
-  }
+  diagnostics <- .trajectory_independent_comparison_diagnostics(
+    result, order_info, validation_a, labels, group_count, group_template,
+    period_count, distance_space, cohort_policy, prepared_a, prepared_b,
+    bootstrap_diagnostics, permutation_diagnostics,
+    missing_key_total_a, missing_key_total_b,
+    missing_key_unassigned_a, missing_key_unassigned_b
+  )
 
   class(result) <- c("independent_centroid_path_comparison", "data.frame")
   attr(result, "trajectory_warnings") <- diagnostics

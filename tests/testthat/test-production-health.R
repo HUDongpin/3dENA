@@ -8,6 +8,49 @@ if (is.na(.health_test_root)) stop("Could not locate the project root.")
 .health_test_root <- normalizePath(.health_test_root, mustWork = TRUE)
 
 
+test_that("plain runApp fails the persistent Shiny Server adapter guard", {
+  skip_if_not_installed("processx")
+
+  app_dir <- normalizePath(file.path(.health_test_root, "R"), mustWork = TRUE)
+  expression <- sprintf(
+    "shiny::runApp(%s, host='127.0.0.1', port=43991L, launch.browser=FALSE)",
+    encodeString(app_dir, quote = '"')
+  )
+  process <- processx::process$new(
+    file.path(R.home("bin"), "Rscript"),
+    c("--vanilla", "-e", expression),
+    wd = .health_test_root,
+    env = c(
+      ENA3D_APP_VERSION = "0.2.0-test",
+      ENA3D_RUNTIME_PROFILE = "persistent",
+      SHINY_SERVER_VERSION = "1.5.23.1030",
+      VERCEL = "1",
+      VERCEL_GIT_COMMIT_SHA =
+        "0123456789abcdef0123456789abcdef01234567"
+    ),
+    stdout = "|",
+    stderr = "|",
+    cleanup_tree = TRUE
+  )
+  on.exit({
+    if (process$is_alive()) process$kill()
+  }, add = TRUE)
+
+  process$wait(timeout = 15000L)
+  expect_false(process$is_alive())
+  expect_false(identical(process$get_exit_status(), 0L))
+  transcript <- paste(
+    c(process$read_all_output(), process$read_all_error()),
+    collapse = "\n"
+  )
+  expect_match(
+    transcript,
+    "requires an actual Posit Shiny Server host",
+    fixed = TRUE
+  )
+})
+
+
 test_that("the JSON health endpoint reports authoritative Vercel provenance", {
   skip_if_not_installed("processx")
   skip_if_not_installed("curl")

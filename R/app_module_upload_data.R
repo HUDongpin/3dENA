@@ -173,7 +173,7 @@ upload_data <- function(input, output, session, rv_data, state, config = list())
       ),
       actionButton(
         session$ns("raw_build_ena"),
-        "Build ENA and open 3D analysis",
+        "Build and activate ENA model",
         class = "btn-primary",
         `aria-describedby` = session$ns("raw_model_status")
       )

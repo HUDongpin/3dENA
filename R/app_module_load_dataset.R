@@ -443,6 +443,138 @@ ena3d_order_values <- function(values) {
   unique(as.character(values[!is.na(values)]))
 }
 
+ena3d_change_selector_state <- function(
+    values,
+    max_levels = getOption("ena3d.max_change_levels", 100L)) {
+  max_levels <- suppressWarnings(as.integer(max_levels))
+  if (length(max_levels) != 1L || is.na(max_levels) || max_levels < 1L) {
+    stop("The Change cardinality limit must be a positive integer.",
+         call. = FALSE)
+  }
+
+  choices <- unique(as.character(values[!is.na(values)]))
+  if (!length(choices)) {
+    return(list(
+      enabled = FALSE,
+      reason = "no_values",
+      choices = character(),
+      selected = character(),
+      message = "No values are available for the selected Change variable."
+    ))
+  }
+  if (length(choices) > max_levels) {
+    return(list(
+      enabled = FALSE,
+      reason = "high_cardinality",
+      choices = character(),
+      selected = character(),
+      message = sprintf(
+        paste(
+          "This variable has %d values, above the public-app limit of %d.",
+          "Choose a lower-cardinality time or condition variable."
+        ),
+        length(choices), max_levels
+      )
+    ))
+  }
+
+  list(
+    enabled = TRUE,
+    reason = "ready",
+    choices = choices,
+    selected = choices[[1L]],
+    message = sprintf(
+      "%d values available. Select one value to display its Change network.",
+      length(choices)
+    )
+  )
+}
+
+
+ena3d_change_selector_state_for_points <- function(
+    points,
+    group_var,
+    fallback_group_var = NULL,
+    max_levels = getOption("ena3d.max_change_levels", 100L)) {
+  valid_group_var <- function(value) {
+    is.character(value) && length(value) == 1L && !is.na(value) &&
+      nzchar(value) && is.data.frame(points) && value %in% names(points)
+  }
+  resolved_group_var <- if (valid_group_var(group_var)) {
+    group_var
+  } else if (valid_group_var(fallback_group_var)) {
+    fallback_group_var
+  } else {
+    character()
+  }
+  if (!length(resolved_group_var)) {
+    return(list(
+      enabled = FALSE,
+      reason = "variable_updating",
+      group_var = character(),
+      choices = character(),
+      selected = character(),
+      message = paste(
+        "The Change variable is updating for the active dataset.",
+        "Choose an available variable when the dataset finishes loading."
+      )
+    ))
+  }
+  resolved <- ena3d_change_selector_state(
+    points[[resolved_group_var]], max_levels = max_levels
+  )
+  resolved$group_var <- resolved_group_var
+  resolved
+}
+
+ena3d_comparison_selection <- function(groups, group_1 = NULL,
+                                        group_2 = NULL,
+                                        prefer = c("group_1", "group_2")) {
+  prefer <- match.arg(prefer)
+  groups <- unique(as.character(groups))
+  groups <- groups[!is.na(groups) & nzchar(groups)]
+  current_1 <- if (length(group_1)) as.character(group_1)[[1L]] else ""
+  current_2 <- if (length(group_2)) as.character(group_2)[[1L]] else ""
+
+  if (length(groups) < 2L) {
+    return(list(
+      valid = FALSE,
+      group_1 = if (length(groups)) groups[[1L]] else character(),
+      group_2 = character(),
+      choices_1 = groups,
+      choices_2 = character(),
+      message = "Comparison requires at least two distinct groups."
+    ))
+  }
+
+  if (identical(prefer, "group_2")) {
+    selected_2 <- if (current_2 %in% groups) current_2 else groups[[2L]]
+    available_1 <- setdiff(groups, selected_2)
+    selected_1 <- if (current_1 %in% available_1) {
+      current_1
+    } else {
+      available_1[[1L]]
+    }
+  } else {
+    selected_1 <- if (current_1 %in% groups) current_1 else groups[[1L]]
+    available_2 <- setdiff(groups, selected_1)
+    selected_2 <- if (current_2 %in% available_2) {
+      current_2
+    } else {
+      available_2[[1L]]
+    }
+  }
+
+  list(
+    valid = TRUE,
+    group_1 = selected_1,
+    group_2 = selected_2,
+    choices_1 = setdiff(groups, selected_2),
+    choices_2 = setdiff(groups, selected_1),
+    message = sprintf("Comparing %s vs %s.", selected_1, selected_2)
+  )
+}
+
 ena3d_pair_id_choices <- function(ena_obj, group_vars) {
   metadata_names <- intersect(names(ena_obj$points), names(ena_obj$meta.data))
   candidates <- setdiff(metadata_names, group_vars[[1L]])
@@ -749,15 +881,15 @@ load_ena_data <- function(input, output, session, file_path, rv_data, state,
   updateSelectInput(session, "group_change_var", choices = group_vars, selected = group_vars[[1L]])
 
   unit_choices <- prepared$unit_choices
+  change_selector <- ena3d_change_selector_state(unit_choices)
   updateSelectInput(
     session,
     "unit_change",
-    choices = as.character(unit_choices),
-    selected = if (length(unit_choices)) as.character(unit_choices[[1L]]) else character()
+    choices = change_selector$choices,
+    selected = change_selector$selected
   )
 
-  for (id in c("change_group_1", "change_group_2", "stats_group1", "stats_group2",
-               "compare_group_1", "compare_group_2")) {
+  for (id in c("change_group_1", "change_group_2", "stats_group1", "stats_group2")) {
     updateSelectInput(
       session,
       id,
@@ -767,8 +899,19 @@ load_ena_data <- function(input, output, session, file_path, rv_data, state,
   }
   if (length(rv_data$ena_groups) > 1L) {
     updateSelectInput(session, "stats_group2", selected = rv_data$ena_groups[[2L]])
-    updateSelectInput(session, "compare_group_2", selected = rv_data$ena_groups[[2L]])
   }
+
+  comparison <- ena3d_comparison_selection(rv_data$ena_groups)
+  updateSelectInput(
+    session, "compare_group_1",
+    choices = comparison$choices_1,
+    selected = comparison$group_1
+  )
+  updateSelectInput(
+    session, "compare_group_2",
+    choices = comparison$choices_2,
+    selected = comparison$group_2
+  )
 
   pair_ids <- prepared$pair_ids
   updateSelectInput(

@@ -17,6 +17,7 @@
   --ena-type-ui: 0.9375rem;
   --ena-type-body: 1rem;
   --ena-type-lede: 1.125rem;
+  --ena-type-display: clamp(2.9rem, 4.15vw, 4.5rem);
 }
 
 html {
@@ -216,7 +217,7 @@ body.bslib-page-navbar > nav.navbar + div.container-fluid
   margin: 0;
   color: var(--ena-ink-deep);
   font-family: var(--ena-serif);
-  font-size: clamp(2.9rem, 4.15vw, 4.5rem);
+  font-size: var(--ena-type-display);
   font-weight: 400;
   line-height: 0.98;
   letter-spacing: -0.045em;
@@ -228,7 +229,7 @@ body.bslib-page-navbar > nav.navbar + div.container-fluid
   margin: 0;
   color: var(--ena-ink-deep);
   font-family: var(--ena-serif);
-  font-size: clamp(3rem, 5.25vw, 5.6rem);
+  font-size: var(--ena-type-display);
   font-weight: 400;
   line-height: 0.94;
   letter-spacing: -0.055em;
@@ -569,7 +570,7 @@ body.bslib-page-navbar > nav.navbar + div.container-fluid
   margin: 0;
   color: var(--ena-ink-deep);
   font-family: var(--ena-serif);
-  font-size: clamp(3.3rem, 6.4vw, 6.6rem);
+  font-size: var(--ena-type-display);
   font-weight: 400;
   line-height: 0.96;
   letter-spacing: -0.055em;
@@ -783,89 +784,6 @@ body.bslib-page-navbar > nav.navbar + div.container-fluid
   background: var(--ena-paper-light);
 }
 
-.ena3d-team-hero {
-  position: relative;
-  display: grid;
-  max-width: 1440px;
-  margin: 0 auto;
-  padding: clamp(4.5rem, 8vw, 8rem) clamp(1.5rem, 7vw, 7rem);
-  grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.75fr);
-  align-items: end;
-  gap: clamp(3rem, 8vw, 8rem);
-}
-
-.ena3d-team-hero-copy,
-.ena3d-team-spectrum {
-  position: relative;
-  z-index: 1;
-}
-
-.ena3d-team-hero h1 {
-  max-width: 12ch;
-  margin: 0;
-  color: var(--ena-ink-deep);
-  font-family: var(--ena-serif);
-  font-size: clamp(3.3rem, 6.25vw, 6.4rem);
-  font-weight: 400;
-  line-height: 0.96;
-  letter-spacing: -0.055em;
-  text-wrap: balance;
-}
-
-.ena3d-team-lede {
-  max-width: 48rem;
-  margin: 2rem 0 0;
-  color: var(--ena-muted);
-  font-size: clamp(var(--ena-type-lede), 1.55vw, 1.4rem);
-  line-height: 1.7;
-}
-
-.ena3d-team-spectrum {
-  padding: clamp(1.65rem, 3vw, 2.5rem);
-  border-top: 4px solid var(--ena-cyan);
-  color: #fff;
-  background: var(--ena-ink-deep);
-  box-shadow: 1.2rem 1.2rem 0 rgba(16, 42, 67, 0.08);
-}
-
-.ena3d-team-spectrum .ena3d-card-label {
-  color: var(--ena-cyan);
-}
-
-.ena3d-team-spectrum dl {
-  margin: 0;
-}
-
-.ena3d-team-spectrum dl > div {
-  display: grid;
-  padding: 1.1rem 0;
-  grid-template-columns: minmax(5.5rem, 0.55fr) minmax(0, 1fr);
-  align-items: baseline;
-  gap: 1rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.17);
-}
-
-.ena3d-team-spectrum dl > div:first-child {
-  border-top: 0;
-}
-
-.ena3d-team-spectrum dt {
-  color: #fff;
-  font-family: var(--ena-serif);
-  font-size: clamp(1.5rem, 2.5vw, 2.35rem);
-  font-weight: 400;
-  line-height: 1;
-}
-
-.ena3d-team-spectrum dd {
-  margin: 0;
-  color: rgba(255, 255, 255, 0.68);
-  font-size: var(--ena-type-small);
-  font-weight: 750;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
 .ena3d-team-roster {
   padding: clamp(4rem, 7vw, 7rem) clamp(1.5rem, 7vw, 7rem);
   border-top: 1px solid var(--ena-line);
@@ -883,11 +801,11 @@ body.bslib-page-navbar > nav.navbar + div.container-fluid
   gap: 3rem;
 }
 
-.ena3d-team-roster-heading h2 {
+.ena3d-team-roster-heading h1 {
   margin: 0;
   color: var(--ena-ink-deep);
   font-family: var(--ena-serif);
-  font-size: clamp(2.6rem, 4.6vw, 4.5rem);
+  font-size: var(--ena-type-display);
   font-weight: 400;
   line-height: 1;
   letter-spacing: -0.045em;
@@ -995,7 +913,7 @@ body.bslib-page-navbar > nav.navbar + div.container-fluid
 }
 
 .ena3d-team-member--hwang .ena3d-team-portrait img {
-  object-position: 50% 35%;
+  object-position: 50% 10%;
 }
 
 .ena3d-team-member--tu .ena3d-team-portrait img {
@@ -1389,13 +1307,6 @@ body.bslib-page-navbar > nav.navbar + div.container-fluid
   font-weight: 400;
 }
 
-.ena3d-tool-page .ena3d-build-id {
-  display: block;
-  margin-bottom: 0.75rem;
-  font-size: var(--ena-type-small);
-  line-height: 1.45;
-}
-
 .ena3d-tool-page .nav a,
 .ena3d-tool-page .nav-link {
   font-size: var(--ena-type-ui);
@@ -1447,6 +1358,25 @@ body > .selectize-dropdown {
   font-size: var(--ena-type-body);
 }
 
+.plotly.html-widget.ena3d-fullscreen-fallback {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 2147483000 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  background: #fff;
+}
+
+.ena3d-fullscreen-exit {
+  position: fixed;
+  top: max(1rem, env(safe-area-inset-top));
+  right: max(1rem, env(safe-area-inset-right));
+  z-index: 2147483001;
+  box-shadow: 0 0.3rem 1rem rgba(16, 42, 67, 0.24);
+}
+
 .ena3d-tool-page .active-dataset-card {
   font-size: var(--ena-type-body);
   line-height: 1.55;
@@ -1483,18 +1413,15 @@ body > .selectize-dropdown {
 
   .ena3d-method-section,
   .ena3d-papers-hero,
-  .ena3d-team-hero,
   .ena3d-about-hero {
     grid-template-columns: 1fr;
   }
 
-  .ena3d-papers-hero,
-  .ena3d-team-hero {
+  .ena3d-papers-hero {
     align-items: start;
   }
 
-  .ena3d-citation-guidance,
-  .ena3d-team-spectrum {
+  .ena3d-citation-guidance {
     max-width: 42rem;
   }
 
@@ -1638,6 +1565,10 @@ body > .selectize-dropdown {
 }
 
 @media (max-width: 767.98px) {
+  :root {
+    --ena-type-display: clamp(2.35rem, 10.8vw, 3.2rem);
+  }
+
   .navbar {
     min-height: 68px;
     padding: 0.6rem 1rem;
@@ -1669,11 +1600,6 @@ body > .selectize-dropdown {
 
   .ena3d-hero h1 {
     max-width: 17ch;
-    font-size: clamp(2.35rem, 10.8vw, 3.2rem);
-  }
-
-  .ena3d-about-heading h1 {
-    font-size: clamp(2.6rem, 12vw, 3.8rem);
   }
 
   .ena3d-capability-list {
@@ -1709,23 +1635,16 @@ body > .selectize-dropdown {
   .ena3d-method-section,
   .ena3d-papers-hero,
   .ena3d-papers-library,
-  .ena3d-team-hero,
   .ena3d-team-roster,
   .ena3d-about-page {
     padding-right: 1.3rem;
     padding-left: 1.3rem;
   }
 
-  .ena3d-papers-hero,
-  .ena3d-team-hero {
+  .ena3d-papers-hero {
     padding-top: 4rem;
     padding-bottom: 4rem;
     gap: 2.5rem;
-  }
-
-  .ena3d-papers-hero h1,
-  .ena3d-team-hero h1 {
-    font-size: clamp(2.8rem, 14vw, 4.1rem);
   }
 
   .ena3d-papers-heading,
@@ -1758,10 +1677,6 @@ body > .selectize-dropdown {
   .ena3d-citation {
     padding-left: 1.5rem;
     text-indent: -1.5rem;
-  }
-
-  .ena3d-team-spectrum {
-    box-shadow: 0.75rem 0.75rem 0 rgba(16, 42, 67, 0.08);
   }
 
   .ena3d-team-member {

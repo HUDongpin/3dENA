@@ -134,6 +134,164 @@ testthat::test_that("trace export is ordered, complete, and analytically unchang
   )
 })
 
+testthat::test_that("adjacent numeric groups remain distinct trajectories", {
+  adjacent <- c(1, 1 + .Machine$double.eps)
+  path <- data.frame(
+    condition = rep(adjacent, each = 2L),
+    time_value = rep(1:2, times = 2L),
+    time_order = rep(1:2, times = 2L),
+    n_total = rep(2L, 4L),
+    n_used = rep(2L, 4L),
+    centroid_D1 = c(0, 1, 10, 11),
+    centroid_D2 = c(0, 1, 20, 21),
+    stringsAsFactors = FALSE
+  )
+  attr(path, "trajectory_spec") <- list(
+    group_vars = "condition", time_var = "time_value",
+    dimensions = c("D1", "D2"), distance_space = "selected"
+  )
+
+  export <- trajectory_trace_data(
+    path, dimensions = c("D1", "D2"), group_cols = "condition"
+  )
+  keys <- unique(export$.trajectory_key)
+  labels <- unique(export$.trajectory_label)
+
+  testthat::expect_length(keys, 2L)
+  testthat::expect_length(labels, 2L)
+  testthat::expect_true(all(grepl("\\[exact=", labels)))
+  testthat::expect_identical(
+    unname(lapply(split(export$time_order, export$.trajectory_key), identity)),
+    list(1:2, 1:2)
+  )
+  testthat::expect_identical(rle(export$.trajectory_key)$lengths, c(2L, 2L))
+})
+
+testthat::test_that("plot value keys retain type and signed-zero semantics", {
+  testthat::expect_false(identical(
+    .trajectory_plot_value_key(1),
+    .trajectory_plot_value_key("0x1p+0")
+  ))
+  testthat::expect_false(identical(
+    .trajectory_plot_value_key(NA_real_),
+    .trajectory_plot_value_key("<NA>")
+  ))
+  testthat::expect_identical(
+    .trajectory_plot_value_key(-0),
+    .trajectory_plot_value_key(0)
+  )
+})
+
+testthat::test_that("structured warning scope is typed and collision-safe", {
+  reserved <- data.frame(
+    group = rep(c("A", "B"), each = 2L),
+    time_value = rep(1:2, times = 2L),
+    time_order = rep(1:2, times = 2L),
+    n_used = 2L,
+    centroid_D1 = 1:4,
+    centroid_D2 = 11:14,
+    stringsAsFactors = FALSE
+  )
+  attr(reserved, "trajectory_spec") <- list(
+    group_vars = "group", time_var = "time_value",
+    dimensions = c("D1", "D2"), distance_space = "selected"
+  )
+  attr(reserved, "trajectory_warnings") <- data.frame(
+    code = "reserved_name", severity = "warning", group = "group=A",
+    time_order = 1L, message = "A at order 1 only", count = 1L,
+    stringsAsFactors = FALSE
+  )
+  reserved_export <- trajectory_trace_data(
+    reserved, dimensions = c("D1", "D2"), group_cols = "group"
+  )
+  testthat::expect_match(
+    reserved_export$.trajectory_warning[
+      reserved_export$group == "A" & reserved_export$time_order == 1L
+    ],
+    "A at order 1 only", fixed = TRUE
+  )
+  testthat::expect_false(any(grepl(
+    "A at order 1 only",
+    reserved_export$.trajectory_warning[
+      !(reserved_export$group == "A" & reserved_export$time_order == 1L)
+    ],
+    fixed = TRUE
+  )))
+
+  adjacent <- c(1, 1 + .Machine$double.eps)
+  typed_time <- data.frame(
+    time_value = adjacent, time_order = 1:2, n_used = 2L,
+    centroid_D1 = 0:1, centroid_D2 = 0:1
+  )
+  attr(typed_time, "trajectory_spec") <- list(
+    group_vars = character(), time_var = "time_value",
+    dimensions = c("D1", "D2"), distance_space = "selected"
+  )
+  attr(typed_time, "trajectory_warnings") <- data.frame(
+    code = "typed_time", severity = "warning",
+    time_value = adjacent[[2L]], message = "second time only",
+    stringsAsFactors = FALSE
+  )
+  time_export <- trajectory_trace_data(
+    typed_time, dimensions = c("D1", "D2")
+  )
+  testthat::expect_identical(
+    grepl("second time only", time_export$.trajectory_warning, fixed = TRUE),
+    c(FALSE, TRUE)
+  )
+
+  delimited <- data.frame(
+    a = c("x, b=y", "x"), b = c("z", "y, b=z"),
+    time_value = 1L, time_order = 1L, n_used = 2L,
+    centroid_D1 = c(0, 10), centroid_D2 = c(0, 10),
+    stringsAsFactors = FALSE
+  )
+  attr(delimited, "trajectory_spec") <- list(
+    group_vars = c("a", "b"), time_var = "time_value",
+    dimensions = c("D1", "D2"), distance_space = "selected"
+  )
+  first_label <- .trajectory_plot_group_scope_label(
+    delimited, c("a", "b"), 1L
+  )
+  second_label <- .trajectory_plot_group_scope_label(
+    delimited, c("a", "b"), 2L
+  )
+  testthat::expect_false(identical(first_label, second_label))
+  testthat::expect_identical(
+    .trajectory_plot_group_scope_label(
+      data.frame(Group = "G1", stringsAsFactors = FALSE), "Group", 1L
+    ),
+    "Group=G1"
+  )
+  attr(delimited, "trajectory_warnings") <- data.frame(
+    code = "delimited", severity = "warning", group = first_label,
+    time_order = 1L, message = "first combination only", count = 1L,
+    stringsAsFactors = FALSE
+  )
+  delimited_export <- trajectory_trace_data(
+    delimited, dimensions = c("D1", "D2"), group_cols = c("a", "b")
+  )
+  testthat::expect_identical(
+    grepl(
+      "first combination only", delimited_export$.trajectory_warning,
+      fixed = TRUE
+    ),
+    delimited_export$a == "x, b=y" & delimited_export$b == "z"
+  )
+})
+
+testthat::test_that("visible warning annotation follows filtered trace scope", {
+  path <- make_trajectory_plot_fixture()
+  only_b <- path[path$condition == "B", , drop = FALSE]
+  export <- trajectory_trace_data(
+    only_b, dimensions = c("D1", "D2", "D3"), group_cols = "condition"
+  )
+  messages <- .trajectory_warning_messages(only_b, export)
+
+  testthat::expect_false("Cohort composition changed" %in% messages)
+  testthat::expect_true("A period is missing" %in% messages)
+})
+
 testthat::test_that("stable color mapping is independent of row order and projection", {
   testthat::skip_if_not_installed("plotly")
   path <- make_trajectory_plot_fixture()

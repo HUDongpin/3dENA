@@ -1,8 +1,33 @@
 name: 3D ENA pre-release audit
 
 on:
+  workflow_call:
+    inputs:
+      audit_sha:
+        description: Exact 40-character commit SHA to audit
+        required: true
+        type: string
+      enforcement:
+        description: Report findings, or enforce all release gates
+        required: false
+        default: strict
+        type: string
+      browser_repeats:
+        description: Repetitions for every browser/viewport project
+        required: false
+        default: "3"
+        type: string
+      run_soak:
+        description: Run the 30-minute Chromium reliability soak
+        required: false
+        default: false
+        type: boolean
   workflow_dispatch:
     inputs:
+      audit_sha:
+        description: Exact 40-character commit SHA to audit
+        required: true
+        type: string
       enforcement:
         description: Report findings, or enforce all release gates
         required: true
@@ -34,7 +59,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ena3d-pre-release-audit-${{ github.ref }}
+  group: ena3d-pre-release-audit-${{ github.event_name == 'release' && github.sha || inputs.audit_sha }}
   cancel-in-progress: false
 
 env:
@@ -47,6 +72,7 @@ env:
   DASHSCOPE_API_KEY: ""
   DASHSCOPE_API_KEY_FILE: ""
   ENA3D_AUDIT_SEED: "20260719"
+  ENA3D_AUDIT_SHA: ${{ github.event_name == 'release' && github.sha || inputs.audit_sha }}
   ENA3D_AUDIT_ENFORCEMENT: ${{ github.event_name == 'release' && 'strict' || inputs.enforcement }}
   ENA3D_BROWSER_REPEATS: ${{ github.event_name == 'release' && '3' || inputs.browser_repeats }}
 
@@ -59,7 +85,13 @@ jobs:
       - name: Check out the audited revision
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ env.ENA3D_AUDIT_SHA }}
           persist-credentials: false
+
+      - name: Verify exact audited revision
+        run: |
+          printf '%s\n' "$ENA3D_AUDIT_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          test "$(git rev-parse HEAD)" = "$ENA3D_AUDIT_SHA"
 
       - name: Install R system dependencies
         run: |
@@ -95,7 +127,7 @@ jobs:
       - name: Record the sanitized audit baseline
         env:
           AUDIT_GITHUB_EVENT: ${{ github.event_name }}
-          AUDIT_GITHUB_REF: ${{ github.ref }}
+          AUDIT_GITHUB_REF: ${{ env.ENA3D_AUDIT_SHA }}
         run: |
           mkdir -p output/audit/baseline
           {
@@ -475,6 +507,7 @@ jobs:
       - name: Check out the audited revision
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ env.ENA3D_AUDIT_SHA }}
           persist-credentials: false
 
       - name: Install R system dependencies
@@ -516,7 +549,7 @@ jobs:
       - name: Repeat browser project without retaining page content
         env:
           AUDIT_PROJECT: ${{ matrix.project }}
-          ENA3D_BUILD_ID: browser-audit-${{ github.sha }}
+          ENA3D_BUILD_ID: browser-audit-${{ env.ENA3D_AUDIT_SHA }}
           ENA3D_AUDIT_A11Y: ${{ matrix.accessibility }}
           ENA3D_AUDIT_REPORT_ONLY: ${{ env.ENA3D_AUDIT_ENFORCEMENT == 'report-only' && '1' || '0' }}
           E2E_PORT: "3838"
@@ -609,7 +642,7 @@ jobs:
     timeout-minutes: 50
     env:
       E2E_PORT: "43840"
-      ENA3D_BUILD_ID: soak-${{ github.sha }}
+      ENA3D_BUILD_ID: soak-${{ env.ENA3D_AUDIT_SHA }}
       ENA3D_AUDIT_SOAK: "1"
       ENA3D_AUDIT_SOAK_MINUTES: "30"
       ENA3D_MAX_RSS_GROWTH_KB: "524288"
@@ -617,6 +650,7 @@ jobs:
       - name: Check out the audited revision
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ env.ENA3D_AUDIT_SHA }}
           persist-credentials: false
 
       - name: Install R system dependencies
@@ -816,6 +850,7 @@ jobs:
       - name: Check out the audited revision
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ env.ENA3D_AUDIT_SHA }}
           persist-credentials: false
 
       - name: Set up exact Node.js major
@@ -932,6 +967,7 @@ jobs:
       - name: Check out the audited revision
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ env.ENA3D_AUDIT_SHA }}
           persist-credentials: false
 
       - name: Set up exact Node.js major
@@ -954,7 +990,7 @@ jobs:
           context: .
           file: ./Dockerfile
           build-args: |
-            ENA3D_BUILD_ID=${{ github.sha }}
+            ENA3D_BUILD_ID=${{ env.ENA3D_AUDIT_SHA }}
             ENA3D_APP_VERSION=pre-release-audit
           push: false
           load: true
@@ -964,7 +1000,7 @@ jobs:
 
       - name: Verify hardened runtime, health metadata and nginx proxy
         env:
-          TEST_BUILD_ID: ${{ github.sha }}
+          TEST_BUILD_ID: ${{ env.ENA3D_AUDIT_SHA }}
         run: |
           mkdir -p output/container
           connection_audit_dir=$(mktemp -d \

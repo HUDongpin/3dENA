@@ -144,6 +144,11 @@ test_that("client gating mirrors server preview and consent readiness", {
     "targetConsent.disabled = unavailable || !previewReady",
     fixed = TRUE
   )
+  expect_match(
+    source_text,
+    "window.jQuery(drawer).trigger(open ? 'shown' : 'hidden')",
+    fixed = TRUE
+  )
 })
 
 

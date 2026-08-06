@@ -1,0 +1,124 @@
+name: 3D ENA audited manual release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing repository tag to release
+        required: true
+        type: string
+      target_sha:
+        description: Exact 40-character commit SHA the tag and release must use
+        required: true
+        type: string
+      release_name:
+        description: Human-readable GitHub Release title
+        required: true
+        type: string
+      prerelease:
+        description: Publish as a prerelease
+        required: true
+        default: false
+        type: boolean
+      confirmation:
+        description: Enter tag@40-character-sha exactly to authorize publication
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ena3d-manual-release-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+jobs:
+  validate-release-target:
+    name: Validate immutable release target
+    runs-on: ubuntu-24.04
+    outputs:
+      target_sha: ${{ steps.target.outputs.target_sha }}
+      release_tag: ${{ steps.target.outputs.release_tag }}
+    steps:
+      - name: Check out the exact requested commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.target_sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Bind the existing tag and confirmation to the exact SHA
+        id: target
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          TARGET_SHA: ${{ inputs.target_sha }}
+        run: |
+          printf '%s\n' "$TARGET_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          git check-ref-format "refs/tags/$RELEASE_TAG"
+          test "$CONFIRMATION" = "${RELEASE_TAG}@${TARGET_SHA}"
+          resolved_sha=$(git rev-parse HEAD)
+          test "$resolved_sha" = "$TARGET_SHA"
+          tag_sha=$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}")
+          test "$tag_sha" = "$TARGET_SHA"
+          printf 'target_sha=%s\n' "$resolved_sha" >> "$GITHUB_OUTPUT"
+          printf 'release_tag=%s\n' "$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+
+  strict-audit:
+    name: Audit the exact release SHA before publication
+    needs: validate-release-target
+    permissions:
+      contents: read
+    uses: ./.github/workflows/pre-release-audit.yml
+    with:
+      audit_sha: ${{ needs.validate-release-target.outputs.target_sha }}
+      enforcement: strict
+      browser_repeats: "3"
+      run_soak: true
+
+  publish-release:
+    name: Publish the audited GitHub Release
+    needs:
+      - validate-release-target
+      - strict-audit
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the exact audited commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.validate-release-target.outputs.target_sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Revalidate the tag immediately before publication
+        env:
+          RELEASE_TAG: ${{ needs.validate-release-target.outputs.release_tag }}
+          TARGET_SHA: ${{ needs.validate-release-target.outputs.target_sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+          tag_sha=$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}")
+          test "$tag_sha" = "$TARGET_SHA"
+
+      - name: Publish the exact audited tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IS_PRERELEASE: ${{ inputs.prerelease }}
+          RELEASE_NAME: ${{ inputs.release_name }}
+          RELEASE_TAG: ${{ needs.validate-release-target.outputs.release_tag }}
+          TARGET_SHA: ${{ needs.validate-release-target.outputs.target_sha }}
+        run: |
+          release_args=(
+            "$RELEASE_TAG"
+            --verify-tag
+            --target "$TARGET_SHA"
+            --title "$RELEASE_NAME"
+            --generate-notes
+          )
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            release_args+=(--prerelease)
+          fi
+          gh release create "${release_args[@]}"

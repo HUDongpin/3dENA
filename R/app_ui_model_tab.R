@@ -38,6 +38,13 @@ model_two_group_comparison_ui <- function(id){
     textInput(ns("comparison_group_2_color"), "Group 2 color", "#0C4B8E"),
     checkboxInput(ns("compare_group_2_show_mean"), "Show Mean", value = FALSE),
     checkboxInput(ns("compare_group_2_show_confidence_interval"), "Show Confidence Interval", value = FALSE),
+    tags$div(
+      class = "comparison-selection-status",
+      role = "status",
+      `aria-live` = "polite",
+      `aria-atomic` = "true",
+      textOutput(ns("comparison_status"))
+    ),
   )
 }
 
@@ -86,10 +93,10 @@ model_network_ui <- function(id){
     selectInput(
       inputId = ns("network_selector"),
       label = "Show Network", 
-      choices = list(
-        lower = c("a", "b", "c", "d"),
-        upper = c("A", 
-                  "B", "C", "D"))
+      choices = c(
+        "Load a dataset first" = "ena3d-network-v1:none"
+      ),
+      selected = "ena3d-network-v1:none"
     ),
     hr(),
     
@@ -106,8 +113,15 @@ model_group_change_ui <- function(id){
     selectInput(ns("group_change_var"), "Select Group Variable",choices=list()),
     # sliderInput(ns("main_group_change"), "Unit Change", value = 1, min = 1, max = 10)
     selectInput(inputId = ns("unit_change"),
-                label = "Units",
-                choices = c(1,5,10,15,20,25,30)),
+                label = "Selected value",
+                choices = character()),
+    tags$div(
+      class = "change-value-status",
+      role = "status",
+      `aria-live` = "polite",
+      `aria-atomic` = "true",
+      textOutput(ns("change_value_status"))
+    ),
     hr(),
     checkboxInput(ns("group_change_show_mean"), "Show Mean", value = TRUE),
     checkboxInput(ns("group_change_show_confidence_interval"), "Show Confidence Interval", value = TRUE),
@@ -138,4 +152,3 @@ group_selector_ui <- function(button_id,
     checkboxInput(show_conf_int_btn_id, "Show confidence interval", value = TRUE)
   )
 }
-
