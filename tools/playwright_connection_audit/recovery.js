@@ -45,27 +45,20 @@ async (page) => {
     { timeout: 20000 }
   );
 
-  const target = state.next;
-  const selector = target === "tool" ? "#launch_ena_note" : "#home_brand";
-  await page.locator(selector).click({ timeout: 10000 });
-  await page.waitForFunction(
-    (value) => {
-      const tab = document.querySelector(
-        `#site_nav a[data-value="${value}"]`
-      );
-      return tab && tab.getAttribute("aria-selected") === "true";
-    },
-    target,
-    { timeout: 10000 }
+  const proof = await state.proveServerRoundTrip();
+  const sameSessionRecovered = Boolean(
+    state.baselineSessionId && proof.sessionId === state.baselineSessionId
   );
-  const roundTrips = await state.proveServerRoundTrip();
+  if (!sameSessionRecovered) {
+    throw new Error("The recovered transport belongs to a different R session.");
+  }
   state.stableClosed = state.closed;
   state.pendingInterruption = null;
 
   return {
     transportInterrupted: true,
-    sameSessionRecovered: true,
+    sameSessionRecovered,
     postRecoveryRoundTrip: true,
-    roundTrips,
+    roundTrips: proof.roundTrips,
   };
 }

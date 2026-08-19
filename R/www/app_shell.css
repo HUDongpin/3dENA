@@ -258,6 +258,9 @@ body.bslib-page-navbar > nav.navbar + div.container-fluid
 .ena3d-primary-action,
 .ena3d-secondary-action,
 .ena3d-text-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 3.35rem;
   padding: 0.9rem 1.35rem;
   border-radius: 0;
@@ -265,6 +268,7 @@ body.bslib-page-navbar > nav.navbar + div.container-fluid
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  text-decoration: none;
   transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
 }
 

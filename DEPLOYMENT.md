@@ -5,17 +5,21 @@ The production target is **https://3dena.com**. The project is not deployed to
 
 ## Required production architecture
 
-3D ENA is a stateful Shiny application. Production must run on a persistent
-Linux host as this repository's `linux/amd64` container, with Posit Shiny
-Server inside the container and nginx terminating TLS in front of it:
+The analysis workspace at `/app` is a stateful Shiny application. Production
+must run that route on a persistent Linux host as this repository's
+`linux/amd64` container, with Posit Shiny Server inside the container and nginx
+terminating TLS in front of it:
 
 ```text
 browser -> nginx/TLS -> Shiny Server robust transport -> long-lived R worker
 ```
 
-Do not deploy the production domain to a request-scoped or serverless function
-runtime. A function can be recycled while the page is still open, which ends
-the in-memory R session and produces Shiny's gray disconnected overlay.
+The public content routes `/`, `/papers`, `/team`, and `/about` are a separate
+static document. They must not load the Shiny client, create a WebSocket or R
+session, or mount the connection-reload guard. Do not deploy the stateful
+`/app` route to a request-scoped or serverless function runtime. A function can
+be recycled while the workspace is still open, which ends the in-memory R
+session and produces Shiny's gray disconnected overlay.
 `Dockerfile.vercel` and `vercel.json` are retained only for bounded,
 non-authoritative previews until DNS cutover is complete; they explicitly use
 the `ephemeral-preview` runtime profile and cannot pass the persistent-runtime
@@ -39,7 +43,7 @@ project environment variable: it can outlive the deployment that introduced
 it and make the health endpoint report stale provenance. Remove legacy Vercel
 entries and create a new deployment so the environment change is included.
 
-Shiny Server's robust transport has a bounded 15-second opportunity to
+On `/app`, Shiny Server's robust transport has a bounded 15-second opportunity to
 reattach the browser to the **existing** R session. The app explicitly disables
 Shiny's separate new-session reconnect fallback because replaying browser
 inputs cannot restore uploaded temporary files, `reactiveValues`, or running
@@ -266,9 +270,11 @@ and concrete log retention period before launch.
    `READY` without requesting an application URL, allow the preview to remain
    idle for at least 30 seconds, and make the first HTTP request directly to
    `/papers` with redirects and client retries disabled. Require the first
-   response to be 200, then verify the Shiny connection and one server-side
-   round trip. Record the runtime `function_start_type` when Vercel exposes it;
-   a cache `MISS` is not evidence of a cold instance.
+   response to be 200 and verify that it contains no Shiny client, WebSocket,
+   or connection guard. Then request `/app`, verify one live Shiny connection,
+   an unchanged session proof, and one server-side round trip. Record the
+   runtime `function_start_type` when Vercel exposes it; a cache `MISS` is not
+   evidence of a cold instance.
 9. Change DNS only after the new host passes TLS, health, six-minute
    connection, and short-interruption checks. Keep the previous deployment
    available until the same checks pass through the public production domain.

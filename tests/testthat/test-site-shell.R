@@ -50,6 +50,23 @@ test_that("Home gives researchers a direct path into 3D ENA", {
   expect_match(home, "Open 3D ENA", fixed = TRUE)
   expect_match(home, "id=\"launch_ena\"", fixed = TRUE)
   expect_match(home, "id=\"explore_trajectory\"", fixed = TRUE)
+  expect_match(
+    home,
+    '<a id="launch_ena" href="/app"',
+    fixed = TRUE
+  )
+  expect_match(
+    home,
+    '<a id="explore_trajectory" href="/app?workspace=trajectory"',
+    fixed = TRUE
+  )
+  expect_match(
+    home,
+    '<a id="launch_ena_note" href="/app"',
+    fixed = TRUE
+  )
+  expect_false(grepl('<button id="launch_ena"', home, fixed = TRUE))
+  expect_false(grepl('<button id="explore_trajectory"', home, fixed = TRUE))
   expect_match(home, "Explore trajectory", fixed = TRUE)
   expect_match(
     home,
@@ -224,6 +241,12 @@ test_that("About presents the verified public developer profile", {
     fixed = TRUE
   )
   expect_match(about, "Welcome research collaboration worldwide.", fixed = TRUE)
+  expect_match(
+    about,
+    '<a id="launch_ena_about" href="/app"',
+    fixed = TRUE
+  )
+  expect_false(grepl('<button id="launch_ena_about"', about, fixed = TRUE))
   expect_false(grepl("Biographical details are based", about, fixed = TRUE))
 })
 
@@ -472,31 +495,44 @@ test_that("Team layout has dedicated responsive and accessible styling", {
 })
 
 
-test_that("The application shell declares exactly the requested site tabs", {
+test_that("static content and the stateful workspace have separate shells", {
   app_source <- paste(
     readLines(file.path(.site_shell_root, "R", "app.R"), warn = FALSE),
     collapse = "\n"
   )
-
-  expect_match(app_source, 'title = "Home"', fixed = TRUE)
-  expect_match(app_source, 'title = "3D ENA"', fixed = TRUE)
-  expect_match(app_source, 'title = "PAPERS"', fixed = TRUE)
-  expect_match(app_source, 'title = "TEAM"', fixed = TRUE)
-  expect_match(app_source, 'title = "ABOUT"', fixed = TRUE)
-  expect_match(app_source, 'value = "home"', fixed = TRUE)
-  expect_match(app_source, 'value = "tool"', fixed = TRUE)
-  expect_match(app_source, 'value = "papers"', fixed = TRUE)
-  expect_match(app_source, 'value = "team"', fixed = TRUE)
-  expect_match(app_source, 'value = "about"', fixed = TRUE)
-  expect_match(
-    app_source,
-    '(?s)title = "PAPERS".*title = "TEAM".*title = "ABOUT"',
-    perl = TRUE
+  static_source <- paste(
+    readLines(
+      file.path(.site_shell_root, "R", "static_site.R"),
+      warn = FALSE
+    ),
+    collapse = "\n"
   )
+
+  expect_match(app_source, 'title = "3D ENA"', fixed = TRUE)
+  expect_match(app_source, 'value = "tool"', fixed = TRUE)
+  expect_match(app_source, 'href = "/papers"', fixed = TRUE)
+  expect_match(app_source, 'href = "/team"', fixed = TRUE)
+  expect_match(app_source, 'href = "/about"', fixed = TRUE)
   expect_match(app_source, 'id = "workspace_sections"', fixed = TRUE)
+  expect_match(app_source, "ena3d_connection_guard_ui()", fixed = TRUE)
+  expect_false(grepl("ena3d_home_ui()", app_source, fixed = TRUE))
+  expect_false(grepl("ena3d_papers_ui()", app_source, fixed = TRUE))
+  expect_false(grepl("ena3d_team_ui()", app_source, fixed = TRUE))
+  expect_false(grepl("ena3d_about_ui()", app_source, fixed = TRUE))
+
+  expect_match(static_source, 'title = "Home"', fixed = TRUE)
+  expect_match(static_source, 'title = "PAPERS"', fixed = TRUE)
+  expect_match(static_source, 'title = "TEAM"', fixed = TRUE)
+  expect_match(static_source, 'title = "ABOUT"', fixed = TRUE)
+  expect_match(static_source, 'value = "home"', fixed = TRUE)
+  expect_match(static_source, 'value = "papers"', fixed = TRUE)
+  expect_match(static_source, 'value = "team"', fixed = TRUE)
+  expect_match(static_source, 'value = "about"', fixed = TRUE)
+  expect_false(grepl("ena3d_connection_guard_ui", static_source, fixed = TRUE))
+
   expect_false(grepl("input$home_brand", app_source, fixed = TRUE))
   expect_false(grepl("input$meet_developer", app_source, fixed = TRUE))
-  expect_match(app_source, "input$explore_trajectory", fixed = TRUE)
+  expect_match(app_source, "input$ena3d_workspace_entry", fixed = TRUE)
   expect_match(app_source, 'selected = "trajectory"', fixed = TRUE)
 })
 

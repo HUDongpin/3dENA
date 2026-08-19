@@ -32,15 +32,17 @@ ena3d_home_ui <- function() {
         ),
         tags$div(
           class = "ena3d-hero-actions",
-          actionButton(
-            "launch_ena",
-            label = tags$span("Open 3D ENA", tags$span(`aria-hidden` = "true", "\u2192")),
+          tags$a(
+            id = "launch_ena",
+            href = "/app",
+            tags$span("Open 3D ENA", tags$span(`aria-hidden` = "true", "\u2192")),
             class = "ena3d-primary-action",
             `aria-label` = "Open the 3D ENA research workspace"
           ),
-          actionButton(
-            "explore_trajectory",
-            label = tags$span(
+          tags$a(
+            id = "explore_trajectory",
+            href = "/app?workspace=trajectory",
+            tags$span(
               "Explore trajectory",
               tags$span(`aria-hidden` = "true", "\u2192")
             ),
@@ -128,9 +130,10 @@ ena3d_home_ui <- function() {
         "A visual analytics workspace should make complex relationships easier to examine ",
         "while keeping analytical choices visible."
       ),
-      actionButton(
-        "launch_ena_note",
-        label = tags$span("Begin an analysis", tags$span(`aria-hidden` = "true", "\u2192")),
+      tags$a(
+        id = "launch_ena_note",
+        href = "/app",
+        tags$span("Begin an analysis", tags$span(`aria-hidden` = "true", "\u2192")),
         class = "ena3d-text-action",
         `aria-label` = "Begin an analysis in the 3D ENA workspace"
       )
@@ -779,9 +782,10 @@ ena3d_about_ui <- function() {
         tags$h2("Explore the research tool."),
         tags$p("Move directly into the complete interactive 3D ENA workspace.")
       ),
-      actionButton(
-        "launch_ena_about",
-        label = tags$span("Open workspace", tags$span(`aria-hidden` = "true", "\u2192")),
+      tags$a(
+        id = "launch_ena_about",
+        href = "/app",
+        tags$span("Open workspace", tags$span(`aria-hidden` = "true", "\u2192")),
         class = "ena3d-primary-action",
         `aria-label` = "Open the 3D ENA research workspace"
       )

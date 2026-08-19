@@ -61,7 +61,7 @@ test_that("workspace layout reserves readable control widths and stacks on table
 
 test_that("interactive accent tokens meet WCAG AA contrast on light surfaces", {
   css <- .read_typography_file("R", "www", "app_shell.css")
-  app <- .read_typography_file("R", "app.R")
+  theme <- .read_typography_file("R", "static_site.R")
   token <- function(name) {
     match <- regexec(
       paste0("--", name, ":[[:space:]]*(#[0-9a-fA-F]{6})"), css
@@ -90,6 +90,6 @@ test_that("interactive accent tokens meet WCAG AA contrast on light surfaces", {
     expect_gte(contrast(teal, background), 4.5)
     expect_gte(contrast(coral, background), 4.5)
   }
-  expect_match(app, paste0('primary = "', teal, '"'), fixed = TRUE)
-  expect_match(app, paste0('secondary = "', coral, '"'), fixed = TRUE)
+  expect_match(theme, paste0('primary = "', teal, '"'), fixed = TRUE)
+  expect_match(theme, paste0('secondary = "', coral, '"'), fixed = TRUE)
 })

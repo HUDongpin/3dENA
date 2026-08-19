@@ -114,11 +114,8 @@ test("load, switch, calculate, and cancel soak remains responsive", async ({
   test.setTimeout(soakDurationMs + 300_000);
   const browserErrors = captureBrowserErrors(page);
 
-  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.goto("/app", { waitUntil: "domcontentloaded" });
   await waitForShinyIdle(page);
-  await page
-    .getByRole("button", { name: "Open the 3D ENA research workspace" })
-    .click();
   await selectSample(page, SAMPLE_NAMES[0]);
   expect(await openTrajectory(page)).toBe(true);
 

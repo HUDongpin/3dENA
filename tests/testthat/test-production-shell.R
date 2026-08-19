@@ -361,7 +361,7 @@ test_that("pre-release gate proves long-lived same-session recovery", {
 
   expect_match(workflow, "seq 0 12", fixed = TRUE)
   expect_match(workflow, 'test "$hold_seconds" -ge 360', fixed = TRUE)
-  expect_match(workflow, ".roundTrips == 14", fixed = TRUE)
+  expect_match(workflow, ".roundTrips == 15", fixed = TRUE)
   expect_match(workflow, "recovery_proxy_outage_seconds: 2", fixed = TRUE)
   expect_match(workflow, "terminal_proxy_outage_seconds", fixed = TRUE)
   expect_match(workflow, "same_session_recovered", fixed = TRUE)
@@ -376,6 +376,9 @@ test_that("pre-release gate proves long-lived same-session recovery", {
   expect_false(grepl("pwcli video-start", workflow, fixed = TRUE))
   expect_false(grepl("pwcli screenshot", workflow, fixed = TRUE))
   expect_match(workflow, "stop_nginx", fixed = TRUE)
+  expect_match(ready, "baselineSessionId", fixed = TRUE)
+  expect_match(roundtrip, "proof.sessionId !== state.baselineSessionId", fixed = TRUE)
+  expect_match(recovery, "proof.sessionId === state.baselineSessionId", fixed = TRUE)
   expect_match(workflow, "start_nginx", fixed = TRUE)
   expect_match(workflow, "sleep 2", fixed = TRUE)
   expect_match(workflow, "sleep 22", fixed = TRUE)

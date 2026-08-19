@@ -14,6 +14,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     ENA3D_AI_ENABLED=false \
     ENA3D_INLINE_ASSETS=true \
     ENA3D_PREBUILT_UI_PATH=/opt/ena3d/inline-ui.html \
+    ENA3D_PREBUILT_STATIC_SITE_PATH=/opt/ena3d/static-site.html \
     ENA3D_MAX_REQUEST_BYTES=5242880 \
     ENA3D_MAX_EXCHANGE_FILE_BYTES=2097152 \
     ENA3D_MAX_RAW_FILE_BYTES=5242880 \
@@ -71,7 +72,7 @@ COPY images ./images
 COPY sample_data ./sample_data
 COPY README.md TRAJECTORY_ANALYSIS.md LICENSE VERSION ./
 
-RUN VERCEL= VERCEL_GIT_COMMIT_SHA= ENA3D_BUILD_ID=__ENA3D_BUILD_ID__ ENA3D_PREBUILT_UI_PATH= Rscript --vanilla -e 'source("/opt/ena3d/R/app.R"); bytes <- nchar(app_ui_html, type="bytes"); stopifnot(bytes < 4 * 1024^2); writeChar(app_ui_html, "/opt/ena3d/inline-ui.html", eos=NULL, useBytes=TRUE); message("Prebuilt inline UI: ", bytes, " bytes")'
+RUN VERCEL= VERCEL_GIT_COMMIT_SHA= ENA3D_BUILD_ID=__ENA3D_BUILD_ID__ ENA3D_PREBUILT_UI_PATH= ENA3D_PREBUILT_STATIC_SITE_PATH= Rscript --vanilla -e 'source("/opt/ena3d/R/app.R"); app_bytes <- nchar(app_ui_html, type="bytes"); static_bytes <- nchar(static_site_html, type="bytes"); stopifnot(app_bytes < 4 * 1024^2, static_bytes < 4 * 1024^2); writeChar(app_ui_html, "/opt/ena3d/inline-ui.html", eos=NULL, useBytes=TRUE); writeChar(static_site_html, "/opt/ena3d/static-site.html", eos=NULL, useBytes=TRUE); message("Prebuilt stateful UI: ", app_bytes, " bytes"); message("Prebuilt static site: ", static_bytes, " bytes")'
 
 RUN groupadd --system --gid 10001 ena3d \
     && useradd --system --uid 10001 --gid ena3d --home /home/ena3d ena3d \

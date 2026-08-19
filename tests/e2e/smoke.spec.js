@@ -177,7 +177,7 @@ test("home foregrounds trajectory analysis in a compact responsive hero", async 
   await expect(trajectoryPreview).toBeVisible();
   await expect(trajectoryPreview).toHaveAttribute(
     "src",
-    "ena3d-assets/trajectory-home-preview-3d.png"
+    /^data:image\/png;base64,/
   );
   await expect
     .poll(() =>
@@ -233,10 +233,11 @@ test("home foregrounds trajectory analysis in a compact responsive hero", async 
   }
 
   await page
-    .getByRole("button", {
+    .getByRole("link", {
       name: "Open the centroid trajectory analysis workspace",
     })
     .click();
+  await waitForShinyIdle(page);
   await expect(page.locator('#site_nav a[data-value="tool"]')).toHaveAttribute(
     "aria-selected",
     "true"
@@ -1460,10 +1461,10 @@ test("trusted sample traverses every model view and trajectory controls", async 
   });
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await waitForShinyIdle(page);
   await page
-    .getByRole("button", { name: "Open the 3D ENA research workspace" })
+    .getByRole("link", { name: "Open the 3D ENA research workspace" })
     .click();
+  await waitForShinyIdle(page);
   await expect(page.getByRole("heading", { name: "3D ENA", exact: true })).toBeVisible();
   await expect(page.locator(".ena3d-build-id")).toHaveCount(0);
   const typography = await page.evaluate(() => {

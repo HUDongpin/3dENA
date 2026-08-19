@@ -36,14 +36,71 @@ test_that("public site pages have stable paths", {
   expect_false(.site_route_env$ena3d_is_site_path("/not-a-page"))
 })
 
-test_that("the Shiny handler serves only exact public routes from the app root", {
+test_that("static and stateful routes are disjoint and exhaustive", {
+  expect_identical(
+    .site_route_env$ena3d_static_site_routes,
+    c(
+      home = "/",
+      papers = "/papers",
+      team = "/team",
+      about = "/about"
+    )
+  )
+  expect_identical(
+    .site_route_env$ena3d_stateful_site_routes,
+    c(tool = "/app")
+  )
+  expect_length(intersect(
+    unname(.site_route_env$ena3d_static_site_routes),
+    unname(.site_route_env$ena3d_stateful_site_routes)
+  ), 0L)
+  expect_setequal(
+    c(
+      unname(.site_route_env$ena3d_static_site_routes),
+      unname(.site_route_env$ena3d_stateful_site_routes)
+    ),
+    unname(.site_route_env$ena3d_site_routes)
+  )
+
+  for (path in c("/", "/papers/", "team", "/about?from=test")) {
+    expect_false(
+      .site_route_env$ena3d_route_requires_session(path),
+      info = path
+    )
+  }
+  expect_true(.site_route_env$ena3d_route_requires_session("/app"))
+  expect_true(.site_route_env$ena3d_route_requires_session("/app/?from=test"))
+})
+
+test_that("only the analysis route enters the Shiny handler", {
+  shiny_calls <- character()
+  static_calls <- character()
   app <- structure(
-    list(httpHandler = function(request) request$PATH_INFO),
+    list(httpHandler = function(request) {
+      shiny_calls <<- c(shiny_calls, request$PATH_INFO)
+      request$PATH_INFO
+    }),
     class = "shiny.appobj"
   )
-  routed <- .site_route_env$ena3d_enable_site_routes(app)
+  static_handler <- function(request) {
+    static_calls <<- c(static_calls, request$PATH_INFO)
+    paste0("static:", request$PATH_INFO)
+  }
+  routed <- .site_route_env$ena3d_enable_site_routes(
+    app,
+    static_handler = static_handler
+  )
 
-  expect_identical(routed$httpHandler(list(PATH_INFO = "/team")), "/")
+  for (path in unname(.site_route_env$ena3d_static_site_routes)) {
+    expect_identical(
+      routed$httpHandler(list(PATH_INFO = path)),
+      paste0("static:", path),
+      info = path
+    )
+  }
+  expect_identical(static_calls, unname(.site_route_env$ena3d_static_site_routes))
+  expect_length(shiny_calls, 0L)
+
   redirect <- routed$httpHandler(list(
     PATH_INFO = "/team/",
     QUERY_STRING = "from=shared"
@@ -53,8 +110,21 @@ test_that("the Shiny handler serves only exact public routes from the app root",
   expect_identical(redirect$headers$Location, "/team?from=shared")
   expect_identical(routed$httpHandler(list(PATH_INFO = "/app")), "/")
   expect_identical(
+    routed$httpHandler(list(PATH_INFO = "/__ena3d-app")),
+    "/"
+  )
+  expect_identical(shiny_calls, c("/", "/"))
+  expect_identical(
     routed$httpHandler(list(PATH_INFO = "/ena3d-health/healthz.json")),
     "/ena3d-health/healthz.json"
+  )
+  expect_identical(
+    routed$httpHandler(list(PATH_INFO = "/app/websocket/")),
+    "/app/websocket/"
+  )
+  expect_identical(
+    routed$httpHandler(list(PATH_INFO = "/__sockjs__/info")),
+    "/__sockjs__/info"
   )
   expect_identical(
     routed$httpHandler(list(PATH_INFO = "/not-a-page")),
@@ -62,7 +132,7 @@ test_that("the Shiny handler serves only exact public routes from the app root",
   )
 })
 
-test_that("browser routing synchronizes Shiny tabs with History API", {
+test_that("static browser routing uses History API without Shiny", {
   javascript <- paste(
     readLines(
       file.path(.site_route_root, "R", "www", "site_routes.js"),
@@ -73,24 +143,26 @@ test_that("browser routing synchronizes Shiny tabs with History API", {
 
   for (literal in c(
     'home: "/"',
-    'tool: "/app"',
     'papers: "/papers"',
     'team: "/team"',
     'about: "/about"',
     'window.history.pushState',
     'window.history.replaceState',
     'window.addEventListener("popstate"',
-    'document.addEventListener("shiny:connected"',
     'nav.addEventListener("shown.bs.tab"',
     'link.setAttribute("data-bs-target", tabTarget)',
     'link.setAttribute("href", route)',
-    'aria-current'
+    'aria-current',
+    'handleCitationCopy'
   )) {
     expect_match(javascript, literal, fixed = TRUE)
   }
+  expect_false(grepl('tool: "/app"', javascript, fixed = TRUE))
+  expect_false(grepl("shiny:connected", javascript, fixed = TRUE))
+  expect_false(grepl("window.Shiny", javascript, fixed = TRUE))
 })
 
-test_that("Vercel rewrites every deep link to the shared application document", {
+test_that("Vercel selects the stateful document only for /app", {
   skip_if_not_installed("jsonlite")
   config <- jsonlite::read_json(
     file.path(.site_route_root, "vercel.json"),
@@ -98,11 +170,15 @@ test_that("Vercel rewrites every deep link to the shared application document", 
   )
   expected <- data.frame(
     source = c("/app", "/papers", "/team", "/about"),
-    destination = rep("/", 4L),
+    destination = c("/__ena3d-app", "/", "/", "/"),
     stringsAsFactors = FALSE
   )
 
   expect_equal(config$rewrites, expected)
+  expect_identical(
+    config$rewrites$source[config$rewrites$destination == "/__ena3d-app"],
+    "/app"
+  )
 })
 
 test_that("the bounded Vercel preview listens on the platform container port", {
@@ -165,8 +241,18 @@ test_that("the application loads and enables the public router", {
     readLines(file.path(.site_route_root, "R", "app.R"), warn = FALSE),
     collapse = "\n"
   )
+  static_source <- paste(
+    readLines(file.path(.site_route_root, "R", "static_site.R"), warn = FALSE),
+    collapse = "\n"
+  )
 
   expect_match(app_source, ".ena3d_source('site_routes.R')", fixed = TRUE)
-  expect_match(app_source, 'src = paste0(\n          "/site_routes.js?v="', fixed = TRUE)
-  expect_match(app_source, "ena3d_enable_site_routes(ena3d_app)", fixed = TRUE)
+  expect_match(app_source, ".ena3d_source('static_site.R')", fixed = TRUE)
+  expect_false(grepl('"/site_routes.js?v="', app_source, fixed = TRUE))
+  expect_match(static_source, 'src = paste0("/site_routes.js?v="', fixed = TRUE)
+  expect_match(
+    app_source,
+    "static_handler = static_site_http_handler",
+    fixed = TRUE
+  )
 })

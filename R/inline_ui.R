@@ -107,6 +107,67 @@ ena3d_inline_css_urls <- function(css, css_path) {
   })
 }
 
+ena3d_inline_css_imports <- function(css, css_path, seen = character()) {
+  current_path <- normalizePath(css_path, winslash = "/", mustWork = FALSE)
+  seen <- unique(c(seen, current_path))
+
+  ena3d_replace_matches(
+    css,
+    "@import[[:space:]]+url\\([^)]*\\)[[:space:]]*;",
+    function(reference) {
+      url_reference <- regmatches(
+        reference,
+        regexpr("url\\([^)]*\\)", reference, perl = TRUE)
+      )
+      if (!length(url_reference) || !nzchar(url_reference)) {
+        return(reference)
+      }
+
+      value <- trimws(sub("^url\\((.*)\\)$", "\\1", url_reference))
+      value <- sub("^[\"']", "", value)
+      value <- sub("[\"']$", "", value)
+      if (!nzchar(value) || grepl("^(data:|https?:|//|#)", value)) {
+        return(reference)
+      }
+
+      relative_path <- utils::URLdecode(sub("[?#].*$", "", value))
+      import_path <- file.path(dirname(css_path), relative_path)
+      normalized_import <- normalizePath(
+        import_path,
+        winslash = "/",
+        mustWork = FALSE
+      )
+      if (!file.exists(import_path) ||
+          !identical(tolower(tools::file_ext(import_path)), "css") ||
+          normalized_import %in% seen) {
+        return(reference)
+      }
+
+      # bslib's Shiny preset imports a large Google-font bundle. Encoding that
+      # stylesheet as a nested data URL produces an invalid browser request,
+      # while recursively embedding every font pushes the prebuilt documents
+      # beyond their fail-closed size budget. Keep the preset's explicit
+      # system-font fallback stack and omit only this optional web-font import.
+      if (identical(basename(css_path), "bootstrap.min.css") &&
+          identical(basename(import_path), "font.css")) {
+        return("/* optional web-font import omitted for the prebuilt shell */")
+      }
+
+      imported_css <- paste(
+        readLines(import_path, warn = FALSE, encoding = "UTF-8"),
+        collapse = "\n"
+      )
+      imported_css <- ena3d_inline_css_imports(
+        imported_css,
+        import_path,
+        seen = seen
+      )
+      imported_css <- ena3d_inline_css_urls(imported_css, import_path)
+      paste0("/* inlined ", basename(import_path), " */\n", imported_css)
+    }
+  )
+}
+
 ena3d_resolve_asset_path <- function(url, resource_paths, www_dir) {
   clean_url <- utils::URLdecode(sub("[?#].*$", "", sub("^/", "", url)))
   pieces <- strsplit(clean_url, "/", fixed = TRUE)[[1L]]
@@ -136,6 +197,7 @@ ena3d_inline_ui_assets <- function(html, www_dir, max_inline_script = 1024^2) {
 
       if (grepl('rel="stylesheet"', tag, fixed = TRUE)) {
         css <- paste(readLines(path, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+        css <- ena3d_inline_css_imports(css, path)
         css <- ena3d_inline_css_urls(css, path)
         css <- gsub("</style", "<\\/style", css, fixed = TRUE)
         return(paste0('<style data-inline-href="', url, '">', css, "</style>"))

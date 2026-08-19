@@ -95,18 +95,19 @@ test("home, data, and Stats surfaces pass keyboard and automated WCAG checks", a
     ".ena3d-home-page"
   );
 
-  const launch = page.getByRole("button", {
+  const launch = page.getByRole("link", {
     name: "Open the 3D ENA research workspace",
   });
   await launch.focus();
   await expect(launch).toBeFocused();
   await page.keyboard.press("Enter");
+  await page.waitForURL((url) => url.pathname === "/app");
+  await waitForShinyIdle(page);
   await expect(page.locator('#site_nav a[data-value="tool"]')).toHaveAttribute(
     "aria-selected",
     "true"
   );
   await expect(page.getByRole("heading", { name: "3D ENA", exact: true })).toBeVisible();
-  await waitForShinyIdle(page);
   accessibilityFindings.push(
     ...(await findBlockingViolations(
       page,

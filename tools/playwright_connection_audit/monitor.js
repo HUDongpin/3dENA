@@ -6,13 +6,13 @@ async (page) => {
     closed: 0,
     liveSockets: new Set(),
     stableClosed: null,
-    next: "tool",
     roundTrips: 0,
+    baselineSessionId: null,
     interruptionSerial: 0,
     pendingInterruption: null,
   };
   state.proveServerRoundTrip = async () => {
-    const proofAccepted = await page.evaluate(async () => {
+    const sessionId = await page.evaluate(async () => {
       if (
         !window.Shiny ||
         typeof window.Shiny.setInputValue !== "function" ||
@@ -44,7 +44,7 @@ async (page) => {
             typeof proof.session_id === "string" &&
             /^[a-f0-9]{64}$/.test(proof.session_id);
           cleanup();
-          resolve(validSessionProof);
+          resolve(validSessionProof ? proof.session_id : null);
         });
         window.Shiny.setInputValue(
           "ena3d_connection_probe",
@@ -53,11 +53,11 @@ async (page) => {
         );
       });
     });
-    if (!proofAccepted) {
+    if (!sessionId) {
       throw new Error("The server returned an invalid session proof.");
     }
     state.roundTrips += 1;
-    return state.roundTrips;
+    return { roundTrips: state.roundTrips, sessionId };
   };
   page.__ena3dConnectionAudit = state;
   page.on("websocket", (socket) => {

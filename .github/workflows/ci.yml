@@ -190,3 +190,113 @@ jobs:
           assert health["version"] == "ci", health
           assert health["build"] == os.environ["TEST_BUILD_ID"], health
           PY
+
+  vercel-preview-build:
+    name: Validate Vercel preview Docker build
+    needs: app-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build the Vercel preview image without publishing
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.vercel
+          build-args: |
+            ENA3D_BUILD_ID=${{ github.sha }}
+            ENA3D_APP_VERSION=ci
+          push: false
+          load: true
+          tags: ena3d-vercel:ci
+          cache-from: type=gha,scope=vercel-preview
+          cache-to: type=gha,mode=max,scope=vercel-preview
+
+      - name: Verify the real prebuilt static and stateful documents
+        env:
+          TEST_BUILD_ID: ${{ github.sha }}
+        run: |
+          docker run --detach \
+            --name ena3d-vercel-ci \
+            --read-only \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=256m,uid=10001,gid=10001 \
+            --tmpfs /home/ena3d:rw,noexec,nosuid,nodev,size=64m,uid=10001,gid=10001 \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --pids-limit 256 \
+            --memory 2g \
+            --cpus 2 \
+            --env VERCEL_GIT_COMMIT_SHA="$TEST_BUILD_ID" \
+            --publish 127.0.0.1:3839:80 \
+            ena3d-vercel:ci
+          cleanup() {
+            docker inspect --format 'ena3d-vercel-ci state={{json .State}}' \
+              ena3d-vercel-ci 2>/dev/null || true
+            docker logs ena3d-vercel-ci 2>/dev/null || true
+            docker rm --force ena3d-vercel-ci >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          health_file=$(mktemp)
+          health_ok=0
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --show-error --max-time 5 \
+              http://127.0.0.1:3839/ena3d-health/healthz.json \
+              --output "$health_file"; then
+              health_ok=1
+              break
+            fi
+            if ! docker inspect --format '{{.State.Running}}' \
+              ena3d-vercel-ci | grep -qx true; then
+              docker inspect --format \
+                'ena3d-vercel-ci state={{json .State}}' ena3d-vercel-ci
+              exit 1
+            fi
+            sleep 1
+          done
+          test "$health_ok" -eq 1
+
+          for route in / /papers /team /about; do
+            static_file=$(mktemp)
+            curl --fail --silent --show-error --max-time 10 \
+              "http://127.0.0.1:3839${route}" --output "$static_file"
+            grep -Fq 'data-site-mode="static"' "$static_file"
+            if grep -Fq 'shiny-javascript' "$static_file" || \
+                grep -Fq 'ena3d-connection-guard' "$static_file"; then
+              echo "Static route unexpectedly contains Shiny session assets: $route" >&2
+              exit 1
+            fi
+          done
+
+          app_file=$(mktemp)
+          curl --fail --silent --show-error --max-time 10 \
+            http://127.0.0.1:3839/app --output "$app_file"
+          grep -Fq 'shiny-javascript' "$app_file"
+          grep -Fq 'ena3d-connection-guard' "$app_file"
+
+          internal_app_file=$(mktemp)
+          curl --fail --silent --show-error --max-time 10 \
+            http://127.0.0.1:3839/__ena3d-app --output "$internal_app_file"
+          grep -Fq 'shiny-javascript' "$internal_app_file"
+          grep -Fq 'ena3d-connection-guard' "$internal_app_file"
+
+          python3 - "$health_file" <<'PY'
+          import json
+          import os
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as health_handle:
+              health = json.load(health_handle)
+
+          assert health["status"] == "ok", health
+          assert health["app"] == "3D ENA", health
+          assert health["version"] == "ci", health
+          assert health["build"] == os.environ["TEST_BUILD_ID"], health
+          assert health["runtime_profile"] == "ephemeral-preview", health
+          assert health["connection_policy"] == "reload-required", health
+          PY

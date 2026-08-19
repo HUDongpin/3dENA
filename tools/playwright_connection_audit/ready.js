@@ -24,6 +24,12 @@ async (page) => {
   if (!state || state.opened < 1) {
     throw new Error("The Shiny transport was not observed.");
   }
+  const baselineProof = await state.proveServerRoundTrip();
+  state.baselineSessionId = baselineProof.sessionId;
   state.stableClosed = state.closed;
-  return { appReady: true };
+  return {
+    appReady: true,
+    baselineSessionProof: true,
+    roundTrips: baselineProof.roundTrips,
+  };
 }

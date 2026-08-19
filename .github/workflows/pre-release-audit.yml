@@ -77,6 +77,18 @@ env:
   ENA3D_BROWSER_REPEATS: ${{ github.event_name == 'release' && '3' || inputs.browser_repeats }}
 
 jobs:
+  resolve-audit-target:
+    name: Resolve immutable audit target
+    runs-on: ubuntu-24.04
+    outputs:
+      audit_sha: ${{ steps.target.outputs.audit_sha }}
+    steps:
+      - name: Validate and expose the exact audit SHA
+        id: target
+        run: |
+          printf '%s\n' "$ENA3D_AUDIT_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          printf 'audit_sha=%s\n' "$ENA3D_AUDIT_SHA" >> "$GITHUB_OUTPUT"
+
   locked-r-audit:
     name: Locked R, deterministic harness and static detectors
     runs-on: ubuntu-24.04
@@ -637,12 +649,13 @@ jobs:
 
   reliability-soak:
     name: 30-minute load, switch and trajectory soak
+    needs: resolve-audit-target
     if: ${{ github.event_name == 'release' || inputs.run_soak }}
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     env:
       E2E_PORT: "43840"
-      ENA3D_BUILD_ID: soak-${{ env.ENA3D_AUDIT_SHA }}
+      ENA3D_BUILD_ID: soak-${{ needs.resolve-audit-target.outputs.audit_sha }}
       ENA3D_AUDIT_SOAK: "1"
       ENA3D_AUDIT_SOAK_MINUTES: "30"
       ENA3D_MAX_RSS_GROWTH_KB: "524288"
@@ -998,6 +1011,20 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Build the exact Vercel preview image without publishing
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: ./Dockerfile.vercel
+          build-args: |
+            ENA3D_BUILD_ID=${{ env.ENA3D_AUDIT_SHA }}
+            ENA3D_APP_VERSION=pre-release-audit
+          push: false
+          load: false
+          tags: ena3d-vercel:pre-release-audit
+          cache-from: type=gha,scope=vercel-preview
+          cache-to: type=gha,mode=max,scope=vercel-preview
+
       - name: Verify hardened runtime, health metadata and nginx proxy
         env:
           TEST_BUILD_ID: ${{ env.ENA3D_AUDIT_SHA }}
@@ -1233,7 +1260,7 @@ jobs:
             --config "${connection_audit_dir}/cli.config.json" >/dev/null
           pwcli --raw run-code \
             --filename="${GITHUB_WORKSPACE}/tools/playwright_connection_audit/monitor.js"
-          pwcli goto https://3dena.com:18443/ >/dev/null
+          pwcli goto https://3dena.com:18443/app >/dev/null
           pwcli --raw run-code \
             --filename="${GITHUB_WORKSPACE}/tools/playwright_connection_audit/ready.js"
 
@@ -1262,7 +1289,7 @@ jobs:
             .transportInterrupted == true and
             .sameSessionRecovered == true and
             .postRecoveryRoundTrip == true and
-            .roundTrips == 14
+            .roundTrips == 15
           ' <<<"$recovery_result"
 
           arm_result=$(pwcli --raw run-code \

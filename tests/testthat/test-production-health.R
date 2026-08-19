@@ -74,6 +74,7 @@ test_that("the JSON health endpoint reports authoritative Vercel provenance", {
       ENA3D_BUILD_ID = "stale-health-smoke",
       ENA3D_APP_VERSION = "0.2.0-test",
       VERCEL = "1",
+      ENA3D_RUNTIME_PROFILE = "ephemeral-preview",
       VERCEL_GIT_COMMIT_SHA =
         "0123456789abcdef0123456789abcdef01234567"
     ),
@@ -117,29 +118,44 @@ test_that("the JSON health endpoint reports authoritative Vercel provenance", {
     health$build,
     "0123456789abcdef0123456789abcdef01234567"
   )
+  expect_identical(health$runtime_profile, "ephemeral-preview")
+  expect_identical(health$connection_policy, "reload-required")
   expect_gte(health$trusted_samples, 1L)
 })
 
 
-test_that("the cold Vercel shell serves Papers before loading analysis", {
+test_that("cold Vercel static pages stay separate from the stateful shell", {
   skip_if_not_installed("processx")
   skip_if_not_installed("curl")
   skip_if_not_installed("httpuv")
 
   build <- "89abcdef0123456789abcdef0123456789abcdef"
-  prebuilt <- tempfile("ena3d-cold-shell-", fileext = ".html")
+  prebuilt_app <- tempfile("ena3d-cold-app-", fileext = ".html")
+  prebuilt_static <- tempfile("ena3d-cold-static-", fileext = ".html")
   writeChar(
     paste0(
-      "<!doctype html><html><head><title>Papers | 3D ENA</title></head>",
-      "<body data-build=\"__ENA3D_BUILD_ID__\">Cold shell</body>",
+      "<!doctype html><html><head><title>3D ENA Workspace</title></head>",
+      "<body data-build=\"__ENA3D_BUILD_ID__\">",
+      "<div id=\"ena3d-connection-guard\">Stateful shell</div></body>",
       "<script src=\"plotly-main-2.11.1/plotly-latest.min.js\"></script>",
       "</html>"
     ),
-    prebuilt,
+    prebuilt_app,
     eos = NULL,
     useBytes = TRUE
   )
-  on.exit(unlink(prebuilt), add = TRUE)
+  writeChar(
+    paste0(
+      "<!doctype html><html data-site-mode=\"static\"><head>",
+      "<title>Papers | 3D ENA</title></head>",
+      "<body data-build=\"__ENA3D_BUILD_ID__\">Cold static shell</body>",
+      "</html>"
+    ),
+    prebuilt_static,
+    eos = NULL,
+    useBytes = TRUE
+  )
+  on.exit(unlink(c(prebuilt_app, prebuilt_static)), add = TRUE)
 
   port <- httpuv::randomPort()
   child_libraries <- paste(.libPaths(), collapse = .Platform$path.sep)
@@ -165,7 +181,8 @@ test_that("the cold Vercel shell serves Papers before loading analysis", {
       ENA3D_BUILD_ID = "stale-cold-shell",
       ENA3D_APP_VERSION = "0.2.0-test",
       ENA3D_INLINE_ASSETS = "true",
-      ENA3D_PREBUILT_UI_PATH = prebuilt,
+      ENA3D_PREBUILT_UI_PATH = prebuilt_app,
+      ENA3D_PREBUILT_STATIC_SITE_PATH = prebuilt_static,
       ENA3D_RUNTIME_PROFILE = "ephemeral-preview"
     ),
     stdout = "|",
@@ -204,7 +221,36 @@ test_that("the cold Vercel shell serves Papers before loading analysis", {
   expect_identical(response$status_code, 200L)
   expect_false(grepl("(?im)^location:", rawToChar(response$headers), perl = TRUE))
   expect_match(rawToChar(response$content), build, fixed = TRUE)
+  expect_match(rawToChar(response$content), "Cold static shell", fixed = TRUE)
+  expect_match(rawToChar(response$content), 'data-site-mode="static"', fixed = TRUE)
+  expect_false(grepl(
+    "ena3d-connection-guard",
+    rawToChar(response$content),
+    fixed = TRUE
+  ))
+  expect_false(grepl(
+    "plotly-latest.min.js",
+    rawToChar(response$content),
+    fixed = TRUE
+  ))
   expect_lt(as.numeric(difftime(Sys.time(), started, units = "secs")), 8)
+
+  app_response <- curl::curl_fetch_memory(sprintf(
+    "http://127.0.0.1:%d/app",
+    port
+  ))
+  expect_identical(app_response$status_code, 200L)
+  expect_match(rawToChar(app_response$content), build, fixed = TRUE)
+  expect_match(
+    rawToChar(app_response$content),
+    "ena3d-connection-guard",
+    fixed = TRUE
+  )
+  expect_match(
+    rawToChar(app_response$content),
+    "plotly-latest.min.js",
+    fixed = TRUE
+  )
 
   plotly_response <- curl::curl_fetch_memory(sprintf(
     "http://127.0.0.1:%d/plotly-main-2.11.1/plotly-latest.min.js",

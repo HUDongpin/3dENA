@@ -43,6 +43,10 @@ test_that("runtime and connection policy fail closed", {
     .connection_test_env$ena3d_connection_policy("development"),
     "reload-required"
   )
+  expect_identical(
+    .connection_test_env$ena3d_connection_policy("ephemeral-preview"),
+    "reload-required"
+  )
   expect_error(
     .connection_test_env$ena3d_validate_runtime_host(
       "persistent",

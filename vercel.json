@@ -3,7 +3,7 @@
   "fluid": true,
   "regions": ["hkg1"],
   "rewrites": [
-    { "source": "/app", "destination": "/" },
+    { "source": "/app", "destination": "/__ena3d-app" },
     { "source": "/papers", "destination": "/" },
     { "source": "/team", "destination": "/" },
     { "source": "/about", "destination": "/" }

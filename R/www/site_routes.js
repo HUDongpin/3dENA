@@ -3,14 +3,12 @@
 
   const routeForPage = Object.freeze({
     home: "/",
-    tool: "/app",
     papers: "/papers",
     team: "/team",
     about: "/about",
   });
   const titleForPage = Object.freeze({
     home: "3D ENA | Epistemic Network Analysis",
-    tool: "3D ENA Workspace | Epistemic Network Analysis",
     papers: "Papers | 3D ENA",
     team: "Team | 3D ENA",
     about: "About | 3D ENA",
@@ -23,6 +21,13 @@
     if (!pathname || pathname === "/") return "/";
     return pathname.replace(/\/+$/, "") || "/";
   }
+
+  function pageFromLocation() {
+    return pageForRoute[normalizePath(window.location.pathname)] || "home";
+  }
+
+  // Static pages publish their route without waiting for a Shiny lifecycle.
+  document.documentElement.dataset.siteRoute = pageFromLocation();
 
   function siteTab(page) {
     const nav = document.getElementById("site_nav");
@@ -47,6 +52,7 @@
   }
 
   function setPageMetadata(page) {
+    if (!Object.prototype.hasOwnProperty.call(routeForPage, page)) return;
     document.documentElement.dataset.siteRoute = page;
     document.title = titleForPage[page];
     const nav = document.getElementById("site_nav");
@@ -140,23 +146,80 @@
     selectPage(page);
   }
 
+  function writeCitationToClipboard(text) {
+    const writeWithSelection = function () {
+      return new Promise(function (resolve, reject) {
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        const copied = document.execCommand("copy");
+        textarea.remove();
+        if (copied) resolve();
+        else reject(new Error("Clipboard copy was not available."));
+      });
+    };
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text).catch(writeWithSelection);
+    }
+    return writeWithSelection();
+  }
+
+  function handleCitationCopy(event) {
+    if (!(event.target instanceof Element)) return;
+    const button = event.target.closest(".ena3d-copy-citation");
+    if (!button) return;
+    const citation = document.getElementById(button.getAttribute("data-citation-target"));
+    if (!citation) return;
+    const citationText =
+      citation.getAttribute("data-citation-text") || citation.textContent.trim();
+    const defaultAriaLabel = button.getAttribute("aria-label");
+    writeCitationToClipboard(citationText)
+      .then(function () {
+        window.clearTimeout(button.ena3dCopyResetTimer);
+        button.textContent = "Copied";
+        button.setAttribute("aria-label", "APA citation copied");
+        button.classList.add("is-copied");
+        button.ena3dCopyResetTimer = window.setTimeout(function () {
+          button.textContent = button.getAttribute("data-default-label") || "Copy APA";
+          button.setAttribute("aria-label", defaultAriaLabel);
+          button.classList.remove("is-copied");
+        }, 2200);
+      })
+      .catch(function () {
+        button.textContent = "Select citation to copy";
+        button.setAttribute(
+          "aria-label",
+          "Clipboard copy unavailable; select the citation to copy"
+        );
+        citation.focus();
+      });
+  }
+
   function initializeSiteRoutes() {
     const nav = document.getElementById("site_nav");
     if (!nav) return;
 
     prepareRouteLinks(nav);
     document.addEventListener("click", handleSitePageLink);
+    document.addEventListener("click", handleCitationCopy);
     nav.addEventListener("click", (event) => {
-      const link = event.target.closest('a[data-value]');
-      if (!link || !nav.contains(link)) return;
+      if (!(event.target instanceof Element)) return;
+      const link = event.target.closest("a[data-value]");
+      if (!link || !nav.contains(link) || !routeForPage[link.dataset.value]) return;
       window.setTimeout(() => writeRoute(link.dataset.value), 0);
     });
     nav.addEventListener("shown.bs.tab", (event) => {
-      const link = event.target.closest('a[data-value]');
-      if (link && nav.contains(link)) writeRoute(link.dataset.value);
+      if (!(event.target instanceof Element)) return;
+      const link = event.target.closest("a[data-value]");
+      if (link && nav.contains(link) && routeForPage[link.dataset.value]) {
+        writeRoute(link.dataset.value);
+      }
     });
     window.addEventListener("popstate", syncFromLocation);
-    document.addEventListener("shiny:connected", syncFromLocation);
     syncFromLocation();
   }
 

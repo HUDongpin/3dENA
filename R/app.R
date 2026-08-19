@@ -51,6 +51,7 @@ library(shiny)
 .ena3d_source('app_ui_stats.R')
 .ena3d_source('app_ui_ai_interpretation.R')
 .ena3d_source('app_ui_site.R')
+.ena3d_source('static_site.R')
 
 # Vercel must see the container port before its cold-start deadline. The
 # prebuilt public shell needs Shiny only, so defer the analysis namespaces and
@@ -264,7 +265,7 @@ app_ui <- function(){
       tags$script(
         defer = NA,
         src = paste0(
-          "/site_routes.js?v=",
+          "/app_entry.js?v=",
           utils::URLencode(
             paste(config$app_version, config$build_id, sep = "-"),
             reserved = TRUE
@@ -583,21 +584,18 @@ app_ui <- function(){
     navbarPage(
       title = ena3d_brand_ui(),
       id = "site_nav",
-      selected = "home",
-      windowTitle = "3D ENA | Epistemic Network Analysis",
+      selected = "tool",
+      windowTitle = "3D ENA Workspace | Epistemic Network Analysis",
       collapsible = TRUE,
       fluid = TRUE,
-      theme = bslib::bs_theme(
-        version = 5,
-        bg = "#f4f1e9",
-        fg = "#102a43",
-        primary = "#07747a",
-        secondary = "#a7442e"
-      ),
-      tabPanel(
-        title = "Home",
-        value = "home",
-        ena3d_home_ui()
+      theme = ena3d_site_theme(),
+      bslib::nav_item(
+        tags$a(
+          class = "nav-link",
+          href = "/",
+          `data-value` = "home",
+          "Home"
+        )
       ),
       tabPanel(
         title = "3D ENA",
@@ -687,20 +685,29 @@ app_ui <- function(){
           ) %>% tagAppendAttributes(class = 'ena3d-main-layout')
         )
       ),
-      tabPanel(
-        title = "PAPERS",
-        value = "papers",
-        ena3d_papers_ui()
+      bslib::nav_item(
+        tags$a(
+          class = "nav-link",
+          href = "/papers",
+          `data-value` = "papers",
+          "PAPERS"
+        )
       ),
-      tabPanel(
-        title = "TEAM",
-        value = "team",
-        ena3d_team_ui()
+      bslib::nav_item(
+        tags$a(
+          class = "nav-link",
+          href = "/team",
+          `data-value` = "team",
+          "TEAM"
+        )
       ),
-      tabPanel(
-        title = "ABOUT",
-        value = "about",
-        ena3d_about_ui()
+      bslib::nav_item(
+        tags$a(
+          class = "nav-link",
+          href = "/about",
+          `data-value` = "about",
+          "ABOUT"
+        )
       ),
       footer = ena3d_footer_ui()
     ),
@@ -1168,14 +1175,8 @@ app_server <- function(input, output, session) {
     ena_server_state$active_tab() == 'trajectory'
   })
 
-  open_site_page <- function(page) {
-    updateNavbarPage(session, "site_nav", selected = page)
-  }
-  observeEvent(input$launch_ena, open_site_page("tool"))
-  observeEvent(input$launch_ena_note, open_site_page("tool"))
-  observeEvent(input$launch_ena_about, open_site_page("tool"))
-  observeEvent(input$explore_trajectory, {
-    open_site_page("tool")
+  observeEvent(input$ena3d_workspace_entry, {
+    req(identical(input$ena3d_workspace_entry, "trajectory"))
     updateNavlistPanel(
       session,
       "workspace_sections",
@@ -1192,7 +1193,7 @@ app_server <- function(input, output, session) {
     id = "main_app",
     state = ena_server_state,
     config = config,
-    page_active = reactive(identical(input$site_nav, "tool")),
+    page_active = reactive(TRUE),
     workspace_section = reactive(input$workspace_sections)
   )
   # ena_comparison_plot_server( "main_app")
@@ -1208,10 +1209,54 @@ options(
 inline_assets <- tolower(Sys.getenv("ENA3D_INLINE_ASSETS", unset = "false")) %in%
   c("1", "true", "yes", "on")
 .ena3d_static_plotly_registered <- FALSE
+.ena3d_www_dir <- file.path(.ena3d_app_dir, "www")
+
+prebuilt_static_site_path <- if (inline_assets) {
+  Sys.getenv("ENA3D_PREBUILT_STATIC_SITE_PATH", unset = "")
+} else {
+  ""
+}
+if (nzchar(prebuilt_static_site_path) &&
+    !file.exists(prebuilt_static_site_path)) {
+  stop(
+    "ENA3D_PREBUILT_STATIC_SITE_PATH does not exist: ",
+    prebuilt_static_site_path,
+    call. = FALSE
+  )
+}
+if (nzchar(prebuilt_static_site_path)) {
+  static_site_html <- readChar(
+    prebuilt_static_site_path,
+    nchars = file.info(prebuilt_static_site_path)$size,
+    useBytes = TRUE
+  )
+  static_site_html <- gsub(
+    "__ENA3D_BUILD_ID__",
+    config$build_id,
+    static_site_html,
+    fixed = TRUE
+  )
+} else {
+  static_site_html <- ena3d_render_static_site(
+    config,
+    .ena3d_www_dir,
+    # Keep the static document independent from Shiny's session-scoped
+    # dependency registry in every runtime profile, including local runApp.
+    inline_assets = TRUE
+  )
+}
+static_site_http_handler <- ena3d_static_site_handler(static_site_html)
 
 ena3d_app <- if (inline_assets) {
   prebuilt_ui_path <- Sys.getenv("ENA3D_PREBUILT_UI_PATH", unset = "")
-  if (nzchar(prebuilt_ui_path) && file.exists(prebuilt_ui_path)) {
+  if (nzchar(prebuilt_ui_path) && !file.exists(prebuilt_ui_path)) {
+    stop(
+      "ENA3D_PREBUILT_UI_PATH does not exist: ",
+      prebuilt_ui_path,
+      call. = FALSE
+    )
+  }
+  if (nzchar(prebuilt_ui_path)) {
     app_ui_html <- readChar(
       prebuilt_ui_path,
       nchars = file.info(prebuilt_ui_path)$size,
@@ -1229,7 +1274,7 @@ ena3d_app <- if (inline_assets) {
     ena3d_load_analysis_runtime()
     app_ui_html <- ena3d_render_inline_ui(
       app_ui(),
-      file.path(.ena3d_app_dir, "www")
+      .ena3d_www_dir
     )
   }
 
@@ -1250,7 +1295,10 @@ ena3d_app <- if (inline_assets) {
   shinyApp(app_ui(), app_server)
 }
 
-ena3d_app <- ena3d_enable_site_routes(ena3d_app)
+ena3d_app <- ena3d_enable_site_routes(
+  ena3d_app,
+  static_handler = static_site_http_handler
+)
 ena3d_security_log(
   "app_ready",
   fields = list(
