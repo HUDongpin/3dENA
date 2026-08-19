@@ -32,8 +32,34 @@ jobs:
 
       - name: Install R system dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends \
+          set -euo pipefail
+          apt_network_options=(
+            -o Acquire::Retries=3
+            -o Acquire::http::Timeout=20
+            -o Acquire::https::Timeout=20
+            -o Acquire::ForceIPv4=true
+            -o DPkg::Lock::Timeout=30
+            -o Dpkg::Use-Pty=0
+          )
+          apt_update_with_retry() {
+            local attempt
+            for attempt in 1 2 3; do
+              if sudo timeout --signal=TERM --kill-after=30s 120s \
+                env DEBIAN_FRONTEND=noninteractive \
+                apt-get "${apt_network_options[@]}" update; then
+                return 0
+              fi
+              if [ "$attempt" -eq 3 ]; then
+                return 1
+              fi
+              sleep "$((attempt * 5))"
+            done
+          }
+          apt_update_with_retry
+          sudo timeout --signal=TERM --kill-after=30s 600s \
+            env DEBIAN_FRONTEND=noninteractive \
+            apt-get "${apt_network_options[@]}" \
+            install --yes --no-install-recommends \
             gfortran \
             libcurl4-openssl-dev \
             libfontconfig1-dev \
