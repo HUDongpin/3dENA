@@ -148,7 +148,7 @@ ena3d_paper_citation_ui <- function(
     citation_id,
     citation_text,
     citation_html,
-    doi,
+    doi = NULL,
     featured = FALSE) {
   tags$article(
     class = paste(
@@ -181,19 +181,27 @@ ena3d_paper_citation_ui <- function(
         `aria-label` = paste("Copy APA citation for", title),
         "Copy APA"
       ),
-      tags$a(
-        class = "ena3d-doi-link",
-        href = doi,
-        target = "_blank",
-        rel = "noopener noreferrer",
-        "View publication",
-        tags$span(`aria-hidden` = "true", "\u2197")
-      )
+      if (!is.null(doi) && nzchar(doi)) {
+        tags$a(
+          class = "ena3d-doi-link",
+          href = doi,
+          target = "_blank",
+          rel = "noopener noreferrer",
+          "View publication",
+          tags$span(`aria-hidden` = "true", "\u2197")
+        )
+      }
     )
   )
 }
 
 ena3d_papers_ui <- function() {
+  conference_citation <- paste0(
+    "Hu, D., Hamilton, E., Tu, Y. F., & Xu, Q. (2026, November). Design and ",
+    "development from rENA to jENA: Accelerating the creation of web-based ",
+    "Open ENA tools. [Conference paper]. International Conference on ",
+    "Quantitative Ethnography."
+  )
   method_citation <- paste0(
     "Yu, J., Hu, D., & Wang, C.-H. (2024). Development of ENA 3D: A tool for ",
     "epistemic network analysis in three-dimensional space. In Y. J. Kim & Z. ",
@@ -224,8 +232,8 @@ ena3d_papers_ui <- function() {
         tags$p(
           class = "ena3d-papers-lede",
           "If 3D ENA supports your analysis, cite the foundational method paper. ",
-          "The application studies below show how the approach has been used in ",
-          "educational research and political research."
+          "The references below also document the platform's development and its ",
+          "use in educational research and political research."
         )
       ),
       tags$aside(
@@ -244,10 +252,10 @@ ena3d_papers_ui <- function() {
       tags$div(
         class = "ena3d-papers-heading",
         tags$div(
-          tags$h2("Three verified references")
+          tags$h2("Four references")
         ),
         tags$p(
-          "Bibliographic details were checked against publisher and DOI records. ",
+          "Publication links are included when available. ",
           tags$a(
             href = "https://www.ena3d.org/papers.html",
             target = "_blank",
@@ -261,6 +269,23 @@ ena3d_papers_ui <- function() {
         class = "ena3d-paper-list",
         ena3d_paper_citation_ui(
           number = 1,
+          type = "CONFERENCE PAPER",
+          title = paste(
+            "Design and development from rENA to jENA:",
+            "Accelerating the creation of web-based Open ENA tools"
+          ),
+          citation_id = "ena3d-citation-rena-jena",
+          citation_text = conference_citation,
+          citation_html = tagList(
+            "Hu, D., Hamilton, E., Tu, Y. F., & Xu, Q. (2026, November). Design ",
+            "and development from rENA to jENA: Accelerating the creation of ",
+            "web-based Open ENA tools. [Conference paper]. ",
+            tags$em("International Conference on Quantitative Ethnography"),
+            "."
+          )
+        ),
+        ena3d_paper_citation_ui(
+          number = 2,
           type = "FOUNDATIONAL METHOD",
           title = paste(
             "Development of ENA 3D: A Tool for Epistemic Network Analysis",
@@ -283,30 +308,6 @@ ena3d_papers_ui <- function() {
           ),
           doi = "https://doi.org/10.1007/978-3-031-76335-9_11",
           featured = TRUE
-        ),
-        ena3d_paper_citation_ui(
-          number = 2,
-          type = "APPLICATION · POLITICAL DISCOURSE",
-          title = paste(
-            "The Application of ENA to Political Discourse in Taiwan:",
-            "A Case Study"
-          ),
-          citation_id = "ena3d-citation-political",
-          citation_text = political_citation,
-          citation_html = tagList(
-            "Yu, J., Hamilton, E., Wang, C.-H., & Hu, D. (2024). The application ",
-            "of ENA to political discourse in Taiwan: A case study. In Y. J. Kim ",
-            "& Z. Swiecki (Eds.), ",
-            tags$em("Advances in quantitative ethnography"),
-            " (pp. 273\u2013287). Springer. ",
-            tags$a(
-              href = "https://doi.org/10.1007/978-3-031-76332-8_22",
-              target = "_blank",
-              rel = "noopener noreferrer",
-              "https://doi.org/10.1007/978-3-031-76332-8_22"
-            )
-          ),
-          doi = "https://doi.org/10.1007/978-3-031-76332-8_22"
         ),
         ena3d_paper_citation_ui(
           number = 3,
@@ -337,6 +338,30 @@ ena3d_papers_ui <- function() {
             )
           ),
           doi = "https://doi.org/10.1016/j.compedu.2025.105397"
+        ),
+        ena3d_paper_citation_ui(
+          number = 4,
+          type = "APPLICATION · POLITICAL DISCOURSE",
+          title = paste(
+            "The Application of ENA to Political Discourse in Taiwan:",
+            "A Case Study"
+          ),
+          citation_id = "ena3d-citation-political",
+          citation_text = political_citation,
+          citation_html = tagList(
+            "Yu, J., Hamilton, E., Wang, C.-H., & Hu, D. (2024). The application ",
+            "of ENA to political discourse in Taiwan: A case study. In Y. J. Kim ",
+            "& Z. Swiecki (Eds.), ",
+            tags$em("Advances in quantitative ethnography"),
+            " (pp. 273\u2013287). Springer. ",
+            tags$a(
+              href = "https://doi.org/10.1007/978-3-031-76332-8_22",
+              target = "_blank",
+              rel = "noopener noreferrer",
+              "https://doi.org/10.1007/978-3-031-76332-8_22"
+            )
+          ),
+          doi = "https://doi.org/10.1007/978-3-031-76332-8_22"
         )
       )
     )

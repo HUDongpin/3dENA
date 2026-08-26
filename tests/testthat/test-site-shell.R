@@ -251,7 +251,7 @@ test_that("About presents the verified public developer profile", {
 })
 
 
-test_that("Papers provides three verified, copy-ready APA references", {
+test_that("Papers provides four copy-ready references in the requested order", {
   papers <- htmltools::renderTags(.site_shell_env$ena3d_papers_ui())$html
 
   expect_false(grepl("PAPERS &amp; CITATION", papers, fixed = TRUE))
@@ -259,32 +259,54 @@ test_that("Papers provides three verified, copy-ready APA references", {
   expect_match(papers, "Start with the method paper.", fixed = TRUE)
   expect_match(
     papers,
-    "educational research and political research.",
+    "use in educational research and political research.",
     fixed = TRUE
   )
   expect_false(grepl("political discourse and learning research.", papers, fixed = TRUE))
   expect_false(grepl("APA 7TH EDITION", papers, fixed = TRUE))
-  expect_match(papers, "Three verified references", fixed = TRUE)
-  expect_match(
-    papers,
-    "Development of ENA 3D: A Tool for Epistemic Network Analysis in Three-Dimensional Space",
-    fixed = TRUE
+  expect_match(papers, "Four references", fixed = TRUE)
+  expect_match(papers, "Publication links are included when available.", fixed = TRUE)
+
+  expected_titles <- c(
+    paste(
+      "Design and development from rENA to jENA:",
+      "Accelerating the creation of web-based Open ENA tools"
+    ),
+    paste(
+      "Development of ENA 3D: A Tool for Epistemic Network Analysis",
+      "in Three-Dimensional Space"
+    ),
+    paste(
+      "Effects on the Learning Achievement, Approaches to Learning, and",
+      "Multi-Stage Reflection Quality of Students with Different Levels",
+      "of Digital Self-Efficacy in a Data Literacy Course: An ARCS-Based",
+      "Self-Reflective Online Learning Model"
+    ),
+    paste(
+      "The Application of ENA to Political Discourse in Taiwan:",
+      "A Case Study"
+    )
   )
-  expect_match(
-    papers,
-    "The Application of ENA to Political Discourse in Taiwan: A Case Study",
-    fixed = TRUE
+  title_positions <- vapply(
+    expected_titles,
+    function(title) regexpr(title, papers, fixed = TRUE)[[1L]],
+    integer(1L)
   )
-  expect_match(
-    papers,
-    "Effects on the Learning Achievement, Approaches to Learning, and Multi-Stage Reflection Quality",
-    fixed = TRUE
-  )
+  expect_true(all(title_positions > 0L))
+  expect_true(all(diff(title_positions) > 0L))
+
+  expect_match(papers, "Hu, D., Hamilton, E., Tu, Y. F., &amp; Xu, Q. (2026, November).", fixed = TRUE)
+  expect_match(papers, "[Conference paper].", fixed = TRUE)
+  expect_match(papers, "International Conference on Quantitative Ethnography", fixed = TRUE)
   expect_match(papers, "10.1007/978-3-031-76335-9_11", fixed = TRUE)
   expect_match(papers, "10.1007/978-3-031-76332-8_22", fixed = TRUE)
   expect_match(papers, "10.1016/j.compedu.2025.105397", fixed = TRUE)
   expect_equal(
     lengths(regmatches(papers, gregexpr("ena3d-copy-citation", papers, fixed = TRUE))),
+    4L
+  )
+  expect_equal(
+    lengths(regmatches(papers, gregexpr("ena3d-doi-link", papers, fixed = TRUE))),
     3L
   )
   expect_match(papers, "data-citation-text=", fixed = TRUE)

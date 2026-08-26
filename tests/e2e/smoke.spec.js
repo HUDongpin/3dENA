@@ -252,7 +252,7 @@ test("home foregrounds trajectory analysis in a compact responsive hero", async 
   );
 });
 
-test("papers page exposes three verified copy-ready APA citations", async ({
+test("papers page exposes four copy-ready citations in the requested order", async ({
   browserName,
   page,
   context,
@@ -275,21 +275,37 @@ test("papers page exposes three verified copy-ready APA citations", async ({
   ).toBeVisible();
 
   const paperCards = page.locator(".ena3d-paper-card");
-  await expect(paperCards).toHaveCount(3);
+  await expect(paperCards).toHaveCount(4);
+  await expect(paperCards.nth(0)).toContainText(
+    "Design and development from rENA to jENA"
+  );
+  await expect(paperCards.nth(1)).toContainText("Development of ENA 3D");
+  await expect(paperCards.nth(2)).toContainText("Effects on the Learning Achievement");
+  await expect(paperCards.nth(3)).toContainText(
+    "The Application of ENA to Political Discourse in Taiwan"
+  );
   await expect(page.locator(".ena3d-paper-card-featured")).toContainText(
     "FOUNDATIONAL METHOD"
   );
-  await expect(page.locator(".ena3d-copy-citation")).toHaveCount(3);
+  await expect(page.locator(".ena3d-copy-citation")).toHaveCount(4);
+  await expect(page.locator(".ena3d-doi-link")).toHaveCount(3);
 
-  const methodCopy = page.locator(".ena3d-copy-citation").first();
-  const citationTarget = await methodCopy.getAttribute("data-citation-target");
+  const conferenceCopy = page.locator(".ena3d-copy-citation").first();
+  const citationTarget = await conferenceCopy.getAttribute("data-citation-target");
   const expectedCitation = await page
     .locator(`#${citationTarget}`)
     .getAttribute("data-citation-text");
-  expect(expectedCitation).toContain("Yu, J., Hu, D., & Wang, C.-H. (2024).");
-  expect(expectedCitation).toContain("10.1007/978-3-031-76335-9_11");
-  await methodCopy.click();
-  await expect(methodCopy).toHaveText("Copied");
+  expect(expectedCitation).toContain(
+    "Hu, D., Hamilton, E., Tu, Y. F., & Xu, Q. (2026, November)."
+  );
+  expect(expectedCitation).toContain(
+    "Design and development from rENA to jENA: Accelerating the creation of web-based Open ENA tools."
+  );
+  expect(expectedCitation).toContain(
+    "[Conference paper]. International Conference on Quantitative Ethnography."
+  );
+  await conferenceCopy.click();
+  await expect(conferenceCopy).toHaveText("Copied");
   if (browserName === "chromium") {
     const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
     expect(clipboardText).toBe(expectedCitation);
