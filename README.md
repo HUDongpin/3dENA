@@ -189,6 +189,42 @@ bootstrap intervals plus multiplicity-adjusted permutation inference.
 - **Stats** provides axis-wise tests; paired tests require an explicit pairing
   ID and report unmatched observations.
 
+## Supported external R interfaces
+
+This repository is an application rather than an R package. Its supported
+external analytical surface is the four functions documented in
+[`TRAJECTORY_ANALYSIS.md`](TRAJECTORY_ANALYSIS.md#direct-r-api):
+
+- `compute_centroid_path()`;
+- `bootstrap_centroid_path()`;
+- `compare_centroid_paths()`; and
+- `compare_independent_centroid_paths()`.
+
+Source `R/trajectory_analysis.R` directly when using those interfaces. Their
+documented arguments, return tables, specifications, warnings, and numerical
+contracts are compatibility-reviewed.
+
+External plotting scripts may also source `R/trajectory_plot.R`. The public
+plotting surface protected by regression tests is:
+
+- `trajectory_color_map()`;
+- `trajectory_node_legend_data()`;
+- `trajectory_trace_data()`;
+- `plot_centroid_trajectory()`;
+- `plot_centroid_trajectory_2d()`; and
+- `plot_centroid_trajectory_3d()`.
+
+The versioned `.ena3d.json` schema and the trusted offline converter are
+separate supported interchange interfaces.
+
+Shiny modules, UI factories, cache helpers, `build_network()`, dot-prefixed
+plotting helpers, and other objects loaded only indirectly by `R/app.R` are
+internal implementation details. Sourcing those files can be useful for
+development and testing, but it does not create a compatibility guarantee for
+their function signatures or helper names. Internal interfaces may therefore
+be simplified when the application, the supported analytical and plotting
+APIs, and the exchange contract remain unchanged.
+
 ## AI-assisted interpretation
 
 An operator may enable Qwen interpretation for aggregate Overall, Networks,

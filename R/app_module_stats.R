@@ -246,7 +246,7 @@ ena3d_paired_wilcox <- function(points, group_var, group1, group2, id_var,
   )
 }
 
-stats_module <- function(input, output, session, rv_data, config, state) {
+stats_module <- function(input, output, rv_data, state) {
   ai_result <- reactiveVal(NULL)
 
   aggregate_result <- function(result, adjusted_p, summary = NULL,

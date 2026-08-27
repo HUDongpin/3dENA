@@ -2287,7 +2287,7 @@
 }
 
 
-.trajectory_comparison_arguments <- function(context, common_arguments) {
+.trajectory_comparison_arguments <- function(context) {
   diagnostics <- .trajectory_module_diagnostic(
     "none", "", severity = "info"
   )[0, , drop = FALSE]
@@ -2350,7 +2350,7 @@
   module_diagnostics <- .trajectory_time_order_diagnostics(
     context$points, context$time_var
   )
-  comparison <- .trajectory_comparison_arguments(context, common_arguments)
+  comparison <- .trajectory_comparison_arguments(context)
   module_diagnostics <- .trajectory_bind_diagnostics(
     module_diagnostics, comparison$diagnostics
   )

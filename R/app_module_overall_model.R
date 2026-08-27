@@ -1,13 +1,3 @@
-ena3d_overall_group_count <- function(points, group_var) {
-  if (!is.data.frame(points) || !is.character(group_var) ||
-      length(group_var) != 1L || !group_var %in% names(points)) {
-    stop("A valid group column is required for the Overall plot.", call. = FALSE)
-  }
-
-  values <- points[[group_var]]
-  length(unique(values[!is.na(values)]))
-}
-
 ena3d_overall_color_map <- function(group_values, configured_colors = NULL,
                                     fallback_colors = character()) {
   group_values <- unique(as.character(group_values))
@@ -144,13 +134,11 @@ ena3d_apply_overall_layout <- function(plot, camera, camera_position) {
 
 
 source('./app_utils.R')
-ena_overall_plot_output <-  function(input, output, session,
+ena_overall_plot_output <-  function(input, output,
                                         data,
                                         state,
                                         scaled_points,
-                                        scaled_nodes,
-                                        group_var=NULL,
-                                        camera=NULL
+                                        scaled_nodes
 ) {
   # print('module server go with id')
   # print(id)
@@ -164,7 +152,7 @@ ena_overall_plot_output <-  function(input, output, session,
     tilde_var_or_null(input$z)
   })
 
-  camera = reactive({
+  camera <- reactive({
     pos = input$camera_position
     if(pos =='default'){
       camera = list(eye=list(x=1.25, y=1.25, z=1.25))
@@ -230,10 +218,6 @@ ena_overall_plot_output <-  function(input, output, session,
       ena3d_axes_are_distinct(input$x, input$y, input$z),
       cancelOutput = TRUE
     )
-    if(state$render_overall() == FALSE){
-      return(NULL)
-    }
-    
     # Create an empty plot
     #browser()
     # Add the first trace (from points_plot)
@@ -319,13 +303,6 @@ ena_overall_plot_output <-  function(input, output, session,
       )
     }
     
-    # if(!is.null(camera)){
-    #   print('set cam')
-    #   main_plot %>% layout(scene= list(camera=camera))
-    # }
-    # camera = list(
-    #   eye=list(x=0., y=0., z=2.5)
-    # )
     main_plot <- ena3d_apply_overall_layout(
       main_plot,
       camera = camera(),

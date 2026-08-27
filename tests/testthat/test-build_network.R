@@ -55,6 +55,14 @@ test_that("invalid user network colors fail clearly and a valid retry succeeds",
     colors = c("#AA3300", "#0033AA")
   )
   expect_length(valid$network.edges.shapes, length(weights))
+  expect_equal(
+    sort(vapply(
+      valid$network.edges.shapes,
+      function(edge) edge$line$width,
+      numeric(1L)
+    )),
+    sort(abs(weights) * 10)
+  )
 })
 
 test_that("exchange-style base ena.nodes do not dispatch the broken matrix method", {
@@ -84,7 +92,11 @@ test_that("exchange-style base ena.nodes do not dispatch the broken matrix metho
     adjacency.key = fixture$adjacency
   )
   expect_length(network$network.edges.shapes, 3L)
-  expect_equal(nrow(network$nodes), 3L)
+  expect_identical(names(network), "network.edges.shapes")
+  expect_true(all(vapply(network$network.edges.shapes, function(edge) {
+    is.data.frame(edge$node1) && nrow(edge$node1) == 1L &&
+      is.data.frame(edge$node2) && nrow(edge$node2) == 1L
+  }, logical(1L))))
 })
 
 test_that("dense networks use bounded batched traces with per-edge hover", {

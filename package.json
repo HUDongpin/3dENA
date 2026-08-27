@@ -10,7 +10,7 @@
     "fsevents": false
   },
   "scripts": {
-    "lint": "eslint playwright.config.js \"tests/e2e/**/*.js\"",
+    "lint": "eslint playwright.config.js \"tests/e2e/**/*.js\" \"R/www/**/*.js\" \"tools/**/*.{js,cjs}\"",
     "test:e2e": "playwright test",
     "test:e2e:desktop": "playwright test --project=desktop-chromium --project=desktop-firefox --project=desktop-webkit",
     "test:e2e:chromium": "playwright test --project=desktop-chromium --project=tablet-768px-chromium --project=mobile-390px-chromium",

@@ -61,7 +61,7 @@ test_that("Overall uses named data.table columns and aligned secondary hover val
     as.character(points$Name[selected_rows])
   )
   expect_identical(points, original)
-  expect_equal(ena3d_overall_group_count(points, "Week"), 15L)
+  expect_equal(length(unique(points$Week[!is.na(points$Week)])), 15L)
 
   all_weeks <- sort(unique(points$Week))
   all_points <- ena3d_prepare_overall_points(
@@ -113,6 +113,29 @@ test_that("Overall uses named data.table columns and aligned secondary hover val
       unname(full_color_map[[week]])
     )
   }
+})
+
+
+test_that("Code-node marker size is fixed while edge width carries strength", {
+  server_text <- paste(
+    readLines(
+      file.path(.ui_regression_root, "R", "app_server.R"),
+      warn = FALSE
+    ),
+    collapse = "\n"
+  )
+
+  expect_match(
+    server_text,
+    "Network strength is encoded by edge width, not by marker area.",
+    fixed = TRUE
+  )
+  expect_match(
+    server_text,
+    "node_points$weight <- rep(10, nrow(node_points))",
+    fixed = TRUE
+  )
+  expect_false(grepl("any(node_points$weight > 0)", server_text, fixed = TRUE))
 })
 
 
@@ -340,14 +363,6 @@ test_that("Network, Change, and Comparison plots explicitly autorange", {
   expect_gte(themed_layout$font$size, 14)
   expect_gte(themed_layout$legend$font$size, 14)
 
-  compatibility_plot <- set_default_axis_range(plotly::plot_ly(
-    far_coordinates, x = ~x, y = ~y, z = ~z,
-    type = "scatter3d", mode = "markers"
-  ))
-  compatibility_layout <- plotly::plotly_build(compatibility_plot)$x$layout$scene
-  expect_true(isTRUE(compatibility_layout$xaxis$autorange))
-  expect_null(compatibility_layout$xaxis$range)
-
   files <- c(
     "app_module_network.R",
     "app_module_ena_unit_group_change_plot.R",
@@ -357,7 +372,6 @@ test_that("Network, Change, and Comparison plots explicitly autorange", {
     paste(readLines(file.path(.ui_regression_root, "R", file), warn = FALSE),
           collapse = "\n")
   }, character(1)), collapse = "\n")
-  expect_false(grepl("set_default_axis_range(", text, fixed = TRUE))
   expect_false(grepl("range = c(-", text, fixed = TRUE))
 })
 

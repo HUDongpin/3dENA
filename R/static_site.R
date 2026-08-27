@@ -72,7 +72,7 @@ ena3d_static_site_head <- function(config) {
   )
 }
 
-ena3d_static_site_ui <- function(config) {
+ena3d_static_site_ui <- function() {
   bslib::page_navbar(
     bslib::nav_panel(
       title = "Home",
@@ -146,7 +146,7 @@ ena3d_render_static_site <- function(config, www_dir, inline_assets = FALSE) {
       "</html>"
     ),
     head = ena3d_static_site_head(config),
-    body = ena3d_static_site_ui(config),
+    body = ena3d_static_site_ui(),
     document_ = TRUE
   )
   html <- htmltools::renderDocument(

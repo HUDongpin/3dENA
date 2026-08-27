@@ -37,20 +37,14 @@ ena3d_reset_data_state <- function(rv_data, state) {
   # Every value below is derived from the active dataset. Keep this list in
   # one place so uploads and bundled samples cannot follow different cache
   # invalidation paths.
-  rv_data$myList <- list()
   rv_data$unit_group_change_plots <- list()
-  rv_data$current_unit_change_plot_camera <- list()
   rv_data$dataset_id <- NULL
   rv_data$ena_groups <- character()
   rv_data$ena_groupVar <- character()
-  rv_data$ena_points_plot_ready <- FALSE
   rv_data$initialized <- FALSE
   rv_data$model_tab_clicked <- FALSE
-  rv_data$comparison_plot <- list()
-  rv_data$reactiveFunctions <- list()
   rv_data$group_colors <- matrix(character(), ncol = 2L)
   rv_data$group_selectors <- list()
-  rv_data$group_options <- list()
   rv_data$active_dataset <- NULL
   state$ena_obj <- NULL
   state$is_app_initialized <- FALSE
@@ -847,7 +841,6 @@ load_ena_data <- function(input, output, session, file_path, rv_data, state,
   if (!is.null(input)) {
     for (input_id in c(
       "x", "y", "z", "group_change_var", "unit_change",
-      "change_group_1", "change_group_2",
       "stats_group1", "stats_group2", "stats_pair_id",
       "compare_group_1", "compare_group_2", "network_selector"
     )) {
@@ -889,7 +882,7 @@ load_ena_data <- function(input, output, session, file_path, rv_data, state,
     selected = change_selector$selected
   )
 
-  for (id in c("change_group_1", "change_group_2", "stats_group1", "stats_group2")) {
+  for (id in c("stats_group1", "stats_group2")) {
     updateSelectInput(
       session,
       id,

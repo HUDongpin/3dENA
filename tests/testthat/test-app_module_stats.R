@@ -271,7 +271,7 @@ test_that("Stats renders each axis and its own adjusted p-value", {
   )
 
   testServer(function(input, output, session) {
-    stats_module(input, output, session, rv_data, list(), state)
+    stats_module(input, output, rv_data, state)
   }, {
     session$setInputs(
       x = axes[[1L]], y = axes[[2L]], z = axes[[3L]],
@@ -330,7 +330,7 @@ test_that("paired Stats boxes retain the result for their own axis", {
   state <- list(ena_obj = list(points = points))
 
   testServer(function(input, output, session) {
-    stats_module(input, output, session, rv_data, list(), state)
+    stats_module(input, output, rv_data, state)
   }, {
     session$setInputs(
       x = axes[[1L]], y = axes[[2L]], z = axes[[3L]],
@@ -384,7 +384,7 @@ test_that("Stats filters POSIXct groups selected by their display values", {
   )
 
   testServer(function(input, output, session) {
-    stats_module(input, output, session, rv_data, list(), state)
+    stats_module(input, output, rv_data, state)
   }, {
     session$setInputs(
       x = "MR1", y = "SVD2", z = "SVD3",
@@ -425,7 +425,7 @@ test_that("changing the paired alternative invalidates and reruns Stats output",
   state <- list(ena_obj = list(points = points))
 
   testServer(function(input, output, session) {
-    stats_module(input, output, session, rv_data, list(), state)
+    stats_module(input, output, rv_data, state)
   }, {
     session$setInputs(
       x = "MR1", y = "SVD2", z = "SVD3",
@@ -461,7 +461,7 @@ test_that("Stats refuses a self-comparison for every study design", {
   state <- list(ena_obj = list(points = points))
 
   testServer(function(input, output, session) {
-    stats_module(input, output, session, rv_data, list(), state)
+    stats_module(input, output, rv_data, state)
   }, {
     session$setInputs(
       x = "MR1", y = "SVD2", z = "SVD3",
@@ -492,7 +492,7 @@ test_that("Stats refuses duplicate axes before defining a correction family", {
   state <- list(ena_obj = list(points = points))
 
   testServer(function(input, output, session) {
-    stats_module(input, output, session, rv_data, list(), state)
+    stats_module(input, output, rv_data, state)
   }, {
     session$setInputs(
       x = "MR1", y = "MR1", z = "SVD3",

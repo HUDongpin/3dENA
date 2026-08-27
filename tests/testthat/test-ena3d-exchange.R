@@ -138,10 +138,10 @@ test_that("all bundled samples have deterministic uploadable round trips", {
       hover_var = metadata_names[[1L]]
     )
     expect_equal(nrow(prepared), nrow(restored$points))
-    expect_equal(
-      ena3d_overall_group_count(restored$points, group_var),
-      length(group_values)
-    )
+    non_missing_groups <- restored$points[[group_var]]
+    non_missing_groups <- non_missing_groups[!is.na(non_missing_groups)]
+    expected_groups <- group_values[!is.na(group_values)]
+    expect_equal(length(unique(non_missing_groups)), length(expected_groups))
     trajectory_points <- .trajectory_points(restored)
     expect_identical(
       .trajectory_dimensions(restored, trajectory_points), dimensions
@@ -518,13 +518,11 @@ test_that("exchange upload commits only after complete validation", {
   testServer(
     function(input, output, session) {
       rv <- reactiveValues(
-        myList = list(), unit_group_change_plots = list(),
-        current_unit_change_plot_camera = list(), ena_groups = character(),
-        ena_groupVar = character(), ena_points_plot_ready = FALSE,
-        initialized = FALSE, model_tab_clicked = FALSE,
-        comparison_plot = list(), reactiveFunctions = list(),
+        unit_group_change_plots = list(), ena_groups = character(),
+        ena_groupVar = character(), initialized = FALSE,
+        model_tab_clicked = FALSE,
         group_colors = list(), group_selectors = list(),
-        group_options = list(), dataset_id = NULL, active_dataset = NULL
+        dataset_id = NULL, active_dataset = NULL
       )
       state <- new.env(parent = emptyenv())
       state$ena_obj <- NULL

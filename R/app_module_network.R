@@ -63,13 +63,11 @@ ena3d_network_selection_target <- function(selection, group_var) {
 
 
 source('./app_utils.R')
-ena_network_plot_output <-  function(input, output, session,
+ena_network_plot_output <-  function(input, output,
                                         data,
                                         state,
                                         scaled_points,
-                                        scaled_nodes,
-                                        group_var=NULL,
-                                        camera=NULL
+                                        scaled_nodes
 ) {
   # print('module server go with id')
   # print(id)
@@ -83,7 +81,7 @@ ena_network_plot_output <-  function(input, output, session,
     tilde_var_or_null(input$z)
   })
 
-  camera = reactive({
+  camera <- reactive({
     pos = input$camera_position
     if(pos =='default'){
       camera = list(eye=list(x=1.25, y=1.25, z=1.25))
@@ -325,61 +323,6 @@ ena_network_plot_output <-  function(input, output, session,
                                 )
     }
     
-    # my_nodes <- scaled_nodes()
-    # # Add the second trace (from nodes_plot)
-    # main_plot <- add_trace(main_plot, data = my_nodes, x = x_axis(), y = y_axis(), z = z_axis(),
-    #                        type = 'scatter3d', mode = "markers", name = "Codes",
-    #                        marker = list(
-    #                          color ='rgb(77,77,77)',
-    #                          size = abs(my_nodes$weight),
-    #                          line = list(
-    #                            width = 0
-    #                          )
-    #                          #,name = labels[i] #rownames(nodes)[i]
-    #                        ))
-    # t <- list(
-    #   family = "sans serif",
-    #   size = 14,
-    #   color = toRGB("grey50"))
-    # 
-    # main_plot <-  add_text(main_plot,data=my_nodes,x = x_axis(), y = y_axis(), z = z_axis(),
-    #                        text = ~code,
-    #                        textfont=t,
-    #                        textposition = "top right")
-    # 
-    # # Customize the layout and appearance of the combined plot
-    # main_plot <- layout(main_plot,
-    #                     scene = list(xaxis = list(title = input$x,showgrid=input$show_grid,zeroline=input$show_zeroline),
-    #                                  yaxis = list(title = input$y,showgrid=input$show_grid,zeroline=input$show_zeroline),
-    #                                  zaxis = list(title = input$z,showgrid=input$show_grid,zeroline=input$show_zeroline)),
-    #                     showlegend = TRUE)
-    # if(length(selected_groups) == 0){
-    #   return(main_plot)
-    # }
-    # browser()
-    # Generate Edges
-    # mean_in_groups<-get_mean_group_lineweights_in_groups(state$ena_obj,data$ena_groupVar[1],selected_groups)
-    # network <- build_network(scaled_nodes(),
-    #                          network=mean_in_groups,
-    #                          adjacency.key=state$ena_obj$rotation$adjacency.key)
-    # 
-    # main_plot <- plot_network(main_plot,
-    #                           network,
-    #                           legend.include.edges = F,
-    #                           x_axis=input$x,
-    #                           y_axis=input$y,
-    #                           z_axis=input$z,
-    #                           line_width = input$line_width)
-    
-    # if(!is.null(camera)){
-    #   print('set cam')
-    #   main_plot %>% layout(scene= list(camera=camera))
-    # }
-    # camera = list(
-    #   eye=list(x=0., y=0., z=2.5)
-    # )
-    #print(camera())
-    #browser()
     # Let Plotly inspect every completed trace (points, nodes, edges, means,
     # confidence boxes, and optional axis arrows). A range derived from the raw
     # unscaled ENA object clips traces whenever the display scale is increased.

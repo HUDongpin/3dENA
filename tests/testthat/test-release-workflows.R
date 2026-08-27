@@ -113,3 +113,21 @@ test_that("release publication is manual, strict-gated, and SHA-bound", {
   expect_match(workflow, '--target "$TARGET_SHA"', fixed = TRUE)
   expect_match(workflow, 'gh release create "${release_args[@]}"', fixed = TRUE)
 })
+
+
+test_that("standard CI gates runtime, tool, and test JavaScript lint", {
+  workflow <- .release_workflow_text("ci.yml")
+  package <- jsonlite::fromJSON(
+    file.path(.release_workflow_root, "package.json"),
+    simplifyVector = TRUE
+  )
+
+  expect_match(
+    workflow,
+    "- name: Lint runtime, tool and test JavaScript\n        run: npm run lint",
+    fixed = TRUE
+  )
+  expect_match(package$scripts$lint, '"tests/e2e/**/*.js"', fixed = TRUE)
+  expect_match(package$scripts$lint, '"R/www/**/*.js"', fixed = TRUE)
+  expect_match(package$scripts$lint, '"tools/**/*.{js,cjs}"', fixed = TRUE)
+})

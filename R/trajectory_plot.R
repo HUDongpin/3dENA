@@ -193,7 +193,6 @@
       }
     }, character(1))
     if (anyNA(dimensions)) {
-      requested <- as.character(dimensions[is.na(dimensions)])
       stop(
         sprintf(
           "Unknown trajectory dimension(s). Available dimensions are: %s.",
