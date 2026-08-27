@@ -248,20 +248,14 @@ test_that("network selector metadata is built before read-only UI rendering", {
 test_that("dataset reset clears every dataset-derived cache", {
   rv <- new.env(parent = emptyenv())
   state <- new.env(parent = emptyenv())
-  rv$myList <- list(old = TRUE)
   rv$unit_group_change_plots <- list(stale_plot = "OLD")
-  rv$current_unit_change_plot_camera <- list(stale = TRUE)
   rv$dataset_id <- "old-data"
   rv$ena_groups <- "old-group"
   rv$ena_groupVar <- "old-variable"
-  rv$ena_points_plot_ready <- TRUE
   rv$initialized <- TRUE
   rv$model_tab_clicked <- TRUE
-  rv$comparison_plot <- list(stale = TRUE)
-  rv$reactiveFunctions <- list(stale = TRUE)
   rv$group_colors <- matrix("old", nrow = 1L)
   rv$group_selectors <- list(stale = TRUE)
-  rv$group_options <- list(stale = TRUE)
   rv$active_dataset <- list(name = "old")
   state$ena_obj <- list(old = TRUE)
   state$is_app_initialized <- TRUE
@@ -269,12 +263,8 @@ test_that("dataset reset clears every dataset-derived cache", {
   ena3d_reset_data_state(rv, state)
 
   expect_identical(rv$unit_group_change_plots, list())
-  expect_identical(rv$myList, list())
-  expect_identical(rv$current_unit_change_plot_camera, list())
   expect_null(rv$dataset_id)
   expect_false(rv$initialized)
-  expect_identical(rv$comparison_plot, list())
-  expect_identical(rv$reactiveFunctions, list())
   expect_identical(rv$group_selectors, list())
   expect_null(rv$active_dataset)
   expect_null(state$ena_obj)
@@ -291,13 +281,10 @@ test_that("switching bundled samples commits one transaction and drops stale plo
   testServer(
     function(input, output, session) {
       rv <- reactiveValues(
-        myList = list(), unit_group_change_plots = list(),
-        current_unit_change_plot_camera = list(), ena_groups = character(),
+        unit_group_change_plots = list(), ena_groups = character(),
         ena_groupVar = character(),
-        ena_points_plot_ready = FALSE, initialized = FALSE,
-        model_tab_clicked = FALSE, comparison_plot = list(),
-        reactiveFunctions = list(), group_colors = list(),
-        group_selectors = list(), group_options = list(), dataset_id = NULL
+        initialized = FALSE, model_tab_clicked = FALSE,
+        group_colors = list(), group_selectors = list(), dataset_id = NULL
       )
       state <- new.env(parent = emptyenv())
       state$ena_obj <- NULL
@@ -320,8 +307,6 @@ test_that("switching bundled samples commits one transaction and drops stale plo
       expect_identical(session$userData$rv$ena_groupVar, "groupid")
 
       session$userData$rv$unit_group_change_plots <- list(stale_plot = "OLD")
-      session$userData$rv$myList <- list(stale = "OLD")
-      session$userData$rv$comparison_plot <- list(stale = "OLD")
 
       session$setInputs(fixture = "longitudinal")
       session$flushReact()
@@ -334,8 +319,6 @@ test_that("switching bundled samples commits one transaction and drops stale plo
         c("Week", "Name")
       )
       expect_identical(session$userData$rv$unit_group_change_plots, list())
-      expect_identical(session$userData$rv$myList, list())
-      expect_identical(session$userData$rv$comparison_plot, list())
       active <- session$userData$rv$active_dataset
       expect_identical(active$name, "newfrat_enaset.Rdata")
       expect_identical(active$rows, 255L)

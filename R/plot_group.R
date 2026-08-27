@@ -195,8 +195,6 @@ ena_plot_points = function(
     point.size = '10',
     labels = NULL, #unique(enaplot$enaset$enadata$unit.names),
     label.offset = "top left",
-    label.group = NULL,
-    
     label.font.size =10, #enaplot$get("font.size"),
     label.font.color = '#000000', #enaplot$get("font.color"),
     label.font.family = "Arial", #enaplot$get("font.family"),
@@ -211,7 +209,6 @@ ena_plot_points = function(
     outlier.interval = c("none", "crosshairs", "box"),
     show.legend = T,
     legend.name = "Points",
-    texts = NULL,
     x_axis='MR1',
     y_axis='SVD2',
     z_axis='SVD3',
@@ -347,10 +344,9 @@ ena_plot_points = function(
       ),
       error_x = error$x, error_y = error$y,
       showlegend = show.legend,
-      # legendgroup = label.group,
       # legendgroup = ifelse(!is.null(box.label), labels[1], NULL),
       name = group_name,
-      text = group_name,#texts[m] #labels[m],
+      text = group_name,
       textfont = list(
         family = label.font.family,
         size = label.font.size,

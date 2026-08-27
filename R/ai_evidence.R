@@ -273,7 +273,7 @@ ena3d_ai_clean_label <- function(value, max_chars = 96L) {
 }
 
 
-.ena3d_ai_resolve_axes <- function(ena_obj, settings, policy,
+.ena3d_ai_resolve_axes <- function(ena_obj, settings,
                                    allow_empty = FALSE) {
   points <- .ena3d_ai_points(ena_obj)
   axes <- settings$axes
@@ -586,7 +586,7 @@ ena3d_ai_clean_label <- function(value, max_chars = 96L) {
   if (!group_var %in% names(points)) {
     stop("settings$group_var is missing from ENA points.", call. = FALSE)
   }
-  axes <- .ena3d_ai_resolve_axes(ena_obj, settings, policy)
+  axes <- .ena3d_ai_resolve_axes(ena_obj, settings)
   groups <- .ena3d_ai_selected_groups(
     points, group_var, settings$selected_groups
   )
@@ -686,7 +686,7 @@ ena3d_ai_clean_label <- function(value, max_chars = 96L) {
   if (!group_var %in% names(points)) {
     stop("settings$group_var is missing from ENA points.", call. = FALSE)
   }
-  axes <- .ena3d_ai_resolve_axes(ena_obj, settings, policy)
+  axes <- .ena3d_ai_resolve_axes(ena_obj, settings)
   groups <- .ena3d_ai_selected_groups(
     points, group_var, settings$selected_groups
   )
@@ -823,7 +823,7 @@ ena3d_ai_clean_label <- function(value, max_chars = 96L) {
   if (!group_var %in% names(points)) {
     stop("settings$group_var is missing from ENA points.", call. = FALSE)
   }
-  axes <- .ena3d_ai_resolve_axes(ena_obj, settings, policy)
+  axes <- .ena3d_ai_resolve_axes(ena_obj, settings)
   groups <- .ena3d_ai_comparison_groups(points, group_var, settings)
   registry <- .ena3d_ai_label_registry(points[[group_var]], policy)
   rows_a <- .ena3d_ai_group_match(points[[group_var]], groups[1L])
@@ -993,7 +993,7 @@ ena3d_ai_clean_label <- function(value, max_chars = 96L) {
   if (!change_var %in% names(points)) {
     stop("settings$change_var is missing from ENA points.", call. = FALSE)
   }
-  axes <- .ena3d_ai_resolve_axes(ena_obj, settings, policy)
+  axes <- .ena3d_ai_resolve_axes(ena_obj, settings)
   values <- .ena3d_ai_ordered_change_values(
     points[[change_var]], settings$change_values
   )
@@ -1175,7 +1175,7 @@ ena3d_ai_clean_label <- function(value, max_chars = 96L) {
 
 .ena3d_ai_build_stats <- function(ena_obj, settings, policy, stats_result) {
   points <- .ena3d_ai_points(ena_obj)
-  axes <- .ena3d_ai_resolve_axes(ena_obj, settings, policy)
+  axes <- .ena3d_ai_resolve_axes(ena_obj, settings)
   group_var <- .ena3d_ai_require_aggregate_variable(
     settings$group_var, "settings$group_var"
   )
@@ -1299,7 +1299,7 @@ ena3d_ai_clean_label <- function(value, max_chars = 96L) {
 }
 
 
-.ena3d_ai_trajectory_axes <- function(result, settings, path, policy) {
+.ena3d_ai_trajectory_axes <- function(result, settings, path) {
   axes <- settings$axes %||% tryCatch(
     result$settings$dimensions, error = function(error) NULL
   )
@@ -1362,7 +1362,7 @@ ena3d_ai_clean_label <- function(value, max_chars = 96L) {
     )
   }
   path <- as.data.frame(result$path, stringsAsFactors = FALSE, optional = TRUE)
-  axes <- .ena3d_ai_trajectory_axes(result, settings, path, policy)
+  axes <- .ena3d_ai_trajectory_axes(result, settings, path)
   if (!length(axes)) {
     stop("The trajectory path has no requested centroid axes.", call. = FALSE)
   }

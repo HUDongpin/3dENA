@@ -207,9 +207,7 @@ ENA_3D_Server <- R6::R6Class("ENA_3D_Server",
                            active_tab = NULL,
                            render_comparison = FALSE,
                            render_overall = FALSE,
-                           render_unit_group_change_plot=FALSE,
                            render_network_plot=FALSE,
-                           render_trajectory_plot=FALSE,
                            ena_obj=NULL,
                            color_list = color_list,
                            is_app_initialized = FALSE,
@@ -1165,14 +1163,8 @@ app_server <- function(input, output, session) {
   ena_server_state$render_overall <- reactive({
     ena_server_state$active_tab() == 'overall_model'
   })
-  ena_server_state$render_unit_group_change_plot <-reactive({
-    ena_server_state$active_tab() == 'group_change'
-  })
   ena_server_state$render_network_plot <-reactive({
     ena_server_state$active_tab() == 'network'
-  })
-  ena_server_state$render_trajectory_plot <- reactive({
-    ena_server_state$active_tab() == 'trajectory'
   })
 
   observeEvent(input$ena3d_workspace_entry, {
@@ -1196,7 +1188,6 @@ app_server <- function(input, output, session) {
     page_active = reactive(TRUE),
     workspace_section = reactive(input$workspace_sections)
   )
-  # ena_comparison_plot_server( "main_app")
 }
 options(
   shiny.maxRequestSize = ena3d_env_number(

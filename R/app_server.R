@@ -27,21 +27,14 @@ ena_app_server <- function(id, state, config, page_active, workspace_section) {
     id,
     # Defining the module core mechanism
     function(input, output, session) {
-      ns = NS(id)
       # reactive values, served as global variable inside the server
-      rv <- reactiveValues(myList = list(),
-                           unit_group_change_plots=list(),
-                           current_camera=list(x=1.25, y=1.25, z=1.25),
+      rv <- reactiveValues(unit_group_change_plots=list(),
                            ena_groups=list(),
                            ena_groupVar=list(),
-                           ena_points_plot_ready=FALSE,
                            initialized=FALSE,
                            model_tab_clicked=FALSE,
-                           comparison_plot=list(),
-                           reactiveFunctions = list(),
                            group_colors=list(),
-                           group_selectors=list(),
-                           group_options=list())
+                           group_selectors=list())
       ena_nodes <- function(){
         req(state$ena_obj)
         state$ena_obj$rotation$nodes
@@ -67,14 +60,9 @@ ena_app_server <- function(id, state, config, page_active, workspace_section) {
           node_points[[i]] <- node_points[[i]] * scale_factor()
         }
 
-        node_size_range = c(3,10)
-        node_points$weight = rep(0, nrow(node_points))
-        if( any(node_points$weight > 0)) {
-          node_points$weight = scales::rescale((node_points$weight * (1 / max(abs(node_points$weight)))), node_size_range) # * enaplot$get("multiplier"));
-        }
-        else {
-          node_points$weight = node_size_range[2]
-        }
+        # Code-node markers intentionally use one fixed size in every view.
+        # Network strength is encoded by edge width, not by marker area.
+        node_points$weight <- rep(10, nrow(node_points))
 
         node_points
       })
@@ -172,10 +160,6 @@ ena_app_server <- function(id, state, config, page_active, workspace_section) {
         camera = trajectory_camera
       )
       
-      # rv$reactiveFunctions['get_group_color']<-function(group_colors,group_col,group_name){
-      #   group_colors[which(group_colors[,group_col]==group_name)]
-      # }
-      
       "
         The plot in the model -> comparsion tab
       "
@@ -183,9 +167,7 @@ ena_app_server <- function(id, state, config, page_active, workspace_section) {
                                  rv,
                                  state,
                                  scaled_points,
-                                 scaled_nodes,
-                                 rv$current_camera,
-                                 )
+                                 scaled_nodes)
      
       "
         The plot in the model->change tab
@@ -197,20 +179,16 @@ ena_app_server <- function(id, state, config, page_active, workspace_section) {
                                         scaled_nodes
                                         )
       
-      ena_overall_plot_output(input, output, session,
+      ena_overall_plot_output(input, output,
                               rv,
                               state,
                               scaled_points,
-                              scaled_nodes,
-                              rv$current_camera,
-      )
-      ena_network_plot_output(input, output, session,
+                              scaled_nodes)
+      ena_network_plot_output(input, output,
                               rv,
                               state,
                               scaled_points,
-                              scaled_nodes,
-                              rv$current_camera,
-      )
+                              scaled_nodes)
       
       
       plot_ids <- c(
@@ -232,7 +210,7 @@ ena_app_server <- function(id, state, config, page_active, workspace_section) {
       
       upload_data(input,output,session,rv,state,config)
       sample_data_load_and_select(input,output,session,rv,config,state)
-      stats_results <- stats_module(input,output,session,rv,config,state)
+      stats_results <- stats_module(input, output, rv, state)
 
       ai_settings <- reactive({
         current_workspace <- if (is.function(workspace_section)) {

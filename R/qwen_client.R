@@ -943,37 +943,6 @@ ena3d_qwen_validate_interpretation <- function(
 }
 
 
-.ena3d_qwen_collect_evidence_ids <- function(evidence) {
-  found <- character()
-  walk <- function(value, field = NULL) {
-    if (is.list(value)) {
-      value_names <- names(value)
-      if (!is.null(value_names)) {
-        for (index in seq_along(value)) {
-          name <- value_names[[index]]
-          child <- value[[index]]
-          if (name %in% c("id", "evidence_id", "evidence_ids")) {
-            candidate <- if (is.list(child)) unlist(child, use.names = FALSE) else child
-            if (is.character(candidate)) {
-              found <<- c(found, candidate[
-                !is.na(candidate) & grepl("^E[0-9]{1,6}$", candidate, perl = TRUE)
-              ])
-            }
-          }
-          if (grepl("^E[0-9]{1,6}$", name, perl = TRUE)) found <<- c(found, name)
-          walk(child, name)
-        }
-      } else {
-        for (child in value) walk(child, field)
-      }
-    }
-    invisible(NULL)
-  }
-  walk(evidence)
-  unique(found)
-}
-
-
 .ena3d_qwen_safe_json <- function(value, label) {
   .ena3d_qwen_require_namespace("jsonlite")
   tryCatch(

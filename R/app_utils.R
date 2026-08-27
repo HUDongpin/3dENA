@@ -1,22 +1,3 @@
-hide_element <- function(element_id){
-  session <- shiny::getDefaultReactiveDomain()
-  if (!is.null(session)) {
-    session$sendCustomMessage(
-      "ena3d-plot-visibility",
-      list(id = element_id, visible = FALSE)
-    )
-  }
-}
-show_element <- function(element_id){
-  session <- shiny::getDefaultReactiveDomain()
-  if (!is.null(session)) {
-    session$sendCustomMessage(
-      "ena3d-plot-visibility",
-      list(id = element_id, visible = TRUE)
-    )
-  }
-}
-
 ena3d_plotly_font <- function(size = 14L, color = "#25282d") {
   list(
     family = paste(
@@ -79,15 +60,6 @@ ena3d_plotly_empty_state <- function(source, title, message) {
     )
 }
 
-get_ena_group<- function(ena_obj){
-  if(is.null(ena_obj$`_function.params`$groups) && is.null(ena_obj$`_function.params`$unit.groups)){
-    stop('No group specified in the ena_obj! Either ena_obj$`_function.params`$groups or ena_obj$`_function.params`$unit.groups is null.')
-  }
-  if(!is.null(ena_obj$`_function.params`$groups)){
-    return(ena_obj$`_function.params`$groups)
-  }
-  return(ena_obj$`_function.params`$unit.groups)
-}
 get_ena_group_var<- function(ena_obj){
   if(is.null(ena_obj$`_function.params`$groupVar) && is.null(ena_obj$`_function.params`$units.by)){
     stop('No group specified in the ena_obj! Either ena_obj$`_function.params`$groupVar or ena_obj$`_function.params`$unit.by is null.')
@@ -384,17 +356,6 @@ tilde_var_or_null = function(var_name){
     env = parent.frame()
   )
 }
-add_3d_axis = function(plot){
-  if (is.null(plot)) return(NULL)
-  plot<-add_x_3d_axis(plot)
-  plot<-add_y_3d_axis(plot)
-  plot<-add_z_3d_axis(plot)
-  
-  # plot <- layout(plot,title='X-Y',scene= list(camera=list(eye=list(x=0., y=0., z=-2.5))))
-  plot
-  
-  
-}
 add_x_3d_axis<-function(plot){
   if (is.null(plot)) return(NULL)
   # Create a 3D plot with scatter3d trace for lines
@@ -523,22 +484,6 @@ add_z_3d_axis<-function(plot){
     textfont = ena3d_plotly_font(14L, "green")
   )
   plot
-}
-
-set_default_axis_range <- function(plot){
-  # Retained for backward compatibility. Plotly must derive its range from the
-  # completed, display-scaled traces; a fixed window silently clips valid data.
-  axis_layout <- list(nticks = 4, autorange = TRUE)
-  
-  plot <- plot %>%
-    plotly::layout(
-      scene = list(
-        aspectmode = "cube",
-        camera = list(eye = list(x=0, y=0, z=2.5),up=list(x=0,y=1,z=0)),
-        xaxis=axis_layout,yaxis=axis_layout,zaxis=axis_layout
-      )
-    )
-  return(plot)
 }
 
 ena3d_normalize_plot_color <- function(color, fallback = "#808080") {

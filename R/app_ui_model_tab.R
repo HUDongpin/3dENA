@@ -11,20 +11,10 @@ model_ui <- function(id) {
       tabPanel("Networks",value = "network", model_network_ui(id)),
       tabPanel("Comparison",value = "comparison_plot", model_two_group_comparison_ui(id)),
       tabPanel("Change",value = "group_change", model_group_change_ui(id)),
-      tabPanel("Trajectory", value = "trajectory", trajectory_controls_ui(ns("trajectory"))),
-      # tabPanel("Two Group",value = "two_group",model_two_group_change_ui(id))
-
+      tabPanel("Trajectory", value = "trajectory", trajectory_controls_ui(ns("trajectory")))
     )
   )
 
-}
-model_two_group_change_ui <- function(id){
-  ns <- NS(id)
-  tagList(
-    selectInput(ns("change_group_1"), "Group 1",choices=list()),
-    selectInput(ns("change_group_2"), "Group 2", choices=list()),
-    sliderInput(ns("group_change"), "Group Change", value = 1, min = 1, max = 10)
-  )
 }
 model_two_group_comparison_ui <- function(id){
   ns <- NS(id)

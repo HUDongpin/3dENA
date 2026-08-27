@@ -750,6 +750,13 @@ To calculate movement in the full rotation while displaying only three axes,
 set `distance_space = "full"` and supply every coordinate name through
 `full_dimensions`.
 
+For direct Plotly use, source `R/trajectory_plot.R` after the analytical layer.
+The compatibility-reviewed plotting surface is `trajectory_color_map()`,
+`trajectory_node_legend_data()`, `trajectory_trace_data()`,
+`plot_centroid_trajectory()`, `plot_centroid_trajectory_2d()`, and
+`plot_centroid_trajectory_3d()`. Dot-prefixed helpers and application-only
+plotting utilities are internal and are not external compatibility interfaces.
+
 ## Interpretation and current limitations
 
 - A centroid path is a group-level summary and can hide dispersion,

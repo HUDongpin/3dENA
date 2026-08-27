@@ -97,6 +97,9 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
 
+      - name: Lint runtime, tool and test JavaScript
+        run: npm run lint
+
       - name: Start Shiny and verify health endpoint
         env:
           E2E_PORT: "3838"

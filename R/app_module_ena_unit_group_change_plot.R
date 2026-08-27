@@ -54,15 +54,6 @@ ena3d_change_cache_key <- function(dataset_id, group_var, axes, scale_factor,
   )
 }
 
-ena3d_tag_change_cache <- function(cache, key) {
-  attr(cache, "ena3d_change_cache_key") <- key
-  cache
-}
-
-ena3d_change_cache_is_valid <- function(cache, key) {
-  length(cache) > 0L && identical(attr(cache, "ena3d_change_cache_key"), key)
-}
-
 ena3d_validate_change_cardinality <- function(values,
                                                max_levels = getOption(
                                                  "ena3d.max_change_levels",

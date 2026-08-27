@@ -92,10 +92,10 @@ test_that("Change cache cannot be reused after any plot-defining input changes",
     show_confidence_interval = FALSE
   )
   key <- do.call(ena3d_change_cache_key, arguments)
-  cache <- ena3d_tag_change_cache(list(`1` = "period-1-plot"), key)
+  cache <- ena3d_change_lru_put(list(), key, "period-1-plot")
 
-  expect_true(ena3d_change_cache_is_valid(cache, key))
-  expect_false(ena3d_change_cache_is_valid(list(`1` = "legacy-plot"), key))
+  expect_true(ena3d_change_lru_get(cache, key)$hit)
+  expect_false(ena3d_change_lru_get(list(`1` = "legacy-plot"), key)$hit)
 
   replacements <- list(
     dataset_id = "dataset-b",
@@ -113,10 +113,9 @@ test_that("Change cache cannot be reused after any plot-defining input changes",
     changed <- arguments
     changed[[field]] <- replacements[[field]]
     expect_false(
-      ena3d_change_cache_is_valid(
-        cache,
-        do.call(ena3d_change_cache_key, changed)
-      ),
+      ena3d_change_lru_get(
+        cache, do.call(ena3d_change_cache_key, changed)
+      )$hit,
       info = sprintf("cache field %s must invalidate", field)
     )
   }
