@@ -313,7 +313,7 @@ test_that("Papers provides four copy-ready references in the requested order", {
   expect_match(papers, "https://www.ena3d.org/papers.html", fixed = TRUE)
 })
 
-test_that("Team presents nine research profiles in the requested order", {
+test_that("Team presents ten research profiles in the requested order", {
   team <- htmltools::renderTags(.site_shell_env$ena3d_team_ui())$html
   expected_names <- c(
     "Prof. Gwo-Jen Hwang",
@@ -324,6 +324,7 @@ test_that("Team presents nine research profiles in the requested order", {
     "Dr. Phoebe, KANG Xia",
     "Dr. WU Yajun",
     "Dr. Cao Yuan",
+    "Dr. HU Xiao",
     "Dr. LI Jun"
   )
   name_positions <- vapply(
@@ -348,7 +349,7 @@ test_that("Team presents nine research profiles in the requested order", {
   expect_true(all(diff(name_positions) > 0L))
   expect_equal(
     lengths(regmatches(team, gregexpr('role="listitem"', team, fixed = TRUE))),
-    9L
+    10L
   )
   expect_match(
     team,
@@ -411,6 +412,54 @@ test_that("Team presents nine research profiles in the requested order", {
   expect_false(grepl("ENA 3D Research Group", team, fixed = TRUE))
   expect_match(team, "BSc Computer Science \u00b7 MA Psychology", fixed = TRUE)
   expect_match(team, "He is the key developer of 3D ENA 1.0.", fixed = TRUE)
+  hu_profile <- substring(
+    team,
+    regexpr("Dr. HU Xiao", team, fixed = TRUE)[[1L]]
+  )
+  expect_match(
+    hu_profile,
+    "Assistant Professor · Applied Linguistics",
+    fixed = TRUE
+  )
+  expect_match(
+    hu_profile,
+    "City University of Macau",
+    fixed = TRUE
+  )
+  expect_false(grepl(
+    "Faculty",
+    hu_profile,
+    fixed = TRUE
+  ))
+  expect_match(
+    hu_profile,
+    "PhD in Education · The University of Hong Kong",
+    fixed = TRUE
+  )
+  expect_match(
+    hu_profile,
+    "top-tier SSCI journals such as System, Assessing Writing, and the International Journal of Applied Linguistics",
+    fixed = TRUE
+  )
+  expect_match(
+    hu_profile,
+    "Spanish Ministry of Science",
+    fixed = TRUE
+  )
+  expect_match(
+    hu_profile,
+    "Guangdong Provincial Philosophy and Social Sciences Planning",
+    fixed = TRUE
+  )
+  expect_match(
+    hu_profile,
+    "https://fhss.cityu.edu.mo/en/applied-linguistics/458",
+    fixed = TRUE
+  )
+  expect_lt(
+    regexpr("Dr. HU Xiao", team, fixed = TRUE)[[1L]],
+    regexpr("Dr. LI Jun", team, fixed = TRUE)[[1L]]
+  )
   li_profile <- substring(
     team,
     regexpr("Dr. LI Jun", team, fixed = TRUE)[[1L]]
@@ -443,6 +492,7 @@ test_that("Team presents nine research profiles in the requested order", {
   expect_match(team, 'src="ena3d-assets/team-phoebe-kang-xia.jpg"', fixed = TRUE)
   expect_match(team, 'src="ena3d-assets/team-wu-yajun.jpg"', fixed = TRUE)
   expect_match(team, 'src="ena3d-assets/team-cao-yuan.jpg"', fixed = TRUE)
+  expect_match(team, 'src="ena3d-assets/team-hu-xiao.jpg"', fixed = TRUE)
   expect_match(team, 'src="ena3d-assets/team-li-jun.jpg"', fixed = TRUE)
   expect_match(team, 'src="ena3d-assets/team-yu-jianxing.jpg"', fixed = TRUE)
   expect_equal(
@@ -450,7 +500,7 @@ test_that("Team presents nine research profiles in the requested order", {
       team,
       gregexpr("ena3d-team-portrait--balanced", team, fixed = TRUE)
     )),
-    9L
+    10L
   )
   expect_false(grepl("<figcaption", team, fixed = TRUE))
   developer_link <- regmatches(
@@ -507,6 +557,7 @@ test_that("Team layout has dedicated responsive and accessible styling", {
   )
   expect_false(grepl("--ena3d-team-portrait-scale", css, fixed = TRUE))
   expect_match(css, ".ena3d-team-member--yu", fixed = TRUE)
+  expect_match(css, ".ena3d-team-member--hu-xiao", fixed = TRUE)
   expect_match(css, ".ena3d-team-profile-link:focus-visible", fixed = TRUE)
   expect_match(
     css,
