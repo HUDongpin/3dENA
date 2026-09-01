@@ -682,6 +682,40 @@ ena3d_team_ui <- function() {
         ),
         ena3d_team_member_ui(
           number = "09",
+          name = "Dr. HU Xiao",
+          role = "Assistant Professor \u00b7 Applied Linguistics",
+          affiliation = tagList(
+            tags$span("City University of Macau"),
+            tags$span("PhD in Education \u00b7 The University of Hong Kong")
+          ),
+          portrait = "team-hu-xiao.jpg",
+          portrait_width = 1000,
+          portrait_height = 667,
+          bio = paste(
+            "Dr. Hu is an Assistant Professor at City University of Macau. She",
+            "holds a PhD in Education from The University of Hong Kong. Her",
+            "research examines language learning motivation, identity, individual",
+            "differences, L2 writing, and classroom interaction. She has published",
+            "extensively in top-tier SSCI journals such as System, Assessing Writing,",
+            "and the International Journal of Applied Linguistics. She is actively",
+            "involved in several major research projects, including those funded by",
+            "the Spanish Ministry of Science and the Guangdong Provincial Philosophy",
+            "and Social Sciences Planning, focusing on the impact of AI in education."
+          ),
+          expertise = c(
+            "Language learning motivation",
+            "Learner identity",
+            "Individual differences",
+            "L2 writing",
+            "Classroom interaction",
+            "AI in education"
+          ),
+          member_class = "ena3d-team-member--hu-xiao",
+          profile_url = "https://fhss.cityu.edu.mo/en/applied-linguistics/458",
+          profile_label = "University profile"
+        ),
+        ena3d_team_member_ui(
+          number = "10",
           name = "Dr. LI Jun",
           role = "Shadow Education \u00b7 Education Policy",
           affiliation = tagList(

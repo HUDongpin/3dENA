@@ -944,6 +944,11 @@ body.bslib-page-navbar > nav.navbar + div.container-fluid
   --ena3d-team-portrait-y: 50%;
 }
 
+.ena3d-team-member--hu-xiao .ena3d-team-portrait img {
+  --ena3d-team-portrait-x: 43%;
+  --ena3d-team-portrait-y: 0%;
+}
+
 .ena3d-team-member--li .ena3d-team-portrait img {
   --ena3d-team-portrait-x: 42%;
   --ena3d-team-portrait-y: 50%;
