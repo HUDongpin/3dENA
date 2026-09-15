@@ -16,11 +16,20 @@ trajectory_controls_ui <- function(id) {
         "Time / order variable",
         choices = character(0)
       ),
+      shiny::helpText(
+        "Use a temporal or ordered repeat of the same entity (week, period, ",
+        "session). Do not use a between-group condition as Time."
+      ),
       shiny::selectInput(
         ns("id_var"),
         "Entity ID (repeated unit)",
         choices = character(0)
       ),
+      shiny::helpText(
+        "Choose the identifier of the same physical unit across Time values. ",
+        "Names that merely recur across groups are not longitudinal."
+      ),
+      shiny::uiOutput(ns("design_guidance")),
       shiny::tags$small(
         class = "trajectory-id-coverage",
         shiny::textOutput(ns("id_coverage_status"), inline = TRUE)

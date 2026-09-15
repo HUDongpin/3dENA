@@ -273,9 +273,26 @@ app_ui <- function(){
       tags$script(
         "Shiny.addCustomMessageHandler('ena3d-plot-visibility', function(message) {
           const element = document.getElementById(message.id);
-          if (!element) return;
-          element.style.display = message.visible ? '' : 'none';
-          $(element).trigger(message.visible ? 'shown' : 'hidden');
+          if (element) {
+            const hidden = !message.visible;
+            element.classList.toggle('ena3d-plot-hidden', hidden);
+            element.style.display = hidden ? 'none' : '';
+            element.setAttribute('aria-hidden', hidden ? 'true' : 'false');
+            if (hidden) {
+              element.setAttribute('inert', '');
+            } else {
+              element.removeAttribute('inert');
+            }
+            $(element).trigger(hidden ? 'hidden' : 'shown');
+          }
+          if (message.visible && message.label) {
+            const label = document.getElementById(
+              message.labelId || 'main_app-plot_mode_label'
+            );
+            if (label) {
+              label.textContent = 'Showing: ' + message.label;
+            }
+          }
         });"
       )
     ),
@@ -427,6 +444,19 @@ app_ui <- function(){
                         display:block;
                         overflow-wrap:anywhere;
                         font-size:var(--ena-type-meta);
+                  }
+                  .ena3d-plot-mode-label{
+                        margin:0 0.5rem 0.35rem;
+                        font-size:var(--ena-type-meta);
+                        font-weight:600;
+                        color:#626975;
+                  }
+                  .ena3d-plot-slot{
+                        min-width:0;
+                  }
+                  .ena3d-plot-slot.ena3d-plot-hidden,
+                  .ena3d-plot-hidden{
+                        display:none !important;
                   }
                   .trajectory-plot-layout{
                         display:grid;

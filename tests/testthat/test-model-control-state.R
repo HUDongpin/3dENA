@@ -329,6 +329,12 @@ test_that("Overall contextual layout survives an empty group selection", {
     "if(length(selected_groups) == 0)", source_text, fixed = TRUE
   ))
   expect_match(source_text, "ena3d_apply_overall_layout(", fixed = TRUE)
+  expect_match(source_text, "ena3d_plotly_empty_state(", fixed = TRUE)
+  expect_match(
+    source_text,
+    "Overall is hidden while another Model view is active.",
+    fixed = TRUE
+  )
 })
 
 
@@ -351,4 +357,57 @@ test_that("Model controls expose truthful and accessible empty states", {
 
   loaded_choices <- ena3d_network_choices("A", "unit-1")
   expect_identical(names(loaded_choices)[[1L]], "No Network")
+})
+
+
+test_that("Model plot visibility maps one active canvas and a mode label", {
+  overall <- ena3d_plot_visibility_states("overall_model")
+  expect_identical(
+    vapply(overall, function(slot) slot$id, character(1)),
+    vapply(ena3d_model_plot_slots(), function(slot) slot$id, character(1))
+  )
+  visible <- vapply(overall, function(slot) isTRUE(slot$visible), logical(1))
+  expect_equal(sum(visible), 1L)
+  expect_identical(
+    overall[[which(visible)]]$id, "ena_overall_plot_slot"
+  )
+  expect_identical(
+    ena3d_plot_mode_caption("overall_model"),
+    "Showing: Overall ENA model"
+  )
+
+  trajectory <- ena3d_plot_visibility_states("trajectory")
+  traj_visible <- vapply(
+    trajectory, function(slot) isTRUE(slot$visible), logical(1)
+  )
+  expect_equal(sum(traj_visible), 1L)
+  expect_identical(
+    trajectory[[which(traj_visible)]]$id, "ena_trajectory_panel"
+  )
+  expect_identical(ena3d_active_plot_label("trajectory"), "Trajectory")
+
+  hidden_all <- ena3d_plot_visibility_states(NULL)
+  expect_false(any(vapply(
+    hidden_all, function(slot) isTRUE(slot$visible), logical(1)
+  )))
+  expect_identical(ena3d_active_plot_label(NA_character_), "No Model view")
+
+  network <- ena3d_plot_visibility_states("network")
+  comparison <- ena3d_plot_visibility_states("comparison_plot")
+  change <- ena3d_plot_visibility_states("group_change")
+  expect_identical(ena3d_active_plot_label("network"), "Network")
+  expect_identical(ena3d_active_plot_label("comparison_plot"), "Comparison")
+  expect_identical(ena3d_active_plot_label("group_change"), "Change")
+  expect_identical(
+    network[[which(vapply(network, function(slot) isTRUE(slot$visible), logical(1)))]]$id,
+    "ena_network_plot_slot"
+  )
+  expect_identical(
+    comparison[[which(vapply(comparison, function(slot) isTRUE(slot$visible), logical(1)))]]$id,
+    "ena_points_plot_slot"
+  )
+  expect_identical(
+    change[[which(vapply(change, function(slot) isTRUE(slot$visible), logical(1)))]]$id,
+    "ena_unit_group_change_plot_slot"
+  )
 })

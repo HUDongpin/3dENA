@@ -157,7 +157,17 @@ ena_app_server <- function(id, state, config, page_active, workspace_section) {
           if (isTRUE(rv$initialized)) ena3d_dimension_names(state$ena_obj) else character()
         }),
         group_colors = reactive(rv$group_colors),
-        camera = trajectory_camera
+        camera = trajectory_camera,
+        plot_active = reactive({
+          identical(state$active_tab(), "trajectory")
+        }),
+        dataset_name = reactive({
+          if (is.null(rv$active_dataset) || is.null(rv$active_dataset$name)) {
+            NULL
+          } else {
+            rv$active_dataset$name
+          }
+        })
       )
       
       "
@@ -191,19 +201,18 @@ ena_app_server <- function(id, state, config, page_active, workspace_section) {
                               scaled_nodes)
       
       
-      plot_ids <- c(
-        comparison_plot = "ena_points_plot",
-        group_change = "ena_unit_group_change_plot",
-        overall_model = "ena_overall_plot",
-        network = "ena_network_plot",
-        trajectory = "ena_trajectory_panel"
-      )
       observeEvent(state$active_tab(), {
-        active_id <- unname(plot_ids[[state$active_tab()]])
-        for (plot_id in unname(plot_ids)) {
+        visibility <- ena3d_plot_visibility_states(state$active_tab())
+        label_id <- session$ns("plot_mode_label")
+        for (slot in visibility) {
           session$sendCustomMessage(
             "ena3d-plot-visibility",
-            list(id = session$ns(plot_id), visible = identical(plot_id, active_id))
+            list(
+              id = session$ns(slot$id),
+              visible = slot$visible,
+              label = slot$label,
+              labelId = label_id
+            )
           )
         }
       }, ignoreInit = FALSE)

@@ -37,6 +37,12 @@ All notable 3D ENA changes are recorded here. The application also displays
   counts, study-design constraints and multiple-testing adjustment are stated.
 - Overall grouping/hover lookup, dynamic colors, fullscreen/sidebar behavior,
   Plotly autoranges, camera titles and Network selector lifecycle defects.
+- Model plot slots hide inactive canvases with a persistent mode label, and
+  leaving Trajectory clears that Plotly widget so Overall cannot retain
+  trajectory geometry.
+- Trajectory Time/ID controls warn when Time looks like a group/condition
+  column or the bundled fixture is documented as cross-sectional, without
+  changing the repeated-ID hard refuse.
 - Dense networks batch edges into bounded Plotly traces while retaining
   per-edge hover values.
 - Dataset loading is transactional, schema-validated and resource-bounded.
