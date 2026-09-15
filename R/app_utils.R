@@ -558,7 +558,7 @@ ena3d_plot_visibility_states <- function(active_tab) {
       !tab %in% names(slots)) {
     tab <- NA_character_
   }
-  lapply(names(slots), function(name) {
+  states <- lapply(names(slots), function(name) {
     slot <- slots[[name]]
     list(
       id = slot$id,
@@ -566,6 +566,7 @@ ena3d_plot_visibility_states <- function(active_tab) {
       visible = identical(name, tab)
     )
   })
+  stats::setNames(states, names(slots))
 }
 
 
