@@ -476,6 +476,7 @@ test_that("one fullscreen control targets the visible Plotly widget", {
     ".plot-container .plotly.html-widget",
     fixed = TRUE
   )
+  expect_match(app_text, "ena3d-plot-hidden", fixed = TRUE)
   expect_match(app_text, "requestFullscreen", fixed = TRUE)
   expect_match(app_text, "enterFallbackFullscreen", fixed = TRUE)
   expect_match(app_text, "ena3d-fullscreen-fallback", fixed = TRUE)
@@ -483,6 +484,16 @@ test_that("one fullscreen control targets the visible Plotly widget", {
   expect_match(app_text, "getBoundingClientRect", fixed = TRUE)
   expect_false(grepl("fullscreen_this", plot_ui_text, fixed = TRUE))
   expect_false(grepl("fullscreen_btn_", plot_ui_text, fixed = TRUE))
+  expect_match(plot_ui_text, "ena3d-plot-mode-label", fixed = TRUE)
+  expect_match(plot_ui_text, "ena_overall_plot_slot", fixed = TRUE)
+  expect_match(plot_ui_text, "ena_trajectory_panel", fixed = TRUE)
+  expect_match(plot_ui_text, "shiny::conditionalPanel", fixed = TRUE)
+  expect_match(plot_ui_text, "input.mytabs === '%s'", fixed = TRUE)
+  expect_match(plot_ui_text, '"overall_model"', fixed = TRUE)
+  expect_match(plot_ui_text, '"trajectory"', fixed = TRUE)
+  expect_match(plot_ui_text, '"network"', fixed = TRUE)
+  expect_match(plot_ui_text, '"comparison_plot"', fixed = TRUE)
+  expect_match(plot_ui_text, '"group_change"', fixed = TRUE)
 })
 
 

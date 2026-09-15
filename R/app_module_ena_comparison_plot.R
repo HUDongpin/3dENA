@@ -323,4 +323,5 @@ ena_comparison_plot_output <-  function(input, output, session,
       comparison_plot
       
     })
+    shiny::outputOptions(output, "ena_points_plot", suspendWhenHidden = FALSE)
 }

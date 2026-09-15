@@ -69,6 +69,111 @@
 }
 
 
+.trajectory_group_like_name <- function(name) {
+  if (is.null(name) || !length(name) || is.na(name[[1L]]) ||
+      !nzchar(as.character(name)[[1L]])) {
+    return(FALSE)
+  }
+  grepl(
+    paste0(
+      "(^|[^A-Za-z])(groupid|group|groups|condition|conditions|treatment|",
+      "treatments|arm|arms|performanceband|performance|cohort|class)([^A-Za-z]|$)"
+    ),
+    as.character(name)[[1L]],
+    ignore.case = TRUE
+  )
+}
+
+
+.trajectory_trusted_sample_design <- function(name, source_kind = NULL) {
+  if (!identical(source_kind, "bundled")) {
+    return(NULL)
+  }
+  if (is.null(name) || !length(name) || is.na(name[[1L]]) ||
+      !nzchar(as.character(name)[[1L]])) {
+    return(NULL)
+  }
+  key <- tolower(basename(as.character(name)[[1L]]))
+  if (key %in% c("sample_enaset.rdata", "student_enaset.rdata")) {
+    return("cross-sectional")
+  }
+  if (key %in% c("newfrat_enaset.rdata", "class1_timepoints_enaset.rdata")) {
+    return("longitudinal")
+  }
+  NULL
+}
+
+
+.trajectory_design_guidance <- function(time_var, dataset_name = NULL,
+                                        source_kind = NULL) {
+  items <- list()
+  design <- .trajectory_trusted_sample_design(dataset_name, source_kind)
+  if (identical(design, "cross-sectional")) {
+    items[[length(items) + 1L]] <- list(
+      code = "cross_sectional_fixture",
+      message = paste0(
+        "The active bundled fixture is documented as a cross-sectional ",
+        "profile, not a longitudinal study. A completed Trajectory run can ",
+        "still draw a path if IDs repeat across the selected Time values, ",
+        "but that path is not evidence of change over time."
+      )
+    )
+  }
+  if (.trajectory_group_like_name(time_var)) {
+    items[[length(items) + 1L]] <- list(
+      code = "time_looks_like_group",
+      message = paste0(
+        "Time / order is set to `", as.character(time_var)[[1L]], "`, which ",
+        "looks like a group or condition label rather than a temporal ",
+        "variable. Shared display names across groups can produce a ",
+        "structurally valid but scientifically misleading trajectory."
+      )
+    )
+  }
+  list(
+    active = length(items) > 0L,
+    items = items,
+    fixture_design = design,
+    time_group_like = .trajectory_group_like_name(time_var)
+  )
+}
+
+
+.trajectory_design_guidance_ui <- function(guidance) {
+  if (!isTRUE(guidance$active) || !length(guidance$items)) return(NULL)
+  shiny::tags$div(
+    class = "trajectory-design-guidance alert alert-warning",
+    role = "status",
+    `aria-live` = "polite",
+    shiny::tags$strong(
+      "Check Time / ID before treating this as longitudinal"
+    ),
+    shiny::tags$ul(lapply(guidance$items, function(item) {
+      shiny::tags$li(item$message)
+    }))
+  )
+}
+
+
+.trajectory_design_diagnostics <- function(context) {
+  empty <- .trajectory_module_diagnostic("none", "", severity = "info")[0, , drop = FALSE]
+  guidance <- .trajectory_design_guidance(
+    context$time_var,
+    context$dataset_name,
+    context$dataset_source_kind
+  )
+  if (!isTRUE(guidance$active)) return(empty)
+  diagnostics <- empty
+  for (item in guidance$items) {
+    diagnostics <- .trajectory_bind_diagnostics(
+      diagnostics,
+      .trajectory_module_diagnostic(item$code, item$message)
+    )
+  }
+  diagnostics
+}
+
+
 .trajectory_id_coverage <- function(points, time_var, id_var,
                                     group_var = NULL) {
   empty <- list(
@@ -1739,7 +1844,9 @@
 }
 
 
-.trajectory_data_info_value <- function(object, raw_dimensions) {
+.trajectory_data_info_value <- function(object, raw_dimensions,
+                                        dataset_name = NULL,
+                                        dataset_source_kind = NULL) {
   if (is.null(object) ||
       (!is.data.frame(object) &&
        (is.null(object$points) || !is.data.frame(object$points)))) {
@@ -1756,7 +1863,9 @@
     declared = .trajectory_declared_unit_vars(object),
     declared_time = .trajectory_declared_default(object, "time"),
     declared_id = .trajectory_declared_default(object, "id"),
-    declared_group = .trajectory_declared_default(object, "group")
+    declared_group = .trajectory_declared_default(object, "group"),
+    dataset_name = dataset_name,
+    dataset_source_kind = dataset_source_kind
   )
 }
 
@@ -2243,7 +2352,9 @@
     condition_a = condition_a,
     condition_b = condition_b,
     current_time = input$selected_time,
-    overlap = overlap
+    overlap = overlap,
+    dataset_name = info$dataset_name,
+    dataset_source_kind = info$dataset_source_kind
   ))
 }
 
@@ -2347,8 +2458,11 @@
   path <- do.call(compute_centroid_path, common_arguments)
   progress$set(value = 0.28, detail = "Centroid path complete")
 
-  module_diagnostics <- .trajectory_time_order_diagnostics(
-    context$points, context$time_var
+  module_diagnostics <- .trajectory_bind_diagnostics(
+    .trajectory_design_diagnostics(context),
+    .trajectory_time_order_diagnostics(
+      context$points, context$time_var
+    )
   )
   comparison <- .trajectory_comparison_arguments(context)
   module_diagnostics <- .trajectory_bind_diagnostics(
@@ -2827,7 +2941,8 @@
 
 
 .trajectory_setup_status_outputs <- function(
-    input, output, status, id_coverage, comparison_overlap, bootstrap_cost
+    input, output, status, id_coverage, comparison_overlap, bootstrap_cost,
+    design_guidance
 ) {
   output$id_coverage_status <- shiny::renderText({
     .trajectory_id_coverage_message(
@@ -2836,6 +2951,9 @@
       .trajectory_or(input$group_var, "")
     )
   })
+  output$design_guidance <- shiny::renderUI({
+    .trajectory_design_guidance_ui(design_guidance())
+  })
   output$comparison_overlap_status <- shiny::renderText({
     .trajectory_comparison_overlap_message(comparison_overlap())
   })
@@ -2843,13 +2961,14 @@
     .trajectory_bootstrap_cost_message(bootstrap_cost())
   })
   output$status <- shiny::renderText(status())
+  shiny::outputOptions(output, "status", suspendWhenHidden = FALSE)
   invisible(NULL)
 }
 
 
 .trajectory_setup_result_outputs <- function(
     input, output, session, analysis_result, analysis_source,
-    group_colors, camera
+    group_colors, camera, plot_active
 ) {
   output$warnings <- shiny::renderUI({
     .trajectory_diagnostics_ui(analysis_result())
@@ -2869,6 +2988,18 @@
   })
   output$overlay_status <- shiny::renderText(overlay_data()$message)
   output$trajectory_plot <- plotly::renderPlotly({
+    plot_is_active <- if (is.null(plot_active)) {
+      TRUE
+    } else {
+      isTRUE(.trajectory_resolve_value(plot_active))
+    }
+    if (!plot_is_active) {
+      return(ena3d_plotly_empty_state(
+        source = "trajectory",
+        title = "Trajectory",
+        message = "Trajectory is hidden while another Model view is active."
+      ))
+    }
     result <- analysis_result()
     shiny::validate(shiny::need(
       !is.null(result), "Run the trajectory analysis to create a plot."
@@ -2877,6 +3008,7 @@
       input, result, analysis_source(), overlay_data(), group_colors, camera
     )
   })
+  shiny::outputOptions(output, "trajectory_plot", suspendWhenHidden = FALSE)
   overlay_data
 }
 
@@ -3003,7 +3135,8 @@
 
 .trajectory_server_impl <- function(
     input, output, session, ena_obj, selected_axes, raw_dimensions,
-    group_colors, camera, analysis_result, status
+    group_colors, camera, analysis_result, status, plot_active,
+    dataset_name, dataset_source_kind
 ) {
   analysis_source <- shiny::reactiveVal(NULL)
   bootstrap_state <- new.env(parent = emptyenv())
@@ -3025,7 +3158,11 @@
     .trajectory_analytical_settings_value(input, selected_axes)
   })
   data_info <- shiny::reactive({
-    .trajectory_data_info_value(current_ena_obj(), raw_dimensions)
+    .trajectory_data_info_value(
+      current_ena_obj(), raw_dimensions,
+      dataset_name = .trajectory_resolve_value(dataset_name),
+      dataset_source_kind = .trajectory_resolve_value(dataset_source_kind)
+    )
   })
   id_coverage <- shiny::reactive({
     .trajectory_id_coverage_value(data_info(), input)
@@ -3036,13 +3173,21 @@
   bootstrap_cost <- shiny::reactive({
     .trajectory_bootstrap_cost_value(data_info(), input, selected_axes)
   })
+  design_guidance <- shiny::reactive({
+    .trajectory_design_guidance(
+      .trajectory_or(input$time_var, ""),
+      .trajectory_resolve_value(dataset_name),
+      .trajectory_resolve_value(dataset_source_kind)
+    )
+  })
 
   .trajectory_setup_invalidation(
     session, source_signature, analytical_settings, cancel_active_bootstrap,
     analysis_result, analysis_source, status
   )
   .trajectory_setup_status_outputs(
-    input, output, status, id_coverage, comparison_overlap, bootstrap_cost
+    input, output, status, id_coverage, comparison_overlap, bootstrap_cost,
+    design_guidance
   )
   .trajectory_setup_selection_observers(
     input, session, data_info, analysis_result, selected_axes
@@ -3054,7 +3199,7 @@
   )
   .trajectory_setup_result_outputs(
     input, output, session, analysis_result, analysis_source,
-    group_colors, camera
+    group_colors, camera, plot_active
   )
   .trajectory_setup_downloads(output, analysis_result)
   .trajectory_result_api(analysis_result, status)
@@ -3063,7 +3208,9 @@
 
 trajectory_server <- function(id, ena_obj, selected_axes = NULL,
                               raw_dimensions = NULL, group_colors = NULL,
-                              camera = NULL) {
+                              camera = NULL, plot_active = NULL,
+                              dataset_name = NULL,
+                              dataset_source_kind = NULL) {
   shiny::moduleServer(id, function(input, output, session) {
     analysis_result <- shiny::reactiveVal(NULL)
     status <- shiny::reactiveVal(
@@ -3071,7 +3218,8 @@ trajectory_server <- function(id, ena_obj, selected_axes = NULL,
     )
     .trajectory_server_impl(
       input, output, session, ena_obj, selected_axes, raw_dimensions,
-      group_colors, camera, analysis_result, status
+      group_colors, camera, analysis_result, status, plot_active,
+      dataset_name, dataset_source_kind
     )
   })
 }

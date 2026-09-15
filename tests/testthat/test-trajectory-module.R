@@ -1030,9 +1030,105 @@ test_that("trajectory module blocks cross-sectional IDs and oversized bootstrap 
       expect_match(status(), "cross-sectional only")
     }
   )
+})
 
-  repeated <- cross_sectional
-  repeated$person <- rep(c("p1", "p2"), 2)
+
+test_that("trajectory module HTML warns for documented cross-sectional fixtures", {
+  points <- data.frame(
+    groupid = c(1, 1, 2, 2),
+    username = c("Ludwig", "Peter", "Ludwig", "Peter"),
+    d1 = 1:4,
+    d2 = 4:1,
+    d3 = c(0, 1, 0, 1)
+  )
+  testServer(
+    trajectory_server,
+    args = list(
+      ena_obj = points,
+      selected_axes = c("d1", "d2", "d3"),
+      raw_dimensions = c("d1", "d2", "d3"),
+      dataset_name = "sample_enaset.Rdata",
+      dataset_source_kind = "bundled"
+    ),
+    {
+      session$setInputs(
+        time_var = "groupid",
+        id_var = "username",
+        group_var = "",
+        time_order = "1, 2",
+        cohort_policy = "available",
+        na_policy = "complete",
+        distance_space = "selected",
+        view = "3d",
+        show_uncertainty = FALSE,
+        run_comparison = FALSE,
+        bootstrap_reps = 20,
+        confidence = 0.95,
+        bootstrap_seed = 1,
+        network_overlay = FALSE
+      )
+      session$flushReact()
+      expect_match(output$id_coverage_status, "2 of 2 ID profiles")
+      guidance <- paste(unlist(output$design_guidance), collapse = " ")
+      expect_match(guidance, "cross-sectional profile")
+      expect_match(guidance, "`groupid`")
+      expect_match(guidance, "trajectory-design-guidance")
+    }
+  )
+})
+
+
+test_that("exchange uploads named like bundled fixtures do not inherit fixture warnings", {
+  points <- data.frame(
+    groupid = c(1, 1, 2, 2),
+    username = c("Ludwig", "Peter", "Ludwig", "Peter"),
+    d1 = 1:4,
+    d2 = 4:1,
+    d3 = c(0, 1, 0, 1)
+  )
+  testServer(
+    trajectory_server,
+    args = list(
+      ena_obj = points,
+      selected_axes = c("d1", "d2", "d3"),
+      raw_dimensions = c("d1", "d2", "d3"),
+      dataset_name = "sample_enaset.Rdata.ena3d.json",
+      dataset_source_kind = "exchange"
+    ),
+    {
+      session$setInputs(
+        time_var = "groupid",
+        id_var = "username",
+        group_var = "",
+        time_order = "1, 2",
+        cohort_policy = "available",
+        na_policy = "complete",
+        distance_space = "selected",
+        view = "3d",
+        show_uncertainty = FALSE,
+        run_comparison = FALSE,
+        bootstrap_reps = 20,
+        confidence = 0.95,
+        bootstrap_seed = 1,
+        network_overlay = FALSE
+      )
+      session$flushReact()
+      guidance <- paste(unlist(output$design_guidance), collapse = " ")
+      expect_false(grepl("cross-sectional profile", guidance, fixed = TRUE))
+      expect_match(guidance, "`groupid`")
+    }
+  )
+})
+
+
+test_that("trajectory module blocks oversized bootstrap jobs", {
+  repeated <- data.frame(
+    wave = 1:4,
+    person = rep(c("p1", "p2"), 2),
+    d1 = 1:4,
+    d2 = 4:1,
+    d3 = c(0, 1, 0, 1)
+  )
   testServer(
     trajectory_server,
     args = list(
@@ -1193,5 +1289,223 @@ test_that("paired trajectory comparison requires two distinct levels", {
       input, info, c("d1", "d2", "d3"), overlap
     ),
     "two distinct levels"
+  )
+})
+
+
+.load_bundled_ena_fixture <- function(filename) {
+  fixture <- new.env(parent = emptyenv())
+  suppressWarnings(load(
+    file.path(.trajectory_test_root, "sample_data", filename),
+    envir = fixture
+  ))
+  objects <- mget(ls(fixture, all.names = TRUE), envir = fixture)
+  matches <- Filter(function(value) {
+    !is.null(value$points) && is.data.frame(value$points)
+  }, objects)
+  expect_length(matches, 1L)
+  matches[[1L]]
+}
+
+
+test_that("trajectory Time/ID guidance warns on group-like time and cross-sectional fixtures", {
+  expect_true(.trajectory_group_like_name("groupid"))
+  expect_true(.trajectory_group_like_name("Group"))
+  expect_true(.trajectory_group_like_name("PerformanceBand"))
+  expect_false(.trajectory_group_like_name("Week"))
+  expect_false(.trajectory_group_like_name("Period"))
+  expect_false(.trajectory_group_like_name("username"))
+  expect_false(.trajectory_group_like_name("Speaker"))
+
+  expect_identical(
+    .trajectory_trusted_sample_design("sample_enaset.Rdata", "bundled"),
+    "cross-sectional"
+  )
+  expect_identical(
+    .trajectory_trusted_sample_design("student_enaset.RData", "bundled"),
+    "cross-sectional"
+  )
+  expect_identical(
+    .trajectory_trusted_sample_design("newfrat_enaset.Rdata", "bundled"),
+    "longitudinal"
+  )
+  expect_identical(
+    .trajectory_trusted_sample_design(
+      "class1_timepoints_enaset.RData", "bundled"
+    ),
+    "longitudinal"
+  )
+  expect_null(.trajectory_trusted_sample_design("sample_enaset.Rdata"))
+  expect_null(.trajectory_trusted_sample_design("upload.ena3d.json"))
+  expect_null(.trajectory_trusted_sample_design(
+    "sample_enaset.Rdata.ena3d.json", "exchange"
+  ))
+  expect_null(.trajectory_trusted_sample_design(
+    "sample_enaset.Rdata.ena3d.json", "bundled"
+  ))
+  expect_null(.trajectory_trusted_sample_design(
+    "sample_enaset.Rdata.extra", "bundled"
+  ))
+
+  sample_guidance <- .trajectory_design_guidance(
+    "groupid", "sample_enaset.Rdata", "bundled"
+  )
+  expect_true(sample_guidance$active)
+  expect_true(sample_guidance$time_group_like)
+  expect_identical(sample_guidance$fixture_design, "cross-sectional")
+  expect_length(sample_guidance$items, 2L)
+  expect_match(sample_guidance$items[[1L]]$message, "cross-sectional profile")
+  expect_match(sample_guidance$items[[2L]]$message, "`groupid`")
+
+  exchange_named_like_fixture <- .trajectory_design_guidance(
+    "Week", "sample_enaset.Rdata.ena3d.json", "exchange"
+  )
+  expect_false(exchange_named_like_fixture$active)
+  expect_null(exchange_named_like_fixture$fixture_design)
+
+  uploaded_group_like <- .trajectory_design_guidance(
+    "groupid", "sample_enaset.Rdata.ena3d.json", "exchange"
+  )
+  expect_true(uploaded_group_like$active)
+  expect_null(uploaded_group_like$fixture_design)
+  expect_length(uploaded_group_like$items, 1L)
+  expect_identical(uploaded_group_like$items[[1L]]$code, "time_looks_like_group")
+
+  longitudinal <- .trajectory_design_guidance(
+    "Week", "newfrat_enaset.Rdata", "bundled"
+  )
+  expect_false(longitudinal$active)
+  expect_identical(longitudinal$fixture_design, "longitudinal")
+
+  short_longitudinal <- .trajectory_design_guidance("session", NULL)
+  expect_false(short_longitudinal$active)
+
+  html <- as.character(htmltools::renderTags(
+    .trajectory_design_guidance_ui(sample_guidance)
+  )$html)
+  expect_match(html, "trajectory-design-guidance", fixed = TRUE)
+  expect_match(html, "Check Time / ID before treating this as longitudinal")
+})
+
+
+test_that("sample_enaset groupid+username is structurally valid but scientifically warned", {
+  ena <- .load_bundled_ena_fixture("sample_enaset.Rdata")
+  points <- as.data.frame(ena$points)
+  expect_true("groupid" %in% names(points))
+  expect_true("username" %in% names(points))
+
+  coverage <- .trajectory_id_coverage(points, "groupid", "username")
+  expect_gte(coverage$n_repeated_ids, 1L)
+
+  info <- .trajectory_data_info_value(
+    ena, NULL,
+    dataset_name = "sample_enaset.Rdata",
+    dataset_source_kind = "bundled"
+  )
+  input <- list(
+    time_var = "groupid",
+    id_var = "username",
+    group_var = "",
+    time_order = paste(
+      .trajectory_order_labels(.trajectory_default_order(points$groupid)),
+      collapse = ", "
+    ),
+    view = "3d",
+    show_uncertainty = FALSE,
+    run_comparison = FALSE,
+    bootstrap_design = "auto",
+    bootstrap_reps = 200,
+    confidence = 0.95,
+    bootstrap_seed = 1,
+    distance_space = "selected",
+    cohort_policy = "available",
+    na_policy = "complete",
+    selected_time = as.character(.trajectory_default_order(points$groupid)[[1L]])
+  )
+  context <- .trajectory_validate_run_context(
+    input, info, head(info$dimensions, 3L),
+    .trajectory_comparison_overlap(points, "", "", "", "username", "groupid")
+  )
+  expect_gte(context$coverage$n_repeated_ids, 1L)
+  diagnostics <- .trajectory_design_diagnostics(context)
+  expect_true(any(diagnostics$code == "cross_sectional_fixture"))
+  expect_true(any(diagnostics$code == "time_looks_like_group"))
+})
+
+
+test_that("student_enaset still refuses with the cross-sectional message", {
+  ena <- .load_bundled_ena_fixture("student_enaset.RData")
+  points <- as.data.frame(ena$points)
+  expect_true("PerformanceBand" %in% names(points) || "Name" %in% names(points))
+
+  time_var <- if ("PerformanceBand" %in% names(points)) {
+    "PerformanceBand"
+  } else {
+    setdiff(names(points), c("Name", "ENA_UNIT"))[[1L]]
+  }
+  id_var <- if ("Name" %in% names(points)) "Name" else {
+    setdiff(.trajectory_user_metadata(names(points)), time_var)[[1L]]
+  }
+  coverage <- .trajectory_id_coverage(points, time_var, id_var)
+  expect_lt(coverage$n_repeated_ids, 1L)
+  expect_match(
+    .trajectory_id_coverage_message(coverage, id_var),
+    "cross-sectional only"
+  )
+
+  info <- .trajectory_data_info_value(
+    ena, NULL,
+    dataset_name = "student_enaset.RData",
+    dataset_source_kind = "bundled"
+  )
+  input <- list(
+    time_var = time_var,
+    id_var = id_var,
+    group_var = "",
+    time_order = paste(.trajectory_order_labels(
+      .trajectory_default_order(points[[time_var]])
+    ), collapse = ", "),
+    view = "3d",
+    show_uncertainty = FALSE,
+    run_comparison = FALSE,
+    bootstrap_design = "auto",
+    bootstrap_reps = 200,
+    confidence = 0.95,
+    bootstrap_seed = 1,
+    distance_space = "selected",
+    cohort_policy = "available",
+    na_policy = "complete"
+  )
+  expect_error(
+    .trajectory_validate_run_variables(info, input),
+    "cross-sectional only"
+  )
+})
+
+
+test_that("short longitudinal Time/ID choices are not warned as group-like", {
+  points <- data.frame(
+    session = rep(c("pre", "post"), each = 3L),
+    person = rep(paste0("p", 1:3), 2L),
+    d1 = 1:6, d2 = 6:1, d3 = c(0, 1, 0, 1, 0, 1),
+    stringsAsFactors = FALSE
+  )
+  coverage <- .trajectory_id_coverage(points, "session", "person")
+  expect_equal(coverage$n_repeated_ids, 3L)
+  guidance <- .trajectory_design_guidance("session", NULL)
+  expect_false(guidance$active)
+  info <- list(
+    object = points, points = points, dimensions = c("d1", "d2", "d3"),
+    dataset_name = NULL
+  )
+  input <- list(
+    time_var = "session", id_var = "person", group_var = "",
+    time_order = "pre, post", view = "3d", show_uncertainty = FALSE,
+    run_comparison = FALSE, bootstrap_design = "auto", bootstrap_reps = 200,
+    confidence = 0.95, bootstrap_seed = 1, distance_space = "selected",
+    cohort_policy = "available", na_policy = "complete"
+  )
+  expect_silent(
+    .trajectory_validate_run_variables(info, input)
   )
 })

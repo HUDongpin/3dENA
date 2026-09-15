@@ -519,3 +519,69 @@ ena3d_palette <- function(n) {
   if (n <= 0L) return(character())
   grDevices::hcl.colors(n, palette = "Dark 3")
 }
+
+
+ena3d_model_plot_slots <- function() {
+  list(
+    overall_model = list(
+      id = "ena_overall_plot_slot",
+      label = "Overall ENA model"
+    ),
+    network = list(
+      id = "ena_network_plot_slot",
+      label = "Network"
+    ),
+    comparison_plot = list(
+      id = "ena_points_plot_slot",
+      label = "Comparison"
+    ),
+    group_change = list(
+      id = "ena_unit_group_change_plot_slot",
+      label = "Change"
+    ),
+    trajectory = list(
+      id = "ena_trajectory_panel",
+      label = "Trajectory"
+    )
+  )
+}
+
+
+ena3d_plot_visibility_states <- function(active_tab) {
+  slots <- ena3d_model_plot_slots()
+  tab <- if (length(active_tab) == 1L) {
+    as.character(active_tab)[[1L]]
+  } else {
+    NA_character_
+  }
+  if (length(tab) != 1L || is.na(tab) || !nzchar(tab) ||
+      !tab %in% names(slots)) {
+    tab <- NA_character_
+  }
+  states <- lapply(names(slots), function(name) {
+    slot <- slots[[name]]
+    list(
+      id = slot$id,
+      label = slot$label,
+      visible = identical(name, tab)
+    )
+  })
+  stats::setNames(states, names(slots))
+}
+
+
+ena3d_active_plot_label <- function(active_tab) {
+  visible <- Filter(
+    function(state) isTRUE(state$visible),
+    ena3d_plot_visibility_states(active_tab)
+  )
+  if (!length(visible)) {
+    return("No Model view")
+  }
+  visible[[1L]]$label
+}
+
+
+ena3d_plot_mode_caption <- function(active_tab) {
+  paste0("Showing: ", ena3d_active_plot_label(active_tab))
+}

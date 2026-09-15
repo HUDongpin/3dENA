@@ -321,6 +321,7 @@ test_that("switching bundled samples commits one transaction and drops stale plo
       expect_identical(session$userData$rv$unit_group_change_plots, list())
       active <- session$userData$rv$active_dataset
       expect_identical(active$name, "newfrat_enaset.Rdata")
+      expect_identical(active$source_kind, "bundled")
       expect_identical(active$rows, 255L)
       expect_identical(active$nodes, 17L)
       expect_identical(active$group_variables, 2L)

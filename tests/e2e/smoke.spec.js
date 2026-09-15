@@ -613,7 +613,77 @@ test("Plotly modebars execute every 3D and 2D plot action", async (
   await expect(
     page.locator("#main_app-trajectory-trajectory_plot.shiny-output-error")
   ).toHaveCount(0);
+
+  await openModelTab(page, "Overall", overallPlot);
+  await expect(page.locator("#main_app-plot_mode_label")).toHaveText(
+    "Showing: Overall ENA model"
+  );
+  await expect(page.locator("#main_app-ena_trajectory_panel")).toBeHidden();
+  await expect(overallPlot).toBeVisible();
+  await expect
+    .poll(() =>
+      overallPlot.evaluate((plot) => {
+        const title = plot.layout?.title;
+        return typeof title === "string" ? title : title?.text || "";
+      })
+    )
+    .toMatch(/Overall ENA model/);
+  await expect
+    .poll(() =>
+      overallPlot.evaluate((plot) =>
+        (plot.data || []).some((trace) => trace.meta?.trajectory_role === "path")
+      )
+    )
+    .toBe(false);
+  await expect(
+    page.locator("#main_app-ena_overall_plot.shiny-output-error")
+  ).toHaveCount(0);
   expect(browserErrors).toEqual([]);
+});
+
+test("Trajectory warns on sample_enaset group-as-time and refuses student_enaset", async (
+  { page },
+  testInfo
+) => {
+  test.skip(
+    testInfo.project.name !== "desktop-chromium",
+    "One desktop run covers Time/ID guidance copy and the student refuse."
+  );
+  await page.goto("/app", { waitUntil: "domcontentloaded" });
+  await waitForShinyIdle(page);
+
+  await selectTrustedSample(page, "sample_enaset.Rdata");
+  const modelTab = page.getByRole("tab", { name: "Model", exact: true });
+  await modelTab.click();
+  await openModelTab(
+    page,
+    "Trajectory",
+    page.getByRole("combobox", { name: "Time / order variable" })
+  );
+  await expect(page.locator(".trajectory-design-guidance")).toContainText(
+    "documented as a cross-sectional profile"
+  );
+  await expect(page.locator("#main_app-plot_mode_label")).toHaveText(
+    "Showing: Trajectory"
+  );
+
+  const dataTab = page.getByRole("tab", { name: "Data", exact: true });
+  await dataTab.click();
+  await selectTrustedSample(page, "student_enaset.RData");
+  await modelTab.click();
+  await openModelTab(
+    page,
+    "Trajectory",
+    page.getByRole("combobox", { name: "Time / order variable" })
+  );
+  await expect(page.locator("#main_app-trajectory-id_coverage_status")).toContainText(
+    "cross-sectional only"
+  );
+  await page.getByRole("button", { name: "Run / recompute trajectory" }).click();
+  await expect(page.locator("#main_app-trajectory-status")).toContainText(
+    "cross-sectional only",
+    { timeout: 30_000 }
+  );
 });
 
 test("global camera, sidebar, axis, slider, and plot toggles update the live plot", async (

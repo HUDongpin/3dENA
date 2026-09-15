@@ -210,9 +210,18 @@ ena_overall_plot_output <-  function(input, output,
     # req(initialized(),cancelOutput = TRUE)
     main_plot <- plot_ly(source = "overall")
     req(data$initialized,cancelOutput = TRUE)
-    req(state$render_overall(),cancelOutput = TRUE)
     req(state$is_app_initialized,cancelOutput = TRUE)
     req(!is.null(state$ena_obj),cancelOutput = TRUE)
+    if (!isTRUE(state$render_overall())) {
+      return(ena3d_plotly_empty_state(
+        source = "overall",
+        title = "Overall ENA model",
+        message = paste(
+          "Overall is hidden while another Model view is active.",
+          "Trajectory geometry is not shown in this canvas."
+        )
+      ))
+    }
     req(input$x, input$y, input$z)
     req(
       ena3d_axes_are_distinct(input$x, input$y, input$z),
@@ -337,6 +346,7 @@ ena_overall_plot_output <-  function(input, output,
     comparison_plot
    
   })
+  shiny::outputOptions(output, "ena_overall_plot", suspendWhenHidden = FALSE)
   
   # observeEvent(event_data(event = "plotly_relayout",source='plot_correlation'),{
   #   clicked <- event_data(event = "plotly_relayout",
