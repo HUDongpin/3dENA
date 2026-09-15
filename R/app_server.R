@@ -209,23 +209,10 @@ ena_app_server <- function(id, state, config, page_active, workspace_section) {
                               scaled_nodes)
       
       
-      observeEvent(state$active_tab(), {
-        active_tab <- state$active_tab()
-        visibility <- ena3d_plot_visibility_states(active_tab)
-        session$sendCustomMessage(
-          "ena3d-plot-visibility",
-          list(
-            slots = unname(lapply(visibility, function(slot) {
-              list(
-                id = session$ns(slot$id),
-                visible = isTRUE(slot$visible)
-              )
-            })),
-            label = ena3d_active_plot_label(active_tab),
-            labelId = session$ns("plot_mode_label")
-          )
-        )
-      }, ignoreInit = FALSE)
+      output$plot_mode_label <- renderText({
+        ena3d_plot_mode_caption(state$active_tab())
+      })
+      shiny::outputOptions(output, "plot_mode_label", suspendWhenHidden = FALSE)
       
       upload_data(input,output,session,rv,state,config)
       sample_data_load_and_select(input,output,session,rv,config,state)

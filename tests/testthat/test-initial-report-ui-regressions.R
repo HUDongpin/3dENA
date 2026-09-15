@@ -477,11 +477,6 @@ test_that("one fullscreen control targets the visible Plotly widget", {
     fixed = TRUE
   )
   expect_match(app_text, "ena3d-plot-hidden", fixed = TRUE)
-  expect_match(app_text, "message.slots", fixed = TRUE)
-  expect_match(app_text, "querySelectorAll('.shiny-bound-output')", fixed = TRUE)
-  expect_match(app_text, "triggerHandler(eventName)", fixed = TRUE)
-  expect_match(app_text, "message.labelId", fixed = TRUE)
-  expect_match(app_text, "Showing: ' + message.label", fixed = TRUE)
   expect_match(app_text, "requestFullscreen", fixed = TRUE)
   expect_match(app_text, "enterFallbackFullscreen", fixed = TRUE)
   expect_match(app_text, "ena3d-fullscreen-fallback", fixed = TRUE)
@@ -492,7 +487,11 @@ test_that("one fullscreen control targets the visible Plotly widget", {
   expect_match(plot_ui_text, "ena3d-plot-mode-label", fixed = TRUE)
   expect_match(plot_ui_text, "ena_overall_plot_slot", fixed = TRUE)
   expect_match(plot_ui_text, "ena_trajectory_panel", fixed = TRUE)
-  expect_match(plot_ui_text, "ena3d-plot-hidden", fixed = TRUE)
+  expect_match(plot_ui_text, "input.mytabs === 'overall_model'", fixed = TRUE)
+  expect_match(plot_ui_text, "input.mytabs === 'trajectory'", fixed = TRUE)
+  expect_match(plot_ui_text, "input.mytabs === 'network'", fixed = TRUE)
+  expect_match(plot_ui_text, "input.mytabs === 'comparison_plot'", fixed = TRUE)
+  expect_match(plot_ui_text, "input.mytabs === 'group_change'", fixed = TRUE)
 })
 
 
