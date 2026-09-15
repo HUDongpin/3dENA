@@ -477,6 +477,16 @@ test_that("one fullscreen control targets the visible Plotly widget", {
     fixed = TRUE
   )
   expect_match(app_text, "ena3d-plot-hidden", fixed = TRUE)
+  expect_match(
+    app_text,
+    "$(element).trigger(hidden ? 'hidden' : 'shown');",
+    fixed = TRUE
+  )
+  expect_match(
+    app_text,
+    "$(element).find('.shiny-bound-output').trigger(",
+    fixed = TRUE
+  )
   expect_match(app_text, "message.labelId", fixed = TRUE)
   expect_match(app_text, "Showing: ' + message.label", fixed = TRUE)
   expect_match(app_text, "requestFullscreen", fixed = TRUE)

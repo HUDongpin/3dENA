@@ -698,10 +698,16 @@ ena3d_group_selector_metadata <- function(groups) {
 
 
 ena3d_active_dataset_summary <- function(prepared, display_name,
-                                         app_version, build_id) {
+                                         app_version, build_id,
+                                         source_kind = NULL) {
   safe_name <- basename(as.character(display_name)[[1L]])
   list(
     name = safe_name,
+    source_kind = if (is.null(source_kind) || !length(source_kind)) {
+      NULL
+    } else {
+      as.character(source_kind)[[1L]]
+    },
     rows = nrow(prepared$ena_obj$points),
     nodes = nrow(prepared$ena_obj$rotation$nodes),
     group_variables = length(prepared$group_vars),
@@ -861,7 +867,8 @@ load_ena_data <- function(input, output, session, file_path, rv_data, state,
     prepared,
     display_name = display_name,
     app_version = app_version,
-    build_id = build_id
+    build_id = build_id,
+    source_kind = source_kind
   )
 
   output$active_dataset_card <- renderUI({

@@ -1047,7 +1047,8 @@ test_that("trajectory module HTML warns for documented cross-sectional fixtures"
       ena_obj = points,
       selected_axes = c("d1", "d2", "d3"),
       raw_dimensions = c("d1", "d2", "d3"),
-      dataset_name = "sample_enaset.Rdata"
+      dataset_name = "sample_enaset.Rdata",
+      dataset_source_kind = "bundled"
     ),
     {
       session$setInputs(
@@ -1072,6 +1073,49 @@ test_that("trajectory module HTML warns for documented cross-sectional fixtures"
       expect_match(guidance, "cross-sectional profile")
       expect_match(guidance, "`groupid`")
       expect_match(guidance, "trajectory-design-guidance")
+    }
+  )
+})
+
+
+test_that("exchange uploads named like bundled fixtures do not inherit fixture warnings", {
+  points <- data.frame(
+    groupid = c(1, 1, 2, 2),
+    username = c("Ludwig", "Peter", "Ludwig", "Peter"),
+    d1 = 1:4,
+    d2 = 4:1,
+    d3 = c(0, 1, 0, 1)
+  )
+  testServer(
+    trajectory_server,
+    args = list(
+      ena_obj = points,
+      selected_axes = c("d1", "d2", "d3"),
+      raw_dimensions = c("d1", "d2", "d3"),
+      dataset_name = "sample_enaset.Rdata.ena3d.json",
+      dataset_source_kind = "exchange"
+    ),
+    {
+      session$setInputs(
+        time_var = "groupid",
+        id_var = "username",
+        group_var = "",
+        time_order = "1, 2",
+        cohort_policy = "available",
+        na_policy = "complete",
+        distance_space = "selected",
+        view = "3d",
+        show_uncertainty = FALSE,
+        run_comparison = FALSE,
+        bootstrap_reps = 20,
+        confidence = 0.95,
+        bootstrap_seed = 1,
+        network_overlay = FALSE
+      )
+      session$flushReact()
+      guidance <- paste(unlist(output$design_guidance), collapse = " ")
+      expect_false(grepl("cross-sectional profile", guidance, fixed = TRUE))
+      expect_match(guidance, "`groupid`")
     }
   )
 })
@@ -1274,25 +1318,37 @@ test_that("trajectory Time/ID guidance warns on group-like time and cross-sectio
   expect_false(.trajectory_group_like_name("Speaker"))
 
   expect_identical(
-    .trajectory_trusted_sample_design("sample_enaset.Rdata"),
+    .trajectory_trusted_sample_design("sample_enaset.Rdata", "bundled"),
     "cross-sectional"
   )
   expect_identical(
-    .trajectory_trusted_sample_design("student_enaset.RData"),
+    .trajectory_trusted_sample_design("student_enaset.RData", "bundled"),
     "cross-sectional"
   )
   expect_identical(
-    .trajectory_trusted_sample_design("newfrat_enaset.Rdata"),
+    .trajectory_trusted_sample_design("newfrat_enaset.Rdata", "bundled"),
     "longitudinal"
   )
   expect_identical(
-    .trajectory_trusted_sample_design("class1_timepoints_enaset.RData"),
+    .trajectory_trusted_sample_design(
+      "class1_timepoints_enaset.RData", "bundled"
+    ),
     "longitudinal"
   )
+  expect_null(.trajectory_trusted_sample_design("sample_enaset.Rdata"))
   expect_null(.trajectory_trusted_sample_design("upload.ena3d.json"))
+  expect_null(.trajectory_trusted_sample_design(
+    "sample_enaset.Rdata.ena3d.json", "exchange"
+  ))
+  expect_null(.trajectory_trusted_sample_design(
+    "sample_enaset.Rdata.ena3d.json", "bundled"
+  ))
+  expect_null(.trajectory_trusted_sample_design(
+    "sample_enaset.Rdata.extra", "bundled"
+  ))
 
   sample_guidance <- .trajectory_design_guidance(
-    "groupid", "sample_enaset.Rdata"
+    "groupid", "sample_enaset.Rdata", "bundled"
   )
   expect_true(sample_guidance$active)
   expect_true(sample_guidance$time_group_like)
@@ -1301,7 +1357,23 @@ test_that("trajectory Time/ID guidance warns on group-like time and cross-sectio
   expect_match(sample_guidance$items[[1L]]$message, "cross-sectional profile")
   expect_match(sample_guidance$items[[2L]]$message, "`groupid`")
 
-  longitudinal <- .trajectory_design_guidance("Week", "newfrat_enaset.Rdata")
+  exchange_named_like_fixture <- .trajectory_design_guidance(
+    "Week", "sample_enaset.Rdata.ena3d.json", "exchange"
+  )
+  expect_false(exchange_named_like_fixture$active)
+  expect_null(exchange_named_like_fixture$fixture_design)
+
+  uploaded_group_like <- .trajectory_design_guidance(
+    "groupid", "sample_enaset.Rdata.ena3d.json", "exchange"
+  )
+  expect_true(uploaded_group_like$active)
+  expect_null(uploaded_group_like$fixture_design)
+  expect_length(uploaded_group_like$items, 1L)
+  expect_identical(uploaded_group_like$items[[1L]]$code, "time_looks_like_group")
+
+  longitudinal <- .trajectory_design_guidance(
+    "Week", "newfrat_enaset.Rdata", "bundled"
+  )
   expect_false(longitudinal$active)
   expect_identical(longitudinal$fixture_design, "longitudinal")
 
@@ -1326,7 +1398,9 @@ test_that("sample_enaset groupid+username is structurally valid but scientifical
   expect_gte(coverage$n_repeated_ids, 1L)
 
   info <- .trajectory_data_info_value(
-    ena, NULL, dataset_name = "sample_enaset.Rdata"
+    ena, NULL,
+    dataset_name = "sample_enaset.Rdata",
+    dataset_source_kind = "bundled"
   )
   input <- list(
     time_var = "groupid",
@@ -1380,7 +1454,9 @@ test_that("student_enaset still refuses with the cross-sectional message", {
   )
 
   info <- .trajectory_data_info_value(
-    ena, NULL, dataset_name = "student_enaset.RData"
+    ena, NULL,
+    dataset_name = "student_enaset.RData",
+    dataset_source_kind = "bundled"
   )
   input <- list(
     time_var = time_var,

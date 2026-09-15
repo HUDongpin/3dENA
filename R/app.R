@@ -284,6 +284,9 @@ app_ui <- function(){
               element.removeAttribute('inert');
             }
             $(element).trigger(hidden ? 'hidden' : 'shown');
+            $(element).find('.shiny-bound-output').trigger(
+              hidden ? 'hidden' : 'shown'
+            );
           }
           if (message.visible && message.label) {
             const label = document.getElementById(

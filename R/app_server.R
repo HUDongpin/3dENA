@@ -167,6 +167,14 @@ ena_app_server <- function(id, state, config, page_active, workspace_section) {
           } else {
             rv$active_dataset$name
           }
+        }),
+        dataset_source_kind = reactive({
+          if (is.null(rv$active_dataset) ||
+              is.null(rv$active_dataset$source_kind)) {
+            NULL
+          } else {
+            rv$active_dataset$source_kind
+          }
         })
       )
       

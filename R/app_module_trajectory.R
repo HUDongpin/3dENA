@@ -85,26 +85,29 @@
 }
 
 
-.trajectory_trusted_sample_design <- function(name) {
+.trajectory_trusted_sample_design <- function(name, source_kind = NULL) {
+  if (!identical(source_kind, "bundled")) {
+    return(NULL)
+  }
   if (is.null(name) || !length(name) || is.na(name[[1L]]) ||
       !nzchar(as.character(name)[[1L]])) {
     return(NULL)
   }
-  key <- tolower(basename(sub(" \\(.*\\)$", "", as.character(name)[[1L]])))
-  if (grepl("^sample_enaset\\.", key) || grepl("^student_enaset\\.", key)) {
+  key <- tolower(basename(as.character(name)[[1L]]))
+  if (key %in% c("sample_enaset.rdata", "student_enaset.rdata")) {
     return("cross-sectional")
   }
-  if (grepl("^newfrat_enaset\\.", key) ||
-      grepl("^class1_timepoints_enaset\\.", key)) {
+  if (key %in% c("newfrat_enaset.rdata", "class1_timepoints_enaset.rdata")) {
     return("longitudinal")
   }
   NULL
 }
 
 
-.trajectory_design_guidance <- function(time_var, dataset_name = NULL) {
+.trajectory_design_guidance <- function(time_var, dataset_name = NULL,
+                                        source_kind = NULL) {
   items <- list()
-  design <- .trajectory_trusted_sample_design(dataset_name)
+  design <- .trajectory_trusted_sample_design(dataset_name, source_kind)
   if (identical(design, "cross-sectional")) {
     items[[length(items) + 1L]] <- list(
       code = "cross_sectional_fixture",
@@ -156,7 +159,8 @@
   empty <- .trajectory_module_diagnostic("none", "", severity = "info")[0, , drop = FALSE]
   guidance <- .trajectory_design_guidance(
     context$time_var,
-    context$dataset_name
+    context$dataset_name,
+    context$dataset_source_kind
   )
   if (!isTRUE(guidance$active)) return(empty)
   diagnostics <- empty
@@ -1841,7 +1845,8 @@
 
 
 .trajectory_data_info_value <- function(object, raw_dimensions,
-                                        dataset_name = NULL) {
+                                        dataset_name = NULL,
+                                        dataset_source_kind = NULL) {
   if (is.null(object) ||
       (!is.data.frame(object) &&
        (is.null(object$points) || !is.data.frame(object$points)))) {
@@ -1859,7 +1864,8 @@
     declared_time = .trajectory_declared_default(object, "time"),
     declared_id = .trajectory_declared_default(object, "id"),
     declared_group = .trajectory_declared_default(object, "group"),
-    dataset_name = dataset_name
+    dataset_name = dataset_name,
+    dataset_source_kind = dataset_source_kind
   )
 }
 
@@ -2347,7 +2353,8 @@
     condition_b = condition_b,
     current_time = input$selected_time,
     overlap = overlap,
-    dataset_name = info$dataset_name
+    dataset_name = info$dataset_name,
+    dataset_source_kind = info$dataset_source_kind
   ))
 }
 
@@ -3128,7 +3135,7 @@
 .trajectory_server_impl <- function(
     input, output, session, ena_obj, selected_axes, raw_dimensions,
     group_colors, camera, analysis_result, status, plot_active,
-    dataset_name
+    dataset_name, dataset_source_kind
 ) {
   analysis_source <- shiny::reactiveVal(NULL)
   bootstrap_state <- new.env(parent = emptyenv())
@@ -3152,7 +3159,8 @@
   data_info <- shiny::reactive({
     .trajectory_data_info_value(
       current_ena_obj(), raw_dimensions,
-      dataset_name = .trajectory_resolve_value(dataset_name)
+      dataset_name = .trajectory_resolve_value(dataset_name),
+      dataset_source_kind = .trajectory_resolve_value(dataset_source_kind)
     )
   })
   id_coverage <- shiny::reactive({
@@ -3167,7 +3175,8 @@
   design_guidance <- shiny::reactive({
     .trajectory_design_guidance(
       .trajectory_or(input$time_var, ""),
-      .trajectory_resolve_value(dataset_name)
+      .trajectory_resolve_value(dataset_name),
+      .trajectory_resolve_value(dataset_source_kind)
     )
   })
 
@@ -3199,7 +3208,8 @@
 trajectory_server <- function(id, ena_obj, selected_axes = NULL,
                               raw_dimensions = NULL, group_colors = NULL,
                               camera = NULL, plot_active = NULL,
-                              dataset_name = NULL) {
+                              dataset_name = NULL,
+                              dataset_source_kind = NULL) {
   shiny::moduleServer(id, function(input, output, session) {
     analysis_result <- shiny::reactiveVal(NULL)
     status <- shiny::reactiveVal(
@@ -3208,7 +3218,7 @@ trajectory_server <- function(id, ena_obj, selected_axes = NULL,
     .trajectory_server_impl(
       input, output, session, ena_obj, selected_axes, raw_dimensions,
       group_colors, camera, analysis_result, status, plot_active,
-      dataset_name
+      dataset_name, dataset_source_kind
     )
   })
 }
