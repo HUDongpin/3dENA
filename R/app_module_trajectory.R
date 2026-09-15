@@ -2961,6 +2961,7 @@
     .trajectory_bootstrap_cost_message(bootstrap_cost())
   })
   output$status <- shiny::renderText(status())
+  shiny::outputOptions(output, "status", suspendWhenHidden = FALSE)
   invisible(NULL)
 }
 

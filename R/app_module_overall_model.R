@@ -346,6 +346,7 @@ ena_overall_plot_output <-  function(input, output,
     comparison_plot
    
   })
+  shiny::outputOptions(output, "ena_overall_plot", suspendWhenHidden = FALSE)
   
   # observeEvent(event_data(event = "plotly_relayout",source='plot_correlation'),{
   #   clicked <- event_data(event = "plotly_relayout",

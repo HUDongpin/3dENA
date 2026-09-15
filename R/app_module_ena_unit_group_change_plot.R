@@ -457,4 +457,7 @@ ena_unit_group_change_plot_output <- function(input,output,session,
     validate(need(!is.null(p), "No Change plot is available for the selected value."))
     p
   })
+  shiny::outputOptions(
+    output, "ena_unit_group_change_plot", suspendWhenHidden = FALSE
+  )
 }

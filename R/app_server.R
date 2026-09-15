@@ -210,19 +210,21 @@ ena_app_server <- function(id, state, config, page_active, workspace_section) {
       
       
       observeEvent(state$active_tab(), {
-        visibility <- ena3d_plot_visibility_states(state$active_tab())
-        label_id <- session$ns("plot_mode_label")
-        for (slot in visibility) {
-          session$sendCustomMessage(
-            "ena3d-plot-visibility",
-            list(
-              id = session$ns(slot$id),
-              visible = slot$visible,
-              label = slot$label,
-              labelId = label_id
-            )
+        active_tab <- state$active_tab()
+        visibility <- ena3d_plot_visibility_states(active_tab)
+        session$sendCustomMessage(
+          "ena3d-plot-visibility",
+          list(
+            slots = unname(lapply(visibility, function(slot) {
+              list(
+                id = session$ns(slot$id),
+                visible = isTRUE(slot$visible)
+              )
+            })),
+            label = ena3d_active_plot_label(active_tab),
+            labelId = session$ns("plot_mode_label")
           )
-        }
+        )
       }, ignoreInit = FALSE)
       
       upload_data(input,output,session,rv,state,config)

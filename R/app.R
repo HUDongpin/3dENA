@@ -272,9 +272,16 @@ app_ui <- function(){
       ),
       tags$script(
         "Shiny.addCustomMessageHandler('ena3d-plot-visibility', function(message) {
-          const element = document.getElementById(message.id);
-          if (element) {
-            const hidden = !message.visible;
+          const slots = Array.isArray(message.slots) ? message.slots : [message];
+          const shownOutputs = [];
+          const hiddenOutputs = [];
+          slots.forEach(function(slot) {
+            const element = document.getElementById(slot.id);
+            if (!element) return;
+            const visibleFlag = Array.isArray(slot.visible) ?
+              slot.visible[0] : slot.visible;
+            const hidden = !(visibleFlag === true || visibleFlag === 1 ||
+              visibleFlag === 'true');
             element.classList.toggle('ena3d-plot-hidden', hidden);
             element.style.display = hidden ? 'none' : '';
             element.setAttribute('aria-hidden', hidden ? 'true' : 'false');
@@ -283,12 +290,12 @@ app_ui <- function(){
             } else {
               element.removeAttribute('inert');
             }
-            $(element).trigger(hidden ? 'hidden' : 'shown');
-            $(element).find('.shiny-bound-output').trigger(
-              hidden ? 'hidden' : 'shown'
-            );
-          }
-          if (message.visible && message.label) {
+            const outputs = element.querySelectorAll('.shiny-bound-output');
+            for (let i = 0; i < outputs.length; i++) {
+              (hidden ? hiddenOutputs : shownOutputs).push(outputs[i]);
+            }
+          });
+          if (message.label) {
             const label = document.getElementById(
               message.labelId || 'main_app-plot_mode_label'
             );
@@ -296,6 +303,15 @@ app_ui <- function(){
               label.textContent = 'Showing: ' + message.label;
             }
           }
+          const notify = function(nodes, eventName) {
+            for (let i = 0; i < nodes.length; i++) {
+              try {
+                $(nodes[i]).triggerHandler(eventName);
+              } catch (err) {}
+            }
+          };
+          notify(hiddenOutputs, 'hidden');
+          notify(shownOutputs, 'shown');
         });"
       )
     ),
